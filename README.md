@@ -329,9 +329,13 @@ while keeping the macOS 15 deployment target. QEMU remains TCG-based on both.
 #     signed DMG. This skips notarization/stapling and Gatekeeper trust checks.
 SIGN_IDENTITY=- ./scripts/make-dmg.sh
 
-# 5. Developer ID releases can be verified end-to-end, including Gatekeeper,
-#    notarization tickets, the Tools CD, and the GXMetal-enabled Power Mac.
-./scripts/verify-release.sh dist/ClassicMac.dmg 3.2.0 3.2.0
+# 5a. Developer ID releases: verify signatures, notarization/Gatekeeper,
+#     architecture, bundled libraries, Tools CD, and GXMetal integration.
+./scripts/verify-release.sh dist/ClassicMac.dmg 3.2.1 3.2.1
+
+# 5b. Ad-hoc releases: perform the same structural/runtime verification but
+#     explicitly skip notarization and Gatekeeper trust assertions.
+SIGN_IDENTITY=- ./scripts/verify-release.sh dist/ClassicMac.dmg 3.2.1 3.2.1
 ```
 
 All scripts are idempotent and safe to re-run. Building needs the Xcode command line tools and [Homebrew](https://brew.sh).
