@@ -87,7 +87,7 @@ BROWSER_SCALE="$APP/Contents/Resources/Browser/pixel-scale.js"
 BROWSER_LICENSE="$APP/Contents/Resources/Licenses/noVNC-MPL-2.0.txt"
 PAKO_LICENSE="$APP/Contents/Resources/Licenses/pako-MIT.txt"
 
-for required in "$COPLAND_HELPER/Contents/Info.plist" "$COPLAND_ENGINE" "$PLIST" "$PPC_HELPER/Contents/Info.plist" \
+for required in "$COPLAND_HELPER/Contents/Info.plist" "$COPLAND_ENGINE" "$PLIST" "$MAIN_APP" "$PPC_HELPER/Contents/Info.plist" \
   "$QUADRA_HELPER/Contents/Info.plist" "$PPC_QEMU" "$QUADRA_QEMU" \
   "$PPC_NDRV" "$TOOLS_CD" "$VNC_KEYMAP" "$BROWSER_INDEX" "$BROWSER_SCALE" \
   "$BROWSER_RFB" "$BROWSER_LICENSE" "$PAKO_LICENSE"; do
