@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Stage exact-version official Homebrew arm64_sequoia dylibs for macOS 15.
+"""Stage exact-version official Homebrew dylibs compatible with macOS 15.
+
+The release build is host-native: arm64 uses arm64_sequoia bottles, while
+x86_64 prefers sequoia and falls back to the Sonoma bottles Homebrew reuses on
+newer Intel macOS releases.
 
 Run after dylibbundler and before signing. Only selected regular dylib members
 are extracted; Homebrew itself is never changed. The cache is content addressed.
@@ -22,9 +26,16 @@ import tempfile
 import urllib.parse
 import urllib.request
 
-TAG = "arm64_sequoia"
-PREFIX = Path("/opt/homebrew")
+PREFIX = None
 SYSTEM = ("/usr/lib/", "/System/Library/")
+BOTTLE_TAGS = {
+    "arm64": ("arm64_sequoia",),
+    "x86_64": ("sequoia", "sonoma"),
+}
+OCI_ARCH = {
+    "arm64": "arm64",
+    "x86_64": "amd64",
+}
 
 
 def require(condition, message):
@@ -47,6 +58,15 @@ def sha(value):
 
 def run(*args):
     return subprocess.run(args, check=True, text=True, capture_output=True).stdout
+
+
+def homebrew_prefix():
+    return PREFIX if PREFIX is not None else Path(run("brew", "--prefix").strip())
+
+
+def bottle_tags(arch):
+    require(arch in BOTTLE_TAGS, "Unsupported Homebrew architecture: " + str(arch))
+    return BOTTLE_TAGS[arch]
 
 
 class Registry:
@@ -82,41 +102,50 @@ class Registry:
 
 def origin(name):
     require(Path(name).name == name and name.endswith(".dylib"), "Expected a dylib basename: " + name)
-    original = PREFIX / "lib" / name
+    prefix = homebrew_prefix()
+    original = prefix / "lib" / name
     real = original.resolve(strict=True)
-    relative = real.relative_to((PREFIX / "Cellar").resolve())
+    relative = real.relative_to((prefix / "Cellar").resolve())
     require(len(relative.parts) >= 4 and relative.parts[2] == "lib", "Library is not in a Homebrew keg: " + str(real))
     formula, keg = relative.parts[:2]
-    receipt_path = PREFIX / "Cellar" / formula / keg / "INSTALL_RECEIPT.json"
+    receipt_path = prefix / "Cellar" / formula / keg / "INSTALL_RECEIPT.json"
     receipt = json.loads(receipt_path.read_text())
     source = receipt.get("source", {})
     version = source.get("versions", {}).get("stable")
-    require(source.get("tap") == "homebrew/core" and source.get("spec") == "stable" and receipt.get("arch") == "arm64", "Expected official stable arm64 receipt for " + formula)
+    arch = receipt.get("arch")
+    require(arch in BOTTLE_TAGS, "Unsupported Homebrew architecture for " + formula + ": " + str(arch))
+    require(source.get("tap") == "homebrew/core" and source.get("spec") == "stable", "Expected official stable receipt for " + formula)
     require(isinstance(version, str), "Missing installed version for " + formula)
     revision = 0
     if keg != version:
         require(keg.startswith(version + "_") and keg[len(version) + 1:].isdigit(), "Receipt/version mismatch for " + formula)
         revision = int(keg[len(version) + 1:])
     return {"formula": formula, "keg": keg, "version": version, "revision": revision,
+            "arch": arch, "homebrew_prefix": str(prefix),
             "local_path": str(real), "receipt_sha256": digest(receipt_path),
             "receipt_tap_git_head": source.get("tap_git_head")}
 
 
 def bottle_source(registry, installed):
     formula, keg = installed["formula"], installed["keg"]
+    tags = bottle_tags(installed["arch"])
     api_url = "https://formulae.brew.sh/api/formula/" + urllib.parse.quote(formula) + ".json"
     api, api_hash = registry.document(api_url)
     require(api.get("full_name") == formula and api.get("tap") == "homebrew/core", "Formula API identity mismatch")
     current = api.get("versions", {}).get("stable") == installed["version"] and api.get("revision") == installed["revision"]
     if current:
         stable = api["bottle"]["stable"]
-        bottle = stable["files"][TAG]
+        files = stable["files"]
+        tag = next((candidate for candidate in tags if candidate in files), None)
+        require(tag is not None, "Missing compatible macOS bottle for " + formula + " (" + ", ".join(tags) + ")")
+        bottle = files[tag]
         commit = api.get("tap_git_head")
         require(isinstance(commit, str) and re.fullmatch(r"[a-f0-9]{40}", commit), "Missing pinned formula commit")
         source_url = "https://raw.githubusercontent.com/Homebrew/homebrew-core/" + commit + "/" + api["ruby_source_path"]
         return {"url": bottle["url"], "sha256": sha(bottle["sha256"]), "formula_source_url": source_url,
                 "formula_commit": commit, "metadata_url": api_url, "metadata_sha256": api_hash,
-                "resolution": "exact-formula-api", "bottle_rebuild": stable.get("rebuild", 0)}
+                "resolution": "exact-formula-api", "bottle_rebuild": stable.get("rebuild", 0),
+                "bottle_tag": tag}
 
     # API-installed receipts can omit tap_git_head. An exact official registry
     # version index carries the historical source commit and platform digest.
@@ -135,10 +164,20 @@ def bottle_source(registry, installed):
     require(source_url.startswith("https://github.com/homebrew/homebrew-core/blob/" + commit + "/Formula/"), "Unexpected historical formula source")
     if installed["receipt_tap_git_head"]:
         require(commit == installed["receipt_tap_git_head"], "Receipt/historical formula commit mismatch")
-    matches = [m for m in index.get("manifests", []) if m.get("annotations", {}).get("org.opencontainers.image.ref.name") == keg + "." + TAG]
-    require(len(matches) == 1, "Missing or ambiguous Sequoia bottle for " + formula)
-    match = matches[0]
-    require(match.get("platform", {}).get("os") == "darwin" and match["platform"].get("architecture") == "arm64", "Wrong bottle platform")
+    match = None
+    tag = None
+    for candidate in tags:
+        matches = [m for m in index.get("manifests", [])
+                   if m.get("annotations", {}).get("org.opencontainers.image.ref.name") == keg + "." + candidate]
+        require(len(matches) <= 1, "Ambiguous bottle for " + formula + " (" + candidate + ")")
+        if matches:
+            match = matches[0]
+            tag = candidate
+            break
+    require(match is not None, "Missing compatible macOS bottle for " + formula + " (" + ", ".join(tags) + ")")
+    require(match.get("platform", {}).get("os") == "darwin" and
+            match["platform"].get("architecture") == OCI_ARCH[installed["arch"]],
+            "Wrong bottle platform")
     checksum = sha(match["annotations"]["sh.brew.bottle.digest"])
     manifest_hash = sha(match["digest"].removeprefix("sha256:"))
     manifest_url = "https://ghcr.io/v2/homebrew/core/" + repo + "/manifests/sha256:" + manifest_hash
@@ -148,7 +187,8 @@ def bottle_source(registry, installed):
             "sha256": checksum, "formula_source_url": source_url, "formula_commit": commit,
             "metadata_url": "https://ghcr.io/v2/homebrew/core/" + repo + "/manifests/sha256:" + index_hash,
             "metadata_sha256": index_hash, "platform_manifest_url": manifest_url,
-            "resolution": "exact-historical-registry", "bottle_rebuild": 0}
+            "resolution": "exact-historical-registry", "bottle_rebuild": 0,
+            "bottle_tag": tag}
 
 
 def cached_bottle(registry, source, cache):
@@ -200,8 +240,9 @@ def extract_library(bottle, installed, name, destination):
     return member.name
 
 
-def macho(path):
-    require(run("/usr/bin/lipo", "-archs", str(path)).split() == ["arm64"], "Expected thin arm64 dylib: " + str(path))
+def macho(path, expected_arch):
+    require(run("/usr/bin/lipo", "-archs", str(path)).split() == [expected_arch],
+            "Expected thin " + expected_arch + " dylib: " + str(path))
     commands = run("/usr/bin/otool", "-l", str(path))
     versions = []
     for block in commands.split("Load command ")[1:]:
@@ -229,6 +270,9 @@ def stage(frameworks, cache, names):
     registry = Registry()
     sources, records, aliases = {}, {}, {}
     installed_by_name = {name: origin(name) for name in names}
+    architectures = {item["arch"] for item in installed_by_name.values()}
+    require(len(architectures) == 1, "Release libraries span multiple architectures")
+    target_arch = next(iter(architectures))
     canonical = {item["local_path"]: name for name, item in installed_by_name.items()}
     with tempfile.TemporaryDirectory(prefix=".release-libraries-", dir=frameworks.parent) as temporary:
         pending = list(names)
@@ -242,11 +286,11 @@ def stage(frameworks, cache, names):
             if key not in sources:
                 source = bottle_source(registry, installed)
                 sources[key] = source, cached_bottle(registry, source, cache)
-                print("Verified " + installed["formula"] + " " + installed["keg"] + " " + TAG, flush=True)
+                print("Verified " + installed["formula"] + " " + installed["keg"] + " " + source["bottle_tag"], flush=True)
             source, bottle = sources[key]
             path = staging / name
             member = extract_library(bottle, installed, name, path)
-            info = macho(path)
+            info = macho(path, target_arch)
             record = {**installed, "name": name, "bottle": source, "archive_member": member,
                       "extracted_sha256": digest(path), **info}
             records[name] = record
@@ -257,6 +301,8 @@ def stage(frameworks, cache, names):
                 require(dep_name.endswith(".dylib"), "Unexpected dependency: " + dependency)
                 if dep_name not in installed_by_name:
                     dep_origin = origin(dep_name)
+                    require(dep_origin["arch"] == target_arch,
+                            "Dependency architecture mismatch for " + dep_name)
                     known = canonical.get(dep_origin["local_path"])
                     if known:
                         aliases[dep_name] = known
@@ -280,13 +326,15 @@ def stage(frameworks, cache, names):
             for rpath in set(record["rpaths"]):
                 edits += ["-delete_rpath", rpath]
             run(*edits, str(path))
-            final = macho(path)
+            final = macho(path, target_arch)
             require(not final["rpaths"], "Unexpected remaining rpath")
             for dependency in final["dependencies"]:
                 require(dependency.startswith(SYSTEM) or (dependency.startswith("@loader_path/") and dependency.removeprefix("@loader_path/") in records), "Non-bundled dependency: " + dependency)
             record.update(final_dependencies=final["dependencies"], final_sha256=digest(path))
 
-        provenance = {"schema_version": 1, "bottle_tag": TAG, "maximum_macos": "15.0",
+        provenance = {"schema_version": 2, "architecture": target_arch,
+                      "bottle_tags": sorted({record["bottle"]["bottle_tag"] for record in records.values()}),
+                      "maximum_macos": "15.0",
                       "libraries": [records[name] for name in sorted(records)]}
         (staging / "release-libraries.json").write_text(json.dumps(provenance, indent=2) + "\n")
         # All verification precedes mutation of the caller's already-staged bundle.

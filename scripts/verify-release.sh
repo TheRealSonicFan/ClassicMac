@@ -34,13 +34,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for tool in cmp codesign file plutil shasum spctl strings xcrun; do
+for tool in cmp codesign file lipo plutil shasum spctl strings xcrun; do
   command -v "$tool" >/dev/null 2>&1 || die "Required tool not found: $tool"
 done
 [ -e "$TARGET" ] || die "Release target not found: $TARGET"
 
 APP="$TARGET"
 VERIFY_NOTARIZATION=0
+EXPECTED_ARCH="${CLASSICMAC_ARCH:-$(uname -m)}"
+case "$EXPECTED_ARCH" in
+  arm64|x86_64) ;;
+  *) die "Unsupported release architecture: $EXPECTED_ARCH" ;;
+esac
 case "$TARGET" in
   *.dmg)
     VERIFY_NOTARIZATION=1
@@ -66,6 +71,7 @@ case "$TARGET" in
 esac
 
 PLIST="$APP/Contents/Info.plist"
+MAIN_APP="$APP/Contents/MacOS/ClassicMac"
 PPC_HELPER="$APP/Contents/Helpers/Power Mac G4.app"
 PPC_QEMU="$PPC_HELPER/Contents/MacOS/qemu-system-ppc"
 QUADRA_HELPER="$APP/Contents/Helpers/Quadra 800.app"
@@ -81,7 +87,7 @@ BROWSER_SCALE="$APP/Contents/Resources/Browser/pixel-scale.js"
 BROWSER_LICENSE="$APP/Contents/Resources/Licenses/noVNC-MPL-2.0.txt"
 PAKO_LICENSE="$APP/Contents/Resources/Licenses/pako-MIT.txt"
 
-for required in "$COPLAND_HELPER/Contents/Info.plist" "$COPLAND_ENGINE" "$PLIST" "$PPC_HELPER/Contents/Info.plist" \
+for required in "$COPLAND_HELPER/Contents/Info.plist" "$COPLAND_ENGINE" "$PLIST" "$MAIN_APP" "$PPC_HELPER/Contents/Info.plist" \
   "$QUADRA_HELPER/Contents/Info.plist" "$PPC_QEMU" "$QUADRA_QEMU" \
   "$PPC_NDRV" "$TOOLS_CD" "$VNC_KEYMAP" "$BROWSER_INDEX" "$BROWSER_SCALE" \
   "$BROWSER_RFB" "$BROWSER_LICENSE" "$PAKO_LICENSE"; do
@@ -142,9 +148,14 @@ if [ "$VERIFY_NOTARIZATION" -eq 1 ]; then
   spctl --assess --type execute --verbose=2 "$APP"
 fi
 
+log "Verifying native macOS executable architecture ($EXPECTED_ARCH)"
+for native_executable in "$MAIN_APP" "$PPC_QEMU" "$QUADRA_QEMU" "$COPLAND_ENGINE"; do
+  ARCHS="$(lipo -archs "$native_executable")"
+  [ "$ARCHS" = "$EXPECTED_ARCH" ] || \
+    die "$(basename "$native_executable") architecture is '$ARCHS', expected '$EXPECTED_ARCH'"
+done
+
 log "Verifying the bundled GXMetal-capable Power Mac executable"
-file "$PPC_QEMU" | grep -q 'arm64' || die "Power Mac QEMU is not arm64"
-file "$QUADRA_QEMU" | grep -q 'arm64' || die "Quadra QEMU is not arm64"
 DEVICE_HELP="$("$PPC_QEMU" -device VGA,help 2>&1)"
 for property in gxmetal untracked-vram packed-lowbpp hardware-cursor host-resize; do
   printf '%s\n' "$DEVICE_HELP" | grep -q "$property" || \
@@ -181,17 +192,21 @@ if [[ "$VERSION" == 3.* ]]; then
       die "Bundled browser controls lack $action"
   done
   log "Checking every packaged runtime library supports macOS 15"
-  python3 - "$APP" <<'PY'
+  python3 - "$APP" "$EXPECTED_ARCH" <<'PY'
 from pathlib import Path
 import re
 import subprocess
 import sys
 app = Path(sys.argv[1])
+expected_arch = sys.argv[2]
 for helper in (app / "Contents/Helpers").glob("*.app"):
     frameworks = helper / "Contents/Frameworks"
     if not (helper / "Contents/Resources/release-libraries.json").is_file():
         sys.exit(f"Missing runtime library provenance: {helper.name}")
     for library in list(frameworks.glob("*.dylib")) + list((helper / "Contents/MacOS").iterdir()):
+        archs = subprocess.check_output(["lipo", "-archs", str(library)], text=True).split()
+        if archs != [expected_arch]:
+            sys.exit(f"Runtime library architecture mismatch: {library.name}: {archs}")
         info = subprocess.check_output(["otool", "-l", str(library)], text=True)
         minimums = re.findall(r"\bminos ([0-9.]+)", info)
         if not minimums or any(tuple(map(int, (v + ".0.0").split(".")[:3])) > (15, 0, 0) for v in minimums):
@@ -199,7 +214,7 @@ for helper in (app / "Contents/Helpers").glob("*.app"):
         deps = subprocess.check_output(["otool", "-L", str(library)], text=True)
         if "/opt/homebrew" in deps or "@@HOMEBREW" in deps or "/usr/local" in deps:
             sys.exit(f"Unbundled runtime dependency: {library.name}")
-print("All packaged runtime libraries target macOS 15 or earlier.")
+print(f"All packaged runtime libraries are {expected_arch} and target macOS 15 or earlier.")
 PY
 fi
 grep -q 'pseudoEncodingQEMUPointerTypeChange' "$BROWSER_RFB" || \

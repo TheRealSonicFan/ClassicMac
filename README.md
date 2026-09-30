@@ -5,13 +5,13 @@
 <h1 align="center">ClassicMac</h1>
 
 <p align="center">
-  <strong>The whole classic Mac OS era, running natively fast on Apple Silicon.</strong><br>
+  <strong>The whole classic Mac OS era, running natively on modern Macs.</strong><br>
   A self-contained macOS app that emulates a Motorola 68040 Quadra 800 and a PowerPC Power Mac G4<br>
   on a custom build of QEMU — no setup, no terminal, nothing to install inside the guest.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black" alt="Platform">
+  <img src="https://img.shields.io/badge/platform-macOS%20(arm64%20%2B%20x86__64)-black" alt="Platform">
   <img src="https://img.shields.io/badge/guests-System%207.1%20–%20Mac%20OS%209.2.2-blueviolet" alt="Guest OS range">
   <img src="https://img.shields.io/badge/QEMU-11.0.2%20(custom)-orange" alt="QEMU">
   <img src="https://img.shields.io/badge/UI-SwiftUI-blue" alt="SwiftUI">
@@ -72,7 +72,7 @@ Classic Mac OS setup flow.
 
 The iPad build uses UTM SE's App Store-compatible QEMU threaded-code
 interpreter because iPadOS cannot launch the macOS app's bundled emulator
-processes. That makes it slower than the Apple Silicon Mac build. This first
+processes. That makes it slower than the native Mac build. This first
 beta also uses upstream UTM display hardware, so ClassicMac's GXMetal renderer
 and custom `nubus-qfb` display device are not included yet. See
 [`ios/README.md`](ios/README.md) for the pinned build and TestFlight workflow.
@@ -81,7 +81,7 @@ and custom `nubus-qfb` display device are not included yet. See
 
 GXMetal is ClassicMac's experimental paravirtualized 3D stack for PowerPC Mac
 OS 9. It accelerates QuickDraw 3D RAVE and a growing ATI-era OpenGL/AGL
-compatibility path with the Apple Silicon Mac's GPU—without pretending to be a
+compatibility path with the Mac's Metal GPU—without pretending to be a
 specific period 3D card. The one-click guest installer and matching host
 renderer are bundled with ClassicMac; a standalone package is also available
 for custom [QEMU and UTM builds](#standalone-gxmetal-for-qemu-and-utm).
@@ -247,7 +247,7 @@ mounted **ClassicMac Tools** disk, then open **GXMetal**,
 
 New machines are created as `.classic` documents (default `~/Documents/ClassicMac/`). Double-click one in Finder to boot it.
 
-Requirements: an Apple Silicon Mac (M1 or later) running macOS 15 or newer.
+Requirements: an Apple Silicon or Intel Mac running macOS 15 or newer. Release builds are native per architecture (`arm64` or `x86_64`), not Rosetta-only.
 
 ## Display & sound notes
 
@@ -261,6 +261,10 @@ Requirements: an Apple Silicon Mac (M1 or later) running macOS 15 or newer.
 - On the Quadra, folder sharing arrives through the classicvirtio NuBus card firmware (new machines start from a pre-seeded PRAM so it boots reliably). On the Power Mac it arrives through `virtio-9p-pci` and the classicvirtio ndrvloader placed in guest RAM at boot; while booting from CD (e.g. an OS install) sharing is temporarily inactive.
 
 ## Building from source
+
+Build on the target Mac architecture. The same scripts produce a native
+`arm64` release on Apple Silicon or a native `x86_64` release on Intel,
+while keeping the macOS 15 deployment target. QEMU remains TCG-based on both.
 
 ```bash
 # 1. Build the emulator (clones mainline QEMU 11.0.2, applies the ClassicMac
@@ -358,4 +362,4 @@ ClassicMac/
 - **Mac OS 9 hard-disk startup** — hard-disk boots use a startup-only accounted instruction clock, zero-delay cached IDE completion, and PowerPC TCG fast paths so Mac OS 9's hardware and timebase polling does not sleep on the host. QEMU recognizes Finder's menu bar directly in guest VRAM—even headless and at arbitrary supported resolutions—then atomically returns the virtual clock and 25 MHz PowerPC timebase to real time before applications run. A 15-second app fallback covers unusual themes; installer-CD boots retain normal timing and the 1 ms IDE race safeguard. Six 512 MB cold boots of the 1920×1080 OS 9.2.2 test machine reached the automatic handoff in 9.92–10.22 seconds, including a reboot after verified clean shutdown, versus roughly 18.5 seconds on the former real-time-only path; exact results vary with host load and guest configuration.
 - **Power Mac Mac OS 8 startup** — the machine uses a CUDA/G3 profile with an original-iMac OpenBIOS identity and classic Mac NVRAM/RTAS services. During CD startup, a read-only Virtio mirror lets the Mac OS 8.5/8.6 ROM read the selected disc before its IDE driver is active; the ordinary IDE CD stays present for Installer and Finder.
 - **Quadra floppy storage** — a removable `virtio-blk-device` rides on the existing classicvirtio NuBus transport. A small extension to the 68k block driver adds writes, flushes, media-change events, and a host/guest eject handshake so Finder owns the unmount before QEMU removes the raw image.
-- **Emulation speed** — both machines run on QEMU's TCG JIT; an Apple Silicon Mac runs them comfortably faster than the original hardware.
+- **Emulation speed** — both machines run on QEMU's TCG JIT. Performance varies by host CPU; release builds run natively on both Apple Silicon and Intel Macs.
