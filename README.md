@@ -262,6 +262,10 @@ Requirements: an Apple Silicon or Intel Mac running macOS 15 or newer. Release b
 
 ## Building from source
 
+Build on the target Mac architecture. The same scripts produce a native
+`arm64` release on Apple Silicon or a native `x86_64` release on Intel,
+while keeping the macOS 15 deployment target. QEMU remains TCG-based on both.
+
 ```bash
 # 1. Build the emulator (clones mainline QEMU 11.0.2, applies the ClassicMac
 #    patch set, compiles qemu-system-m68k + qemu-system-ppc)
