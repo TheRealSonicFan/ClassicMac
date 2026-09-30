@@ -98,7 +98,7 @@ class ReleaseLibraryTests(unittest.TestCase):
                     return {"full_name": "demo", "tap": "homebrew/core", "versions": {"stable": "2.0"}, "revision": 0}, "0" * 64
                 return {"annotations": {"com.github.package.type": "homebrew_bottle", "org.opencontainers.image.title": "demo", "org.opencontainers.image.version": "2.0", "org.opencontainers.image.ref.name": "2.0"}}, "0" * 64
         with self.assertRaisesRegex(ValueError, "formula/version/revision mismatch"):
-            lib.bottle_source(Registry(), {"formula": "demo", "keg": "1.0", "version": "1.0", "revision": 0})
+            lib.bottle_source(Registry(), {"formula": "demo", "keg": "1.0", "version": "1.0", "revision": 0, "arch": "arm64"})
 
     def test_newer_macos_binary_is_rejected(self):
         def output(*args):
