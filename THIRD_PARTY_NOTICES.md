@@ -49,8 +49,11 @@ linked libraries:
 - PCRE2 — BSD-3-Clause
 
 Their license texts are copied from the exact Homebrew installations used to
-produce the release. Source code is available from each project's upstream
-site and through Homebrew's corresponding formula source archives.
+produce the release when the formula installs them. For standardized licenses
+that a formula omits from its keg (currently libusb's LGPL-2.1 text), the
+bundle uses the same canonical license text already carried by another bundled
+upstream component. Source code is available from each project's upstream site
+and through Homebrew's corresponding formula source archives.
 
 ## noVNC
 
