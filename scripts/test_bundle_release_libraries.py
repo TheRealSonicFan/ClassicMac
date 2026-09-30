@@ -112,6 +112,25 @@ class ReleaseLibraryTests(unittest.TestCase):
         })
         self.assertEqual(source["bottle_tag"], "sonoma")
 
+    def test_current_intel_formula_without_bottle_uses_local_build(self):
+        class Registry:
+            def document(self, url, expected=None):
+                return {
+                    "full_name": "demo",
+                    "tap": "homebrew/core",
+                    "versions": {"stable": "1.0"},
+                    "revision": 0,
+                    "tap_git_head": "a" * 40,
+                    "ruby_source_path": "Formula/d/demo.rb",
+                    "bottle": {"stable": {"files": {}}},
+                }, "c" * 64
+        source = lib.release_source(Registry(), {
+            "formula": "demo", "keg": "1.0", "version": "1.0",
+            "revision": 0, "arch": "x86_64"
+        })
+        self.assertEqual(source["resolution"], "verified-local-homebrew-build")
+        self.assertIsNone(source["bottle_tag"])
+
     def test_historical_registry_cannot_upgrade_version(self):
         class Registry:
             def document(self, url, expected=None):
@@ -137,8 +156,8 @@ class ReleaseLibraryTests(unittest.TestCase):
             original.write_bytes(b"original")
             installed = {"formula": "demo", "keg": "1.0", "arch": "arm64",
                          "homebrew_prefix": "/brew", "local_path": "/brew/libdemo.dylib"}
-            with patch.object(lib, "origin", return_value=installed), patch.object(lib, "bottle_source", side_effect=ValueError("no exact bottle")):
-                with self.assertRaisesRegex(ValueError, "no exact bottle"):
+            with patch.object(lib, "origin", return_value=installed), patch.object(lib, "release_source", side_effect=ValueError("no exact source")):
+                with self.assertRaisesRegex(ValueError, "no exact source"):
                     lib.stage(frameworks, Path(folder) / "cache", None)
             self.assertEqual(original.read_bytes(), b"original")
             self.assertEqual([p.name for p in Path(folder).iterdir()], ["Frameworks"])
