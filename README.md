@@ -184,6 +184,7 @@ ClassicMac exists because of years of brilliant work by other engineers. The pat
 - [mcayland/qemu](https://github.com/mcayland/qemu/tree/screamer) for the screamer (AWACS) PPC audio device and screamer-aware OpenBIOS (ported here onto QEMU 11.0.2).
 - [Retro68](https://github.com/autc04/Retro68) for the 68k and PPC classic Mac OS cross toolchain.
 - [noVNC](https://github.com/novnc/noVNC) for the browser-native VNC client used by the private local display page.
+- [amcchord/ClassicMac](https://github.com/amcchord/ClassicMac) for source of ClassicMac.
 
 ## Features
 
@@ -223,7 +224,7 @@ ClassicMac exists because of years of brilliant work by other engineers. The pat
 
 ## Getting started
 
-1. On an **Intel Mac**, grab **ClassicMac.dmg** from the [latest release](../../releases/latest), drag ClassicMac to Applications, and launch it. The 3.2.1 binary release is `x86_64` only; Apple Silicon users should build the native `arm64` app from source until an arm64 release artifact is published.
+1. On an **Intel Mac**, grab **ClassicMac.dmg** from the [latest release](../../releases/latest), drag ClassicMac to Applications, and launch it. The 3.2.1 binary release is `x86_64` only; Apple Silicon users should either refer to the upstream of this repository for the respective binary release ([amcchord/ClassicMac](https://github.com/amcchord/ClassicMac)) or build the native `arm64` app from source.
 2. Choose **File → New Machine** (⌘N) and continue with the recommended
    **Download a Mac** option. Name your Mac, choose its location, and
    download it. The image is hosted on mcchord.net and contains Mac OS 9.2.1
@@ -433,4 +434,4 @@ ClassicMac/
 - **Mac OS 9 hard-disk startup** — hard-disk boots use a startup-only accounted instruction clock, zero-delay cached IDE completion, and PowerPC TCG fast paths so Mac OS 9's hardware and timebase polling does not sleep on the host. QEMU recognizes Finder's menu bar directly in guest VRAM—even headless and at arbitrary supported resolutions—then atomically returns the virtual clock and 25 MHz PowerPC timebase to real time before applications run. A 15-second app fallback covers unusual themes; installer-CD boots retain normal timing and the 1 ms IDE race safeguard. Six 512 MB cold boots of the 1920×1080 OS 9.2.2 test machine reached the automatic handoff in 9.92–10.22 seconds, including a reboot after verified clean shutdown, versus roughly 18.5 seconds on the former real-time-only path; exact results vary with host load and guest configuration.
 - **Power Mac Mac OS 8 startup** — the machine uses a CUDA/G3 profile with an original-iMac OpenBIOS identity and classic Mac NVRAM/RTAS services. During CD startup, a read-only Virtio mirror lets the Mac OS 8.5/8.6 ROM read the selected disc before its IDE driver is active; the ordinary IDE CD stays present for Installer and Finder.
 - **Quadra floppy storage** — a removable `virtio-blk-device` rides on the existing classicvirtio NuBus transport. A small extension to the 68k block driver adds writes, flushes, media-change events, and a host/guest eject handshake so Finder owns the unmount before QEMU removes the raw image.
-- **Emulation speed** — both machines run on QEMU's TCG JIT. Performance varies by host CPU; release builds run natively on both Apple Silicon and Intel Macs.
+- **Emulation speed** — both machines run on QEMU's TCG JIT. Performance varies by host CPU; release builds run natively on Intel Mac.
