@@ -30,12 +30,12 @@ die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 command -v brew >/dev/null 2>&1 || die "Homebrew is required. Install it from https://brew.sh"
 BREW_PREFIX="$(brew --prefix)"
 
-# Retro68's host utilities use CMake CONFIG packages for Boost. Keep CMake and
-# package discovery anchored to the same Homebrew prefix so an activated Conda,
-# MacPorts, or stale shell package path cannot mix Boost headers from one
-# installation with libboost_* from another. Boost 1.92 moved a ProgramOptions
-# data symbol into a detail namespace, so such a mix fails at link time with an
-# otherwise misleading x86_64/arm64 undefined-symbol error.
+# Retro68's host utilities need two dependency roots: its own install prefix
+# for the bundled hfsutils development library, and Homebrew for Boost and the
+# remaining host packages. Keep Boost anchored to Homebrew so an activated
+# Conda/MacPorts environment cannot mix header/library versions, while keeping
+# Retro68's own prefix first for libhfs. Boost 1.92 moved a ProgramOptions data
+# symbol into a detail namespace, making a mixed Boost install fail at link time.
 export PATH="$BREW_PREFIX/bin:$BREW_PREFIX/sbin:$PATH"
 # Prefer Retro68's own install prefix for libraries such as libhfs, then
 # fall back to Homebrew for Boost and other host dependencies. This matters on
