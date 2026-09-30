@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# build-qemu.sh - Build qemu-system-m68k (+ qemu-img) for Apple Silicon with both
+# build-qemu.sh - Build native qemu-system-m68k (+ qemu-img) for macOS with both
 # the enhanced nubus-qfb paravirtualized framebuffer (arbitrary resolutions +
 # Thousands colour) and the nubus-virtio-mmio transport used for host folder
 # sharing.
