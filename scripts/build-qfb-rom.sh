@@ -37,7 +37,13 @@ BREW_PREFIX="$(brew --prefix)"
 # data symbol into a detail namespace, so such a mix fails at link time with an
 # otherwise misleading x86_64/arm64 undefined-symbol error.
 export PATH="$BREW_PREFIX/bin:$BREW_PREFIX/sbin:$PATH"
-export CMAKE_PREFIX_PATH="$BREW_PREFIX"
+# Prefer Retro68's own install prefix for libraries such as libhfs, then
+# fall back to Homebrew for Boost and other host dependencies. This matters on
+# Intel Homebrew where /usr/local/lib may also contain an older libhfs that
+# lacks symbols required by Retro68's LaunchAPPL host utility.
+export CMAKE_PREFIX_PATH="$RETRO68_TOOLCHAIN:$BREW_PREFIX"
+export CMAKE_LIBRARY_PATH="$RETRO68_TOOLCHAIN/lib"
+export CMAKE_INCLUDE_PATH="$RETRO68_TOOLCHAIN/include"
 export Boost_ROOT="$BREW_PREFIX"
 export BOOST_ROOT="$BREW_PREFIX"
 unset Boost_DIR BOOST_DIR
