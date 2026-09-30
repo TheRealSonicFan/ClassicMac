@@ -71,6 +71,26 @@ class ReleaseLibraryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Receipt/version mismatch"):
                 lib.origin("libdemo.dylib")
 
+    def test_accepts_intel_homebrew_receipt(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(lib, "PREFIX", Path(folder)):
+            prefix = Path(folder)
+            keg = prefix / "Cellar/demo/1.0"
+            (keg / "lib").mkdir(parents=True)
+            (keg / "lib/libdemo.dylib").write_bytes(b"dylib")
+            (prefix / "lib").mkdir()
+            (prefix / "lib/libdemo.dylib").symlink_to(keg / "lib/libdemo.dylib")
+            (keg / "INSTALL_RECEIPT.json").write_text(json.dumps({
+                "arch": "x86_64",
+                "source": {"tap": "homebrew/core", "spec": "stable",
+                           "versions": {"stable": "1.0"}}
+            }))
+            installed = lib.origin("libdemo.dylib")
+            self.assertEqual(installed["arch"], "x86_64")
+            self.assertEqual(installed["homebrew_prefix"], str(prefix))
+
+    def test_intel_bottle_tags_prefer_sequoia_then_sonoma(self):
+        self.assertEqual(lib.bottle_tags("x86_64"), ("sequoia", "sonoma"))
+
     def test_historical_registry_cannot_upgrade_version(self):
         class Registry:
             def document(self, url, expected=None):
@@ -86,7 +106,7 @@ class ReleaseLibraryTests(unittest.TestCase):
                 return "arm64\n"
             return "Load command 0\n cmd LC_BUILD_VERSION\n platform MACOS\n minos 26.0\n"
         with patch.object(lib, "run", side_effect=output), self.assertRaisesRegex(ValueError, "newer than macOS 15"):
-            lib.macho(Path("unused"))
+            lib.macho(Path("unused"), "arm64")
 
     def test_stage_verification_failure_keeps_original_files(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -94,7 +114,8 @@ class ReleaseLibraryTests(unittest.TestCase):
             frameworks.mkdir()
             original = frameworks / "libdemo.dylib"
             original.write_bytes(b"original")
-            installed = {"formula": "demo", "keg": "1.0", "local_path": "/brew/libdemo.dylib"}
+            installed = {"formula": "demo", "keg": "1.0", "arch": "arm64",
+                         "homebrew_prefix": "/brew", "local_path": "/brew/libdemo.dylib"}
             with patch.object(lib, "origin", return_value=installed), patch.object(lib, "bottle_source", side_effect=ValueError("no exact bottle")):
                 with self.assertRaisesRegex(ValueError, "no exact bottle"):
                     lib.stage(frameworks, Path(folder) / "cache", None)
