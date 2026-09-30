@@ -260,10 +260,17 @@ cp "$BROWSER_SRC/novnc/vendor/pako/LICENSE" "$LICENSES_DIR/pako-MIT.txt"
 
 copy_brew_license() {
   local formula="$1" source_name="$2" destination_name="$3"
+  local fallback_path="${4:-}"
   local source_path
   source_path="$(brew --prefix "$formula")/$source_name"
-  [ -f "$source_path" ] || die "$formula license not found at $source_path"
-  cp "$source_path" "$LICENSES_DIR/$destination_name"
+  if [ -f "$source_path" ]; then
+    cp "$source_path" "$LICENSES_DIR/$destination_name"
+  elif [ -n "$fallback_path" ] && [ -f "$fallback_path" ]; then
+    log "$formula does not install $source_name; using bundled canonical license text"
+    cp "$fallback_path" "$LICENSES_DIR/$destination_name"
+  else
+    die "$formula license not found at $source_path"
+  fi
 }
 
 copy_brew_license pixman COPYING pixman.txt
@@ -271,7 +278,10 @@ copy_brew_license libpng LICENSE libpng.txt
 copy_brew_license zstd LICENSE zstd.txt
 copy_brew_license libslirp LICENSE libslirp.txt
 copy_brew_license libslirp COPYRIGHT libslirp-COPYRIGHT.txt
-copy_brew_license libusb COPYING libusb.txt
+# Homebrew's libusb formula declares LGPL-2.1-or-later but its keg does not
+# install the upstream COPYING file. QEMU's bundled COPYING.LIB is the same
+# canonical LGPL 2.1 license text, so use it only when the keg omits COPYING.
+copy_brew_license libusb COPYING libusb.txt "$ROOT_DIR/vendor/qemu/COPYING.LIB"
 copy_brew_license gettext COPYING gettext.txt
 copy_brew_license pcre2 COPYING pcre2.txt
 
