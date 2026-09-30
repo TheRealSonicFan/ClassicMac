@@ -30,6 +30,18 @@ die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 command -v brew >/dev/null 2>&1 || die "Homebrew is required. Install it from https://brew.sh"
 BREW_PREFIX="$(brew --prefix)"
 
+# Retro68's host utilities use CMake CONFIG packages for Boost. Keep CMake and
+# package discovery anchored to the same Homebrew prefix so an activated Conda,
+# MacPorts, or stale shell package path cannot mix Boost headers from one
+# installation with libboost_* from another. Boost 1.92 moved a ProgramOptions
+# data symbol into a detail namespace, so such a mix fails at link time with an
+# otherwise misleading x86_64/arm64 undefined-symbol error.
+export PATH="$BREW_PREFIX/bin:$BREW_PREFIX/sbin:$PATH"
+export CMAKE_PREFIX_PATH="$BREW_PREFIX"
+export Boost_ROOT="$BREW_PREFIX"
+export BOOST_ROOT="$BREW_PREFIX"
+unset Boost_DIR BOOST_DIR
+
 # lua is needed by the driver makefile to stamp the ROM checksum; the rest are
 # Retro68's build prerequisites.
 DEPS=(cmake gmp mpfr libmpc boost bison texinfo lua)
@@ -50,31 +62,63 @@ fi
 export PATH="$BREW_PREFIX/opt/bison/bin:$PATH"
 
 # ---------------------------------------------------------------------------
-# 2. Retro68 cross toolchain (m68k-apple-macos)
+# 2. Retro68 cross toolchain (m68k-apple-macos) + host utilities
 # ---------------------------------------------------------------------------
-if [ -x "$RETRO68_TOOLCHAIN/bin/m68k-apple-macos-gcc" ]; then
-  log "Retro68 toolchain already present at $RETRO68_TOOLCHAIN"
+mkdir -p "$VENDOR_DIR"
+if [ -d "$RETRO68_SRC/.git" ]; then
+  log "Retro68 source already cloned; ensuring submodules are present"
+  git -C "$RETRO68_SRC" submodule update --init --recursive
 else
-  mkdir -p "$VENDOR_DIR"
-  if [ -d "$RETRO68_SRC/.git" ]; then
-    log "Retro68 source already cloned; ensuring submodules are present"
-    git -C "$RETRO68_SRC" submodule update --init --recursive
-  else
-    log "Cloning Retro68 (large: pulls gcc + binutils submodules)"
-    git clone "$RETRO68_REPO" "$RETRO68_SRC"
-    git -C "$RETRO68_SRC" submodule update --init --recursive
+  log "Cloning Retro68 (large: pulls gcc + binutils submodules)"
+  git clone "$RETRO68_REPO" "$RETRO68_SRC"
+  git -C "$RETRO68_SRC" submodule update --init --recursive
+fi
+
+RETRO68_COMPILER="$RETRO68_TOOLCHAIN/bin/m68k-apple-macos-gcc"
+RETRO68_HOST_TOOLS=(MakePEF Rez hformat)
+HOST_TOOLS_READY=1
+for tool in "${RETRO68_HOST_TOOLS[@]}"; do
+  if [ ! -x "$RETRO68_TOOLCHAIN/bin/$tool" ]; then
+    HOST_TOOLS_READY=0
+    break
   fi
-  log "Building Retro68 toolchain (68k only; this can take a long time)"
+done
+
+if [ -x "$RETRO68_COMPILER" ] && [ "$HOST_TOOLS_READY" -eq 1 ]; then
+  log "Retro68 toolchain and host utilities already present at $RETRO68_TOOLCHAIN"
+else
   mkdir -p "$RETRO68_BUILD"
+
+  if [ -x "$RETRO68_COMPILER" ]; then
+    # A previous build can finish binutils/GCC and then fail while linking a
+    # host utility (for example after a Boost upgrade). The old script treated
+    # the compiler alone as proof that the whole toolchain was complete, making
+    # that partial state unrecoverable. Reconfigure the host layer from a clean
+    # CMake cache while reusing the expensive cross compiler build.
+    log "Retro68 compiler is present but host utilities are incomplete; rebuilding host tools"
+    rm -rf "$RETRO68_BUILD/build-host" "$RETRO68_BUILD/build-target"
+    RETRO68_BUILD_ARGS=(--skip-thirdparty --no-ppc --no-carbon)
+  else
+    log "Building Retro68 toolchain (68k only; this can take a long time)"
+    # Avoid carrying a stale host-package cache into a fresh toolchain build.
+    rm -rf "$RETRO68_BUILD/build-host" "$RETRO68_BUILD/build-target"
+    RETRO68_BUILD_ARGS=(--no-ppc --no-carbon)
+  fi
+
   (
     cd "$RETRO68_BUILD"
-    # Only the classic 68k Mac toolchain is needed for this driver.
-    "$RETRO68_SRC/build-toolchain.bash" --no-ppc --no-carbon
+    "$RETRO68_SRC/build-toolchain.bash" "${RETRO68_BUILD_ARGS[@]}" \
+      --host-c-compiler=/usr/bin/clang \
+      --host-cxx-compiler=/usr/bin/clang++
   )
 fi
 
-[ -x "$RETRO68_TOOLCHAIN/bin/m68k-apple-macos-gcc" ] || \
+[ -x "$RETRO68_COMPILER" ] || \
   die "Retro68 toolchain build did not produce m68k-apple-macos-gcc"
+for tool in "${RETRO68_HOST_TOOLS[@]}"; do
+  [ -x "$RETRO68_TOOLCHAIN/bin/$tool" ] || \
+    die "Retro68 host tool '$tool' was not produced"
+done
 
 export PATH="$RETRO68_TOOLCHAIN/bin:$PATH"
 
