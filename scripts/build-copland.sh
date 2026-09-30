@@ -62,4 +62,11 @@ cmake --build "$ENGINE/build" -j "$(sysctl -n hw.ncpu)"
 "${CXX:-c++}" -std=c++17 -I"$ENGINE" "$ROOT_DIR/copland/test_serial.cpp" -o "$ENGINE/build/test-copland-serial"
 "$ENGINE/build/test-copland-serial"
 "${CXX:-c++}" -std=c++17 "$ROOT_DIR/copland/test_clock.cpp" -o "$ENGINE/build/test-copland-clock"
-"$ENGINE/build/test-copland-clock"
+# test_clock intentionally exercises an unwritable RTC path before creating its
+# missing parent and verifying recovery. Capture that expected production
+# warning on success, but print all captured diagnostics if the test fails.
+if ! CLOCK_TEST_OUTPUT="$("$ENGINE/build/test-copland-clock" 2>&1)"; then
+    printf '%s\n' "$CLOCK_TEST_OUTPUT" >&2
+    exit 1
+fi
+printf 'Copland RTC persistence tests passed\n'
