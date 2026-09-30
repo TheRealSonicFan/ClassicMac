@@ -158,19 +158,32 @@ fi
 # ---------------------------------------------------------------------------
 # 6. Retro68 PPC target runtime (libretrocrt, needed by the gcc driver link)
 # ---------------------------------------------------------------------------
-if [ -f "$RETRO68_TOOLCHAIN/powerpc-apple-macos/lib/libretrocrt.a" ]; then
+PPC_RUNTIME="$RETRO68_TOOLCHAIN/powerpc-apple-macos/lib/libretrocrt.a"
+if [ -f "$PPC_RUNTIME" ]; then
   log "PPC target runtime already present"
 else
   log "Building Retro68 PPC target runtime"
-  mkdir -p "$RETRO68_BUILD/build-target-ppc"
+  PPC_BUILD="$RETRO68_BUILD/build-target-ppc"
+  mkdir -p "$PPC_BUILD"
   (
-    cd "$RETRO68_BUILD/build-target-ppc"
+    cd "$PPC_BUILD"
     cmake "$RETRO68_SRC" \
       -DCMAKE_TOOLCHAIN_FILE=../build-host/cmake/intreeppc.toolchain.cmake \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY
   )
-  cmake --build "$RETRO68_BUILD/build-target-ppc" --target install
+
+  # ClassicMac only needs libretrocrt for the NDRV/GXMetal links. Building the
+  # generic CMake "install" target first builds every Retro68 PPC sample and
+  # support application, including LaunchAPPLServer. That unrelated application
+  # can exercise an upstream XCOFF linker crash on Intel hosts even though the
+  # runtime archive required by ClassicMac is valid. Build only retrocrt and
+  # install that archive into the target prefix.
+  cmake --build "$PPC_BUILD" --target retrocrt
+  BUILT_RUNTIME="$PPC_BUILD/libretro/libretrocrt.a"
+  [ -f "$BUILT_RUNTIME" ] || die "Retro68 PPC runtime build did not produce libretrocrt.a"
+  mkdir -p "$(dirname "$PPC_RUNTIME")"
+  cp "$BUILT_RUNTIME" "$PPC_RUNTIME"
 fi
 
 # ---------------------------------------------------------------------------
