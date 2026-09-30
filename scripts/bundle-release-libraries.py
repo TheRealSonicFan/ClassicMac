@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Stage exact-version official Homebrew dylibs compatible with macOS 15.
+"""Stage official Homebrew dylibs compatible with macOS 15.
 
-The release build is host-native: arm64 uses arm64_sequoia bottles, while
-x86_64 prefers sequoia and falls back to the Sonoma bottles Homebrew reuses on
-newer Intel macOS releases.
+The release build is host-native. Prefer exact-version official bottles when
+Homebrew publishes a compatible macOS 15-era bottle. When current Intel
+formulae no longer publish Intel bottles, use the installed official Homebrew
+source build only after independently verifying its architecture and Mach-O
+minimum OS version.
 
-Run after dylibbundler and before signing. Only selected regular dylib members
-are extracted; Homebrew itself is never changed. The cache is content addressed.
---library supports preparing an empty Frameworks directory for verification.
+Run after dylibbundler and before signing. Homebrew itself is never changed.
+Bottle downloads are content addressed. --library supports preparing an empty
+Frameworks directory for verification.
 """
 from __future__ import annotations
 
