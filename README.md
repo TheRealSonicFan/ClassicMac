@@ -249,6 +249,43 @@ New machines are created as `.classic` documents (default `~/Documents/ClassicMa
 
 Requirements: an Apple Silicon or Intel Mac running macOS 15 or newer. Release builds are native per architecture (`arm64` or `x86_64`), not Rosetta-only.
 
+### Ad-hoc/community builds
+
+A Developer ID certificate is not required to build and package ClassicMac for
+local testing or community distribution. To force ad-hoc signing for both the
+app and DMG:
+
+```bash
+SIGN_IDENTITY=- ./scripts/bundle-qemu.sh
+SIGN_IDENTITY=- ./scripts/make-dmg.sh
+```
+
+The resulting `dist/ClassicMac.dmg` is code-signed but **not notarized or
+Gatekeeper-trusted**. Ad-hoc signing establishes local code integrity; it does
+not establish a developer identity.
+
+If you downloaded an ad-hoc ClassicMac DMG from a source you trust, first drag
+`ClassicMac.app` to Applications, then remove downloaded-file metadata and
+apply a fresh local ad-hoc signature:
+
+```bash
+APP="/Applications/ClassicMac.app"
+
+xattr -cr "$APP"
+codesign --force --deep --sign - \
+  --preserve-metadata=entitlements,requirements,flags,runtime \
+  "$APP"
+
+codesign --verify --deep --strict --verbose=2 "$APP"
+open "$APP"
+```
+
+The metadata-preserving re-sign is important because the nested QEMU helper
+apps carry JIT entitlements required by TCG. Clearing quarantine/xattrs bypasses
+normal Gatekeeper provenance checks, so only use these commands for a build you
+compiled yourself or obtained from a source you independently trust. Official
+Developer ID releases should use the normal notarized flow instead.
+
 ## Display & sound notes
 
 - The resolution you pick is the *boot* resolution and the depth is the *deepest available* mode; classic Mac OS chooses the active depth at startup (a fresh system comes up in B&W until you pick Thousands/Millions once in Monitors — it's remembered per machine).
@@ -281,14 +318,19 @@ while keeping the macOS 15 deployment target. QEMU remains TCG-based on both.
 ./scripts/build-os9-921-installer-cd.sh /path/to/macos_921_ppc.iso
 
 # 3. Build the SwiftUI app and bundle QEMU + firmware + dylibs into
-#    dist/ClassicMac.app (code-signed)
+#    dist/ClassicMac.app. With no Developer ID certificate, bundle-qemu.sh
+#    falls back to an ad-hoc app signature.
 ./scripts/bundle-qemu.sh
 
-# 4. Notarize and package a distributable disk image
+# 4a. Developer ID release: notarize, staple, and package the DMG.
 ./scripts/make-dmg.sh
 
-# 5. Verify the exact signed/stapled artifact, including versions, Gatekeeper,
-#    the bundled Tools CD, and the GXMetal-enabled Power Mac executable
+# 4b. Or, without an Apple Developer certificate, make an explicitly ad-hoc
+#     signed DMG. This skips notarization/stapling and Gatekeeper trust checks.
+SIGN_IDENTITY=- ./scripts/make-dmg.sh
+
+# 5. Developer ID releases can be verified end-to-end, including Gatekeeper,
+#    notarization tickets, the Tools CD, and the GXMetal-enabled Power Mac.
 ./scripts/verify-release.sh dist/ClassicMac.dmg 3.2.0 3.2.0
 ```
 
