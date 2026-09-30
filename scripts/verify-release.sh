@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 #
-# verify-release.sh - Verify the exact ClassicMac application or notarized DMG
-# that will be handed to a tester.  A DMG check mounts the image read-only and
-# validates both the image and the application inside it.
+# verify-release.sh - Verify the exact ClassicMac application or DMG that will
+# be handed to a tester. Developer ID releases validate notarization/Gatekeeper;
+# SIGN_IDENTITY=- explicitly selects verification of an ad-hoc, non-notarized
+# artifact while retaining structural, signature, architecture, entitlement,
+# runtime-library, and feature checks.
 #
 # Usage:
 #   scripts/verify-release.sh [app-or-dmg] [short-version] [build-version]
 #
 # Examples:
-#   scripts/verify-release.sh dist/ClassicMac.app 2.3.2 2.3.2
-#   scripts/verify-release.sh dist/ClassicMac.dmg 2.3.2 2.3.2
+#   scripts/verify-release.sh dist/ClassicMac.app 3.2.1 3.2.1
+#   scripts/verify-release.sh dist/ClassicMac.dmg 3.2.1 3.2.1
+#   SIGN_IDENTITY=- scripts/verify-release.sh dist/ClassicMac.dmg 3.2.1 3.2.1
 
 set -euo pipefail
 
@@ -18,6 +21,10 @@ TARGET="${1:-$ROOT_DIR/dist/ClassicMac.dmg}"
 EXPECTED_VERSION="${2:-${APP_VERSION:-}}"
 EXPECTED_BUILD="${3:-${APP_BUILD_VERSION:-}}"
 SKIP_REPO_FRESHNESS="${VERIFY_RELEASE_SKIP_REPO_FRESHNESS:-0}"
+VERIFY_ADHOC=0
+if [ "${SIGN_IDENTITY:-}" = "-" ]; then
+  VERIFY_ADHOC=1
+fi
 MOUNT_ROOT=""
 ATTACH_DEVICE=""
 
@@ -34,7 +41,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for tool in cmp codesign file lipo plutil shasum spctl strings xcrun; do
+for tool in cmp codesign file hdiutil lipo plutil shasum spctl strings xcrun; do
   command -v "$tool" >/dev/null 2>&1 || die "Required tool not found: $tool"
 done
 [ -e "$TARGET" ] || die "Release target not found: $TARGET"
@@ -48,11 +55,19 @@ case "$EXPECTED_ARCH" in
 esac
 case "$TARGET" in
   *.dmg)
-    VERIFY_NOTARIZATION=1
-    log "Validating the DMG notarization ticket and Gatekeeper policy"
-    xcrun stapler validate "$TARGET"
-    spctl --assess --type open --context context:primary-signature \
-      --verbose=2 "$TARGET"
+    log "Verifying DMG structure and code signature"
+    hdiutil verify "$TARGET" >/dev/null || die "Disk image verification failed."
+    codesign --verify --verbose=2 "$TARGET" || die "DMG code signature verification failed."
+
+    if [ "$VERIFY_ADHOC" -eq 1 ]; then
+      log "Ad-hoc release mode: skipping notarization and Gatekeeper trust checks"
+    else
+      VERIFY_NOTARIZATION=1
+      log "Validating the DMG notarization ticket and Gatekeeper policy"
+      xcrun stapler validate "$TARGET"
+      spctl --assess --type open --context context:primary-signature \
+        --verbose=2 "$TARGET"
+    fi
 
     MOUNT_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/classicmac-release.XXXXXX")"
     ATTACH_OUTPUT="$(diskutil image attach --readOnly --nobrowse \
@@ -129,17 +144,36 @@ HELPER_BUILD="$(plutil -extract CFBundleVersion raw \
 [ "$HELPER_BUILD" = "$BUILD" ] || \
   die "Power Mac helper build $HELPER_BUILD does not match app build $BUILD"
 
-log "Verifying Developer ID signatures and hardened runtime"
+if [ "$VERIFY_ADHOC" -eq 1 ]; then
+  log "Verifying ad-hoc signatures and hardened runtime"
+else
+  log "Verifying Developer ID signatures and hardened runtime"
+fi
 codesign --verify --deep --strict --verbose=2 "$APP"
-for signed_item in "$APP" "$PPC_HELPER"; do
+for signed_item in "$APP" "$PPC_HELPER" "$QUADRA_HELPER"; do
   SIGNING_INFO="$(codesign -dvvv "$signed_item" 2>&1)"
-  printf '%s\n' "$SIGNING_INFO" | grep -q \
-    '^Authority=Developer ID Application:' || \
-    die "Developer ID Application signature missing from $signed_item"
-  printf '%s\n' "$SIGNING_INFO" | grep -q '^TeamIdentifier=' || \
-    die "Signing team identifier missing from $signed_item"
+  if [ "$VERIFY_ADHOC" -eq 1 ]; then
+    printf '%s\n' "$SIGNING_INFO" | grep -q '^Signature=adhoc' || \
+      die "Ad-hoc signature missing from $signed_item"
+  else
+    printf '%s\n' "$SIGNING_INFO" | grep -q \
+      '^Authority=Developer ID Application:' || \
+      die "Developer ID Application signature missing from $signed_item"
+    printf '%s\n' "$SIGNING_INFO" | grep -q '^TeamIdentifier=' || \
+      die "Signing team identifier missing from $signed_item"
+  fi
   printf '%s\n' "$SIGNING_INFO" | grep -q 'flags=.*runtime' || \
     die "Hardened runtime is missing from $signed_item"
+done
+
+for qemu_helper in "$PPC_HELPER" "$QUADRA_HELPER"; do
+  ENTITLEMENTS_INFO="$(codesign -d --entitlements :- "$qemu_helper" 2>/dev/null || true)"
+  for entitlement in com.apple.security.cs.allow-jit \
+                     com.apple.security.cs.allow-unsigned-executable-memory \
+                     com.apple.security.cs.disable-library-validation; do
+    printf '%s\n' "$ENTITLEMENTS_INFO" | grep -q "<key>$entitlement</key>" || \
+      die "Required QEMU JIT entitlement $entitlement is missing from $qemu_helper"
+  done
 done
 
 if [ "$VERIFY_NOTARIZATION" -eq 1 ]; then
@@ -226,6 +260,11 @@ if otool -L "$PPC_QEMU" | grep -Eq '/opt/homebrew|/usr/local'; then
 fi
 
 log "Release verification passed"
+if [ "$VERIFY_ADHOC" -eq 1 ]; then
+  printf '    Signing:       ad-hoc (not notarized)\n'
+else
+  printf '    Signing:       Developer ID\n'
+fi
 printf '    Version:       %s (%s)\n' "$VERSION" "$BUILD"
 printf '    Tools CD SHA:  %s\n' "$(shasum -a 256 "$TOOLS_CD" | awk '{ print $1 }')"
 printf '    Power NDRV SHA: %s\n' "$(shasum -a 256 "$PPC_NDRV" | awk '{ print $1 }')"
