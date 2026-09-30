@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
 # bundle-qemu.sh - Build the SwiftUI app and assemble a self-contained
-# ClassicMac.app for Apple Silicon: the app binary, the custom qemu-system-m68k,
+# ClassicMac.app for the current Mac architecture: the app binary, the custom qemu-system-m68k,
 # qemu-system-ppc and qemu-img, the enhanced framebuffer firmware, the Quadra
 # 800 ROM, the OpenBIOS PPC firmware, and all required dynamic libraries
-# (relocated with dylibbundler), code-signed so QEMU's JIT runs on Apple
-# Silicon.
+# (relocated with dylibbundler), code-signed so QEMU's TCG JIT runs under
+# the hardened runtime on macOS.
 #
 # Idempotent: the app bundle is rebuilt from scratch on every run.
 
