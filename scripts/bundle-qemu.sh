@@ -427,6 +427,14 @@ write_helper_plist "$QUADRA_APP" "Quadra 800" "com.classicmac.machine.quadra800"
 write_helper_plist "$PPC_APP" "Power Mac G4" "com.classicmac.machine.powermacg4" "qemu-system-ppc"
 write_helper_plist "$COPLAND_APP" "Power Mac 7500" "com.classicmac.machine.powermac7500" "dingusppc"
 
+# Files copied from external/APFS/HFS volumes can carry FinderInfo/resource-fork
+# extended attributes. codesign rejects those even for ad-hoc signatures, and
+# dylibbundler signs rewritten Mach-O files internally before our final signing
+# pass. Strip non-code metadata from the private staged bundle before relocation.
+if command -v xattr >/dev/null 2>&1; then
+  xattr -cr "$APP"
+fi
+
 # ---------------------------------------------------------------------------
 # 4. Relocate dynamic libraries into the helper bundles
 # ---------------------------------------------------------------------------

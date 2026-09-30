@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Stage exact-version official Homebrew dylibs compatible with macOS 15.
+"""Stage official Homebrew dylibs compatible with macOS 15.
 
-The release build is host-native: arm64 uses arm64_sequoia bottles, while
-x86_64 prefers sequoia and falls back to the Sonoma bottles Homebrew reuses on
-newer Intel macOS releases.
+The release build is host-native. Prefer exact-version official bottles when
+Homebrew publishes a compatible macOS 15-era bottle. When current Intel
+formulae no longer publish Intel bottles, use the installed official Homebrew
+source build only after independently verifying its architecture and Mach-O
+minimum OS version.
 
-Run after dylibbundler and before signing. Only selected regular dylib members
-are extracted; Homebrew itself is never changed. The cache is content addressed.
---library supports preparing an empty Frameworks directory for verification.
+Run after dylibbundler and before signing. Homebrew itself is never changed.
+Bottle downloads are content addressed. --library supports preparing an empty
+Frameworks directory for verification.
 """
 from __future__ import annotations
 
@@ -36,6 +38,10 @@ OCI_ARCH = {
     "arm64": "arm64",
     "x86_64": "amd64",
 }
+
+
+class NoCompatibleBottle(ValueError):
+    pass
 
 
 def require(condition, message):
@@ -126,18 +132,25 @@ def origin(name):
             "receipt_tap_git_head": source.get("tap_git_head")}
 
 
-def bottle_source(registry, installed):
-    formula, keg = installed["formula"], installed["keg"]
-    tags = bottle_tags(installed["arch"])
+def formula_api(registry, installed):
+    formula = installed["formula"]
     api_url = "https://formulae.brew.sh/api/formula/" + urllib.parse.quote(formula) + ".json"
     api, api_hash = registry.document(api_url)
     require(api.get("full_name") == formula and api.get("tap") == "homebrew/core", "Formula API identity mismatch")
     current = api.get("versions", {}).get("stable") == installed["version"] and api.get("revision") == installed["revision"]
+    return api_url, api, api_hash, current
+
+
+def bottle_source(registry, installed):
+    formula, keg = installed["formula"], installed["keg"]
+    tags = bottle_tags(installed["arch"])
+    api_url, api, api_hash, current = formula_api(registry, installed)
     if current:
         stable = api["bottle"]["stable"]
         files = stable["files"]
         tag = next((candidate for candidate in tags if candidate in files), None)
-        require(tag is not None, "Missing compatible macOS bottle for " + formula + " (" + ", ".join(tags) + ")")
+        if tag is None:
+            raise NoCompatibleBottle("Missing compatible macOS bottle for " + formula + " (" + ", ".join(tags) + ")")
         bottle = files[tag]
         commit = api.get("tap_git_head")
         require(isinstance(commit, str) and re.fullmatch(r"[a-f0-9]{40}", commit), "Missing pinned formula commit")
@@ -174,7 +187,8 @@ def bottle_source(registry, installed):
             match = matches[0]
             tag = candidate
             break
-    require(match is not None, "Missing compatible macOS bottle for " + formula + " (" + ", ".join(tags) + ")")
+    if match is None:
+        raise NoCompatibleBottle("Missing compatible macOS bottle for " + formula + " (" + ", ".join(tags) + ")")
     require(match.get("platform", {}).get("os") == "darwin" and
             match["platform"].get("architecture") == OCI_ARCH[installed["arch"]],
             "Wrong bottle platform")
@@ -189,6 +203,36 @@ def bottle_source(registry, installed):
             "metadata_sha256": index_hash, "platform_manifest_url": manifest_url,
             "resolution": "exact-historical-registry", "bottle_rebuild": 0,
             "bottle_tag": tag}
+
+
+def local_build_source(registry, installed):
+    """Describe the installed official Homebrew source build.
+
+    Homebrew is reducing Intel bottle coverage for current formulae. When an
+    exact compatible bottle does not exist, a native source build on the
+    release host is acceptable only after the copied Mach-O is independently
+    verified below for architecture and a macOS minimum no newer than 15.0.
+    """
+    api_url, api, api_hash, current = formula_api(registry, installed)
+    require(current, "No compatible bottle and installed formula is not current: " + installed["formula"])
+    commit = api.get("tap_git_head")
+    require(isinstance(commit, str) and re.fullmatch(r"[a-f0-9]{40}", commit),
+            "Missing pinned formula commit for local build")
+    if installed.get("receipt_tap_git_head"):
+        require(commit == installed["receipt_tap_git_head"],
+                "Receipt/current formula commit mismatch for local build")
+    source_url = "https://raw.githubusercontent.com/Homebrew/homebrew-core/" + commit + "/" + api["ruby_source_path"]
+    return {"formula_source_url": source_url, "formula_commit": commit,
+            "metadata_url": api_url, "metadata_sha256": api_hash,
+            "resolution": "verified-local-homebrew-build", "bottle_rebuild": None,
+            "bottle_tag": None}
+
+
+def release_source(registry, installed):
+    try:
+        return bottle_source(registry, installed)
+    except NoCompatibleBottle:
+        return local_build_source(registry, installed)
 
 
 def cached_bottle(registry, source, cache):
@@ -284,12 +328,23 @@ def stage(frameworks, cache, names):
             installed = installed_by_name[name]
             key = (installed["formula"], installed["keg"])
             if key not in sources:
-                source = bottle_source(registry, installed)
-                sources[key] = source, cached_bottle(registry, source, cache)
-                print("Verified " + installed["formula"] + " " + installed["keg"] + " " + source["bottle_tag"], flush=True)
+                source = release_source(registry, installed)
+                bottle = None
+                if source["resolution"] != "verified-local-homebrew-build":
+                    bottle = cached_bottle(registry, source, cache)
+                    detail = source["bottle_tag"]
+                else:
+                    detail = "local source build"
+                sources[key] = source, bottle
+                print("Verified " + installed["formula"] + " " + installed["keg"] + " " + detail, flush=True)
             source, bottle = sources[key]
             path = staging / name
-            member = extract_library(bottle, installed, name, path)
+            if bottle is None:
+                shutil.copy2(installed["local_path"], path)
+                path.chmod(0o755)
+                member = None
+            else:
+                member = extract_library(bottle, installed, name, path)
             info = macho(path, target_arch)
             record = {**installed, "name": name, "bottle": source, "archive_member": member,
                       "extracted_sha256": digest(path), **info}
@@ -332,8 +387,10 @@ def stage(frameworks, cache, names):
                 require(dependency.startswith(SYSTEM) or (dependency.startswith("@loader_path/") and dependency.removeprefix("@loader_path/") in records), "Non-bundled dependency: " + dependency)
             record.update(final_dependencies=final["dependencies"], final_sha256=digest(path))
 
-        provenance = {"schema_version": 2, "architecture": target_arch,
-                      "bottle_tags": sorted({record["bottle"]["bottle_tag"] for record in records.values()}),
+        provenance = {"schema_version": 3, "architecture": target_arch,
+                      "bottle_tags": sorted({record["bottle"]["bottle_tag"] for record in records.values()
+                                             if record["bottle"]["bottle_tag"] is not None}),
+                      "source_resolutions": sorted({record["bottle"]["resolution"] for record in records.values()}),
                       "maximum_macos": "15.0",
                       "libraries": [records[name] for name in sorted(records)]}
         (staging / "release-libraries.json").write_text(json.dumps(provenance, indent=2) + "\n")
