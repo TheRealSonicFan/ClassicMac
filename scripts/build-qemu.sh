@@ -22,6 +22,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDOR_DIR="$ROOT_DIR/vendor"
 QEMU_DIR="$VENDOR_DIR/qemu"
 BUILD_DIR="$QEMU_DIR/build"
+BUILD_ARCH_STAMP="$BUILD_DIR/.classicmac-host-arch"
+HOST_ARCH="$(uname -m)"
+case "$HOST_ARCH" in
+  arm64|x86_64) ;;
+  *) printf '\nERROR: Unsupported macOS host architecture: %s\n' "$HOST_ARCH" >&2; exit 1 ;;
+esac
 QEMU_REPO="${QEMU_REPO:-https://gitlab.com/qemu-project/qemu.git}"
 QEMU_TAG="${QEMU_TAG:-v11.0.2}"
 QFB_DIR="$ROOT_DIR/qfb"
@@ -402,8 +408,9 @@ fi
 # ---------------------------------------------------------------------------
 # 4. Configure (out-of-tree) if not already configured
 # ---------------------------------------------------------------------------
-if [ -f "$BUILD_DIR/build.ninja" ] && [ -z "${FORCE_CONFIGURE:-}" ]; then
-  log "Already configured (set FORCE_CONFIGURE=1 to reconfigure)"
+if [ -f "$BUILD_DIR/build.ninja" ] && [ -z "${FORCE_CONFIGURE:-}" ] &&
+   [ "$(cat "$BUILD_ARCH_STAMP" 2>/dev/null || true)" = "$HOST_ARCH" ]; then
+  log "Already configured for $HOST_ARCH (set FORCE_CONFIGURE=1 to reconfigure)"
 else
   log "Configuring QEMU for m68k-softmmu + ppc-softmmu (cocoa, VNC, slirp, coreaudio, 9p)"
   rm -rf "$BUILD_DIR"
@@ -432,6 +439,7 @@ else
   )
   "$BUILD_DIR/pyvenv/bin/meson" configure "$BUILD_DIR" \
     -Doptimization=3 -Db_lto_mode=thin
+  printf '%s\n' "$HOST_ARCH" > "$BUILD_ARCH_STAMP"
 fi
 
 # ---------------------------------------------------------------------------
