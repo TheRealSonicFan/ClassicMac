@@ -218,6 +218,9 @@ def local_build_source(registry, installed):
     commit = api.get("tap_git_head")
     require(isinstance(commit, str) and re.fullmatch(r"[a-f0-9]{40}", commit),
             "Missing pinned formula commit for local build")
+    if installed.get("receipt_tap_git_head"):
+        require(commit == installed["receipt_tap_git_head"],
+                "Receipt/current formula commit mismatch for local build")
     source_url = "https://raw.githubusercontent.com/Homebrew/homebrew-core/" + commit + "/" + api["ruby_source_path"]
     return {"formula_source_url": source_url, "formula_commit": commit,
             "metadata_url": api_url, "metadata_sha256": api_hash,
