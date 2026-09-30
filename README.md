@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platform-macOS%20(arm64%20%2B%20x86__64)-black" alt="Platform">
+  <img src="https://img.shields.io/badge/release-macOS%20Intel%20x86__64%20only-black" alt="Latest binary release: Intel x86_64 only">
   <img src="https://img.shields.io/badge/guests-System%207.1%20–%20Mac%20OS%209.2.2-blueviolet" alt="Guest OS range">
   <img src="https://img.shields.io/badge/QEMU-11.0.2%20(custom)-orange" alt="QEMU">
   <img src="https://img.shields.io/badge/UI-SwiftUI-blue" alt="SwiftUI">
@@ -28,6 +28,31 @@
   <img src="docs/screenshots/quadra800-macos81.png" width="410" alt="Mac OS 8.1 on the emulated Quadra 800">
   <img src="docs/screenshots/powermacg4-macos92.png" width="410" alt="Mac OS 9.2 on the emulated Power Mac G4">
 </p>
+
+## Latest binary release: 3.2.1 — Intel x86_64
+
+> [!IMPORTANT]
+> The **3.2.1 GitHub binary release is Intel-only**. Its `ClassicMac.app`
+> contains native `x86_64` executables and **does not contain an `arm64`
+> slice**. Apple Silicon remains supported as a source-build target, but no
+> Apple Silicon binary is included in this release.
+
+Release artifacts:
+
+- **ClassicMac.dmg** — 33,458,741 bytes (31.91 MiB), ad-hoc signed,
+  non-notarized. SHA-256:
+  `eb0042dfa8951603bcd87add321cbc7272c97113f604fd855d4dd93fdc7329fa`
+- **ClassicMacTools.iso** — 33,554,432 bytes (32.00 MiB), Apple Partition Map
+  + **HFS (Mac OS Standard)** guest-additions image. SHA-256:
+  `8c99d6972b365778a51bd986a416ecbbcb91507b53b767463e0c176d78240bc5`
+
+`ClassicMacTools.iso` mounts within a **Mac OS 9 VM**. It does **not** mount
+directly on modern macOS because the image uses HFS (Mac OS Standard), which
+modern macOS no longer supports for mounting. The image contains GXMetal 2.3.0
+and the classic-Mac utilities used by the guest additions.
+
+See the [3.2.1 Intel release notes](docs/releases/3.2.1-intel.md) for hashes,
+guest-additions contents, signing details, and verification results.
 
 ## Copland preview
 
@@ -170,7 +195,7 @@ ClassicMac exists because of years of brilliant work by other engineers. The pat
 - **Clean, working sound.** The Quadra's Apple Sound Chip is patched to feed silence when idle (no more idle buzz), and the Power Mac gets the screamer (AWACS) device with a screamer-aware OpenBIOS.
 - **Self-contained `.classic` machine documents.** Each VM is a single Finder package holding its config, disk, and PRAM. Keep it anywhere, double-click to boot, move it between Macs.
 - **Classic input helpers.** Secondary click opens contextual menus as Control+click, and the scroll wheel becomes arrow-key taps. Turn both off in machine settings for guests with real drivers (e.g. USB Overdrive).
-- **A guest-additions Tools volume** (StuffIt Expander, Disk Copy, USB Overdrive, Transmit, Lido, patched HD SC Setup...) built from `guestcd/manifest.tsv`. On Power Macs it mounts automatically at startup as a read-only Virtio disk, using the same guest-driver path as folder sharing instead of unreliable OS 9 IDE hot-plug. Everything is pre-expanded and ready to run.
+- **A guest-additions Tools volume** (StuffIt Expander, Disk Copy, USB Overdrive, Transmit, Lido, patched HD SC Setup...) built from `guestcd/manifest.tsv`. On Power Macs it mounts automatically at startup as a read-only Virtio disk, using the same guest-driver path as folder sharing instead of unreliable OS 9 IDE hot-plug. Everything is pre-expanded and ready to run. The separately downloadable `ClassicMacTools.iso` uses HFS (Mac OS Standard): it mounts in a Mac OS 9 VM, but modern macOS does not mount this HFS image directly.
 - **Experimental GXMetal 3D acceleration on Mac OS 9.** The Tools CD carries a
   one-click installer for a PowerPC QuickDraw 3D RAVE engine. It batches guest
   drawing commands to the host, renders them with Metal, and safely leaves
@@ -194,11 +219,11 @@ ClassicMac exists because of years of brilliant work by other engineers. The pat
 - **Safe, faster shutdown cycles.** The app's Shut Down command presses the
   virtual Mac's Power key and confirms Mac OS's own dialog, allowing HFS/HFS+
   to unmount cleanly so the next boot does not pay the recovery penalty.
-- **Signed, notarized, stapled DMG** for distribution — recipients get a clean Gatekeeper experience even offline.
+- **Release signing options.** Developer ID builds can be signed, notarized, and stapled for Gatekeeper. The current 3.2.1 Intel binary release is instead ad-hoc signed and non-notarized; the local self-signing procedure is documented below.
 
 ## Getting started
 
-1. Grab **ClassicMac.dmg** from the [latest release](../../releases/latest), drag ClassicMac to Applications, and launch it.
+1. On an **Intel Mac**, grab **ClassicMac.dmg** from the [latest release](../../releases/latest), drag ClassicMac to Applications, and launch it. The 3.2.1 binary release is `x86_64` only; Apple Silicon users should build the native `arm64` app from source until an arm64 release artifact is published.
 2. Choose **File → New Machine** (⌘N) and continue with the recommended
    **Download a Mac** option. Name your Mac, choose its location, and
    download it. The image is hosted on mcchord.net and contains Mac OS 9.2.1
@@ -247,7 +272,7 @@ mounted **ClassicMac Tools** disk, then open **GXMetal**,
 
 New machines are created as `.classic` documents (default `~/Documents/ClassicMac/`). Double-click one in Finder to boot it.
 
-Requirements: an Apple Silicon or Intel Mac running macOS 15 or newer. Release builds are native per architecture (`arm64` or `x86_64`), not Rosetta-only.
+Requirements: macOS 15 or newer. **The 3.2.1 downloadable binary release requires an Intel (`x86_64`) Mac and contains no arm64 binary.** The source tree supports native builds on both Apple Silicon (`arm64`) and Intel (`x86_64`).
 
 ### Ad-hoc/community builds
 
