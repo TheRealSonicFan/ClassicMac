@@ -91,6 +91,27 @@ class ReleaseLibraryTests(unittest.TestCase):
     def test_intel_bottle_tags_prefer_sequoia_then_sonoma(self):
         self.assertEqual(lib.bottle_tags("x86_64"), ("sequoia", "sonoma"))
 
+    def test_current_intel_formula_uses_matching_bottle_tag(self):
+        class Registry:
+            def document(self, url, expected=None):
+                return {
+                    "full_name": "demo",
+                    "tap": "homebrew/core",
+                    "versions": {"stable": "1.0"},
+                    "revision": 0,
+                    "tap_git_head": "a" * 40,
+                    "ruby_source_path": "Formula/d/demo.rb",
+                    "bottle": {"stable": {"files": {
+                        "sonoma": {"url": "https://example.invalid/demo.tar.gz",
+                                   "sha256": "b" * 64}
+                    }}},
+                }, "c" * 64
+        source = lib.bottle_source(Registry(), {
+            "formula": "demo", "keg": "1.0", "version": "1.0",
+            "revision": 0, "arch": "x86_64"
+        })
+        self.assertEqual(source["bottle_tag"], "sonoma")
+
     def test_historical_registry_cannot_upgrade_version(self):
         class Registry:
             def document(self, url, expected=None):
