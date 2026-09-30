@@ -34,13 +34,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for tool in cmp codesign file plutil shasum spctl strings xcrun; do
+for tool in cmp codesign file lipo plutil shasum spctl strings xcrun; do
   command -v "$tool" >/dev/null 2>&1 || die "Required tool not found: $tool"
 done
 [ -e "$TARGET" ] || die "Release target not found: $TARGET"
 
 APP="$TARGET"
 VERIFY_NOTARIZATION=0
+EXPECTED_ARCH="${CLASSICMAC_ARCH:-$(uname -m)}"
+case "$EXPECTED_ARCH" in
+  arm64|x86_64) ;;
+  *) die "Unsupported release architecture: $EXPECTED_ARCH" ;;
+esac
 case "$TARGET" in
   *.dmg)
     VERIFY_NOTARIZATION=1
@@ -66,6 +71,7 @@ case "$TARGET" in
 esac
 
 PLIST="$APP/Contents/Info.plist"
+MAIN_APP="$APP/Contents/MacOS/ClassicMac"
 PPC_HELPER="$APP/Contents/Helpers/Power Mac G4.app"
 PPC_QEMU="$PPC_HELPER/Contents/MacOS/qemu-system-ppc"
 QUADRA_HELPER="$APP/Contents/Helpers/Quadra 800.app"
@@ -142,9 +148,14 @@ if [ "$VERIFY_NOTARIZATION" -eq 1 ]; then
   spctl --assess --type execute --verbose=2 "$APP"
 fi
 
+log "Verifying native macOS executable architecture ($EXPECTED_ARCH)"
+for native_executable in "$MAIN_APP" "$PPC_QEMU" "$QUADRA_QEMU" "$COPLAND_ENGINE"; do
+  ARCHS="$(lipo -archs "$native_executable")"
+  [ "$ARCHS" = "$EXPECTED_ARCH" ] || \
+    die "$(basename "$native_executable") architecture is '$ARCHS', expected '$EXPECTED_ARCH'"
+done
+
 log "Verifying the bundled GXMetal-capable Power Mac executable"
-file "$PPC_QEMU" | grep -q 'arm64' || die "Power Mac QEMU is not arm64"
-file "$QUADRA_QEMU" | grep -q 'arm64' || die "Quadra QEMU is not arm64"
 DEVICE_HELP="$("$PPC_QEMU" -device VGA,help 2>&1)"
 for property in gxmetal untracked-vram packed-lowbpp hardware-cursor host-resize; do
   printf '%s\n' "$DEVICE_HELP" | grep -q "$property" || \
