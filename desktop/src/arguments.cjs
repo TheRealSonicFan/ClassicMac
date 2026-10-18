@@ -5,7 +5,7 @@ const option = value => String(value).replaceAll(',', ',,');
 
 function argumentsFor(machine, resources, endpoint, platform = process.platform) {
   const c = validate(machine.config);
-  if (c.machineFamily === 'powerMac7500') throw new Error('Copland is not available in the first Windows build. Use the macOS version for this machine.');
+  if (c.machineFamily === 'powerMac7500') throw new Error('Copland requires the macOS edition. Use that edition for this machine.');
   if (c.sharedFolderPath && platform === 'win32') throw new Error('Host folder sharing requires Linux or macOS. Turn it off in Get Info for Windows.');
   const ppc = c.machineFamily === 'powerMacG4';
   const cdBoot = !!(c.bootFromCD && c.cdImagePath);

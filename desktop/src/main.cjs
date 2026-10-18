@@ -215,9 +215,10 @@ async function serve() {
   origin = `http://127.0.0.1:${server.address().port}`;
 }
 
+// Set the disposable profile before Electron takes its lock or starts helpers.
+if (process.env.CLASSICMAC_TEST_HOME) app.setPath('userData', process.env.CLASSICMAC_TEST_HOME);
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.whenReady().then(async () => {
-  if (process.env.CLASSICMAC_TEST_HOME) app.setPath('userData', process.env.CLASSICMAC_TEST_HOME);
   await fs.mkdir(app.getPath('userData'), { recursive: true });
   let folders = [];
   try { folders = JSON.parse(await fs.readFile(indexFile(), 'utf8')); } catch { /* First launch. */ }
