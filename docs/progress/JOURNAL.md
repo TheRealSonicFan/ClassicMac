@@ -365,3 +365,15 @@
 - At the user's request `claude/4.0` was pushed and merged into `main`
   through a PR; local `main` fast-forwarded. No release published.
 
+## October 18 — 4.0 Preview 3 published as a pre-release
+
+- PR #22 merged into `main` as `6dab4a6` at the user's request; root `main`
+  fast-forwarded (an untracked, ignored-era `gxmetal/` build folder remains
+  locally and was left alone).
+- After the user unlocked the Mac, Preview 3 was notarized (app `4926df73…`,
+  DMG `72576009…`), stapled and verified; the notarized app booted Deluxe v6
+  on the ATI card to the Finder in its Platinum window and shut down cleanly.
+- Published GitHub pre-release `v4.0.0-preview.3` (DMG, ZIP, Copland source,
+  SHA256SUMS). Fresh download: checksum OK, staple valid, Gatekeeper
+  accepted. v3.2.1 stays the latest release; catalog unchanged.
+

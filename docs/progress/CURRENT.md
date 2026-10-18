@@ -1,4 +1,4 @@
-# ClassicMac 4.0 Preview 3 — on main, test build pending notarization
+# ClassicMac 4.0 Preview 3 — published as a GitHub pre-release
 
 **Objective:** ClassicMac 4.0: RetroBoot's emulated ATI Radeon instead of
 GXMetal, the Mac OS Library, and an Apple Platinum interface shared with
@@ -10,13 +10,16 @@ of `claude/4.0-engine`, `claude/4.0-platinum`, `claude/4.0-display`,
 `main` on GitHub at the user's request (October 18). No GitHub release; the
 public 3.2.1 release and catalog are unchanged.
 
-**Preview 3:** `output/dist-4.0-p3/ClassicMac.app` is built and Developer ID
-signed with every startup-race fix; notarization failed only because the
-`classicmac-notary` keychain profile is unreadable while the Mac is locked.
-Rerun with the session unlocked:
-`DIST_DIR=$PWD/output/dist-4.0-p3 DIST_NAME=ClassicMac-4.0.0-Preview-3 DMG_VOLUME_NAME="ClassicMac 4.0 Preview" scripts/make-dmg.sh`
-then `verify-release.sh` (4.0.0 4.0.0). Not pushed, no PR, nothing
-published, catalog unchanged. `main` is still 3.2.1 (`3e24594`).
+**Preview 3:** published October 18 as GitHub pre-release
+[v4.0.0-preview.3](https://github.com/amcchord/ClassicMac/releases/tag/v4.0.0-preview.3)
+(tag on `6dab4a6`; app built from `46ca338`, which differs only in docs).
+Notarized (app `4926df73-ed34-4e3f-b790-2228ff763515`, DMG
+`72576009-ce31-4f5d-b5a6-38710bcb6ab0`, both Accepted), stapled,
+`verify-release.sh` passed. DMG SHA-256
+`9fee51fda7fad28185f80ade6a5c077deb75d19ec80565daad1b5649434d8b01`; ZIP
+`3552de30…`; Copland source `43400b87…`. A fresh download matched its
+checksum, validated its staple and passed Gatekeeper. v3.2.1 remains the
+latest (stable) release; the download catalog is unchanged.
 
 **Test build:** `worktrees/4.0-engine/output/dist-4.0-p2/ClassicMac-4.0.0-Preview-2.dmg`
 (version 4.0.0, bundle id `com.classicmac.emulator`), Developer ID signed,
