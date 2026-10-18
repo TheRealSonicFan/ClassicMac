@@ -40,6 +40,15 @@
   One Mac pixel is one point, so on a Retina display nothing is ever
   resampled. The look, fonts and icons are shared with RetroBoot through the
   new `PlatinumKit` module, which also builds for iPad.
+- **Your Mac in a Platinum window.** Each running Mac's screen now appears
+  in a ClassicMac Platinum window instead of QEMU's: sharp whole-number
+  scaling, a close box that shuts Mac OS down safely, zoom and WindowShade,
+  a Standard-card screen that follows the window's size, and a toolbar with
+  Shut Down, Restart, Pause, Media, Paste Text and Full Screen. From
+  power-on it shows the classic gray checkerboard with a startup Mac until
+  Mac OS draws its own screen, so firmware black and OpenBIOS yellow never
+  appear. QEMU hands its screen over through the new `-display classicmac`
+  backend, ported from RetroBoot (see [`display/README.md`](display/README.md)).
 - **The Mac OS Library.** **File → Mac OS Library…** (⇧⌘L) lists every
   ready-to-run Mac with what is inside it: Mac OS 9.2.2 SuperDeluxe (54
   games, ClarisWorks, Home Page), Deluxe (16 games, After Dark, music,
@@ -56,6 +65,10 @@
   icon collections, **ClassicMac → Iconfactory Icons…** uses them for the
   Mac models. They are free for personal use only, so ClassicMac does not
   include them.
+
+<p align="center">
+  <img src="docs/screenshots/platinum/guest-window.png" width="720" alt="Mac OS 9.2.2 Deluxe in ClassicMac's Platinum window with the toolbar along the bottom">
+</p>
 
 <p align="center">
   <img src="docs/screenshots/platinum/library.png" width="410" alt="The Mac OS Library">
@@ -195,8 +208,11 @@ ClassicMac exists because of years of brilliant work by other engineers. The pat
    **File → Mac OS Library…** (⇧⌘L). Pick a Mac (SuperDeluxe and Deluxe come
    with games and classic software and start on the ATI Radeon card), name
    it, and click **Download**.
-3. Select your Mac and click **Start Up** (⌘R). It opens in its own window;
-   **Show Mac** brings it forward. To use your browser instead, turn on
+3. Select your Mac and click **Start Up** (⌘R). Its screen opens in a
+   Platinum window with a toolbar for common commands; **Show Mac** brings it
+   forward. Every key, Command combinations included, goes to the Mac while
+   its screen has focus; Control-Command-F toggles full screen, and games
+   that capture the mouse release it with Control-Option. To use your browser instead, turn on
    **Get Info → Display → Show the Mac in a web browser** before startup.
 4. Use **Media…** to attach discs and **Get Info** (⌘I) for memory, display,
    graphics card and a shared folder, which appears in the guest as a
@@ -299,6 +315,7 @@ The guest-side binaries are committed, so a normal build needs no cross toolchai
 ```
 ClassicMac/
   app/                      # the ClassicMac app and PlatinumKit (SwiftPM package)
+  display/                  # -display classicmac: QEMU hands its screen to the app
   platinum/                 # MIT Platinum fonts, icons and asset generators
   ati/                      # emulated ATI Radeon R100: QEMU, macOS GL and OpenBIOS patches
   browser/                  # branded loopback-only noVNC display client

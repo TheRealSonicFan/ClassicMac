@@ -328,3 +328,23 @@
 - Next: user testing of the Preview DMG, then the CPU-commit and publication
   decisions.
 
+## October 17 — ClassicMac 4.0 Preview 2 (Platinum guest window)
+
+- The user found QEMU's Cocoa guest window (black at boot, OpenBIOS yellow)
+  unacceptable and asked for a Platinum window with a lower toolbar.
+- `claude/4.0-display` (display agent): `-display classicmac`, RetroBoot's
+  presenter backend ported to macOS (stream socket, mmap'd shared buffer,
+  damage tiles, CURSOR/MOUSE) `c00bbc4`, ARGB hardware-cursor fix `efa8f35`.
+  Yellow came only from unpatched firmware; the staged firmware is black on
+  both cards. Merged as `335cc9e`.
+- `claude/4.0`: GuestDisplaySession/GuestScreenView/GuestWindows and the
+  startup curtain `8f55c43`, safe shutdown on Quit `05fe98b`, window-size
+  re-assertion and display refresh `1690b06`, dither margins `485a447`;
+  `verify-release.sh` requires `classicmac` in 4.x.
+- Preview 2 bundled, notarized (app `c39a82ca…`, DMG `c50c13be…`), stapled,
+  verified; DMG SHA-256 `80eabae0…`. Smoke test of the notarized app:
+  Deluxe v6 ATI Finder in the Platinum window, clean shutdown.
+- A parallel VIA-timer session's stress soak briefly saturated the host
+  (36 busy loops); it finished on its own.
+- No pushes, publication or catalog changes; user machines untouched.
+

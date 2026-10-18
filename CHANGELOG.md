@@ -1,5 +1,25 @@
 # Changelog
 
+## 4.0.0 Preview 2 — 2026-10-17 (local test build, unpublished)
+
+### Added
+
+- Each Mac's screen in a ClassicMac Platinum window instead of QEMU's Cocoa
+  window: whole-number sharp scaling, safe-shutdown close box, zoom,
+  WindowShade, Standard-card screens that follow the window, full screen,
+  and a toolbar with Shut Down, Restart, Pause, Media, Paste Text and the
+  graphics status. A classic checkerboard startup screen covers firmware
+  until Mac OS draws, so black and OpenBIOS yellow never show.
+- `-display classicmac`, RetroBoot's presenter backend ported to macOS
+  (stream socket, shared-memory framebuffer, damage tiles, cursor messages,
+  60 fps or the display's rate). QEMU's window stays available with
+  `defaults write com.classicmac.emulator ClassicMacUseQEMUWindow -bool YES`.
+- Quit offers to shut running Macs down safely first.
+
+### Fixed
+
+- Std-VGA hardware cursor pixels are delivered as ARGB.
+
 ## 4.0.0 Preview 1 — 2026-10-17 (local test build, unpublished)
 
 ### Added
