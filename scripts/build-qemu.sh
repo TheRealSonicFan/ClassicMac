@@ -4,7 +4,9 @@
 # Apple Silicon: the Quadra's enhanced nubus-qfb paravirtualized framebuffer
 # (arbitrary resolutions + Thousands colour) and nubus-virtio-mmio transport,
 # and the Power Mac G4's std-VGA extensions plus the emulated ATI Radeon R100
-# (ati/, Mac OS 9's own ATI drivers with 3D rendered through host OpenGL).
+# (ati/, Mac OS 9's own ATI drivers with 3D rendered through host OpenGL),
+# and the ClassicMac display backend (display/, -display classicmac) that
+# hands the guest screen to the app through shared memory.
 #
 # Approach: clone mainline QEMU at a pinned tag and apply every ClassicMac
 # modification kept in this repository (device files and patches).
@@ -30,6 +32,7 @@ QFB_DIR="$ROOT_DIR/qfb"
 POWERMAC_DIR="$ROOT_DIR/powermac"
 ATI_DIR="$ROOT_DIR/ati"
 CPU_DIR="$ROOT_DIR/cpu"
+DISPLAY_DIR="$ROOT_DIR/display"
 
 # Tracked files modified by the ClassicMac patches (reset before re-applying).
 # Files only earlier releases patched (GXMetal's ui/input.c, bochs-vbe.h) stay
@@ -111,10 +114,13 @@ PATCHED_FILES=(
   target/ppc/misc_helper.c
   target/ppc/translate/fp-impl.c.inc
   target/ppc/translate/vmx-impl.c.inc
+  meson.build
+  ui/meson.build
 )
 # Untracked files created by patches (git apply refuses to create them again)
 # or copied by earlier releases; removed before the patches are applied.
 UNTRACKED_PATCH_FILES=(
+  ui/classicmac-display.c
   hw/display/ati_3d.c
   hw/display/ati_3d.h
   hw/display/ati_cp.c
@@ -446,6 +452,16 @@ else
   log "ppcvid/qemu_vga.ndrv not present; keeping the stock driver (no PPC live resize)"
 fi
 
+# ---------------------------------------------------------------------------
+# 3f. ClassicMac display backend (-display classicmac,socket=PATH)
+# ---------------------------------------------------------------------------
+# Ported from RetroBoot's display backend: the guest frame goes to the app in
+# a shared memory buffer announced over an AF_UNIX stream socket (the app
+# listens, QEMU connects), together with the std-VGA hardware cursor, and the
+# app's keyboard and pointer input comes back. See display/README.md.
+log "Installing the ClassicMac display backend (-display classicmac)"
+git -C "$QEMU_DIR" apply "$DISPLAY_DIR/classicmac-display.patch" || die "Failed to apply ClassicMac display backend patch"
+
 if [ -n "${CLASSICMAC_PREPARE_ONLY:-}" ]; then
   log "CLASSICMAC_PREPARE_ONLY set: sources prepared in $QEMU_DIR"
   exit 0
@@ -603,6 +619,17 @@ done
 grep -q -- "-ffp-contract=off" "$BUILD_DIR/build.ninja" || \
   die "QEMU was not compiled with -ffp-contract=off"
 printf '    OK  PowerPC MMU contexts, FPU fast paths and branch cache (ppc)\n'
+if "$QEMU_PPC_BIN" -display help 2>&1 | grep -qx "classicmac"; then
+  printf '    OK  ClassicMac display backend listed (ppc)\n'
+else
+  die "-display classicmac missing from the ppc build"
+fi
+# Start a paused mac99 with -display classicmac,socket=PATH, then a test
+# listener (QEMU keeps retrying until it appears): QEMU must connect and
+# deliver HELLO, a SURFACE whose shared buffer maps, a full DAMAGE and the
+# clock/pointer-mode events, and greet the listener again after it drops.
+"$PYTHON_BIN" "$DISPLAY_DIR/tests/test_display_gate.py" \
+  "$QEMU_PPC_BIN" "$QEMU_DIR/pc-bios" || die "ClassicMac display backend test failed"
 if "$QEMU_PPC_BIN" -device macio-ide,help 2>&1 | grep -q "dma-completion-delay-ns"; then
   printf '    OK  MacIO IDE DMA completion delay (ppc)\n'
 else
