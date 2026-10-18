@@ -11,15 +11,22 @@ of the template disk, then:
   - responsive: a click on the Apple menu opens it and a second click closes
     it (the guest's event loop runs);
   - otherwise, after --timeout: a hang, with HMP "info registers" and a frame
-    kept (type B, the ROM timer-2 calibration race, ends in the nanokernel
-    debugger with SRR0 0x6806D444).
+    kept, classified by RetroBoot's three pre-gray hangs: A, the ROM's Cuda
+    sync timed out and the 68k emulator spins in its halt loop (NIP
+    0x680B07F0 or 0x68067EC0, 68k PC 0xFFC0969x in r24, BRA.S * in r27); B,
+    the ROM's timer-2 calibration race ends in the nanokernel debugger with
+    SRR0 0x6806D444; C, OpenBIOS did not find the disk and waits at its
+    prompt (NIP in OpenBIOS, 0xFFFxxxxx). Anything else is "?".
 
 QEMU is then quit and the clone deleted. --arm NAME='QEMU ARGS' interleaves
 arms (boot k uses arm k mod the number of arms, so arms share the host's
 load); --stress N runs N busy-looping processes for the whole run; --jobs runs
 boots concurrently. --trace-t2 records the guest's VIA timer loads with host
 timestamps (mos6522_set_counter), which shows how long the ROM's calibration
-loops ran against their 1 ms deadline.
+loops ran against their 1 ms deadline. --trace EVENT (repeatable) enables
+QEMU trace events into each boot's trace.log and counts them per boot; the
+values of the lab build's events (startup/lab/: cuda_lab_sync_sr_read,
+cuda_lab_sr_int, ide_lab_srst_done) are kept too.
 
     boot_soak.py --qemu BIN --bios PC_BIOS --disk TEMPLATE/disk.img \\
         --out DIR --card ati --runs 10 [--display-option retroboot-display]
@@ -42,7 +49,77 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import guest_run as G  # noqa: E402
 
 REGS = re.compile(r"\b(NIP|LR|CTR|MSR|SRR0|SRR1|DAR)\s+([0-9a-fA-F]{8,16})")
+GPRS = re.compile(r"^GPR(\d\d)((?:\s+[0-9a-fA-F]{8,16})+)", re.M)
 T2_LOAD = re.compile(r"T(\d\d):(\d\d):(\d\d)\.(\d{6})Z mos6522_set_counter T2\.counter=(\d+)")
+TRACE_EVENT = re.compile(r"Z (\w+) ")
+SYNC_SR_READ = re.compile(r"cuda_lab_sync_sr_read SR read (-?\d+) ns after the sync step: "
+                          r"SR_INT (\d), shift pending (\d)")
+SRST_DONE = re.compile(r"ide_lab_srst_done bus \S+ SRST carried out (-?\d+) ns after its edge; "
+                       r"released (\d), on access (\d)")
+SR_INT_LATE = re.compile(r"cuda_lab_sr_int shift interrupt (-?\d+) ns after due; "
+                         r"sync step (\d), on access (\d)")
+
+
+def percentiles(values):
+    """n, median, p90, p99 and max of a list of numbers"""
+    v = sorted(values)
+    at = lambda p: v[min(len(v) - 1, int(round(p * (len(v) - 1))))]  # noqa: E731
+    return {"n": len(v), "median": at(0.5), "p90": at(0.9), "p99": at(0.99), "max": v[-1]}
+
+
+def hang_type(regs):
+    """RetroBoot's pre-gray hang types from an HMP "info registers" dump"""
+    named = {k: int(v, 16) for k, v in REGS.findall(regs)}
+    gpr = {}
+    for first, values in GPRS.findall(regs):
+        for i, v in enumerate(values.split()):
+            gpr[int(first) + i] = int(v, 16)
+    if named.get("SRR0", 0) & 0xffffffff == 0x6806d444:
+        return "B"
+    if named.get("NIP", 0) & 0xffffffff >= 0xfff00000:
+        return "C"
+    # the 68k emulator (0x68xxxxxx) halted in the ROM's Cuda sync routine
+    # (68k PC in r24) or dispatching BRA.S * (r27)
+    if named.get("NIP", 0) >> 24 == 0x68 and (
+            gpr.get(24, 0) & 0xfffffff0 == 0xffc09690 or gpr.get(27, 0) & 0xffff == 0x60fe):
+        return "A"
+    return "?"
+
+
+def trace_summary(path):
+    """per-event counts and the lab build's measurements from a trace.log"""
+    counts, sync_reads, srst, late = {}, [], [], {}
+    try:
+        with open(path, errors="replace") as f:
+            for line in f:
+                m = TRACE_EVENT.search(line)
+                if m:
+                    counts[m.group(1)] = counts.get(m.group(1), 0) + 1
+                m = SYNC_SR_READ.search(line)
+                if m:
+                    sync_reads.append([round(int(m.group(1)) / 1000, 1),
+                                       int(m.group(2)), int(m.group(3))])
+                m = SRST_DONE.search(line)
+                if m:
+                    srst.append([round(int(m.group(1)) / 1000, 1),
+                                 int(m.group(2)), int(m.group(3))])
+                m = SR_INT_LATE.search(line)
+                if m:
+                    key = ("sync" if m.group(2) == "1" else "other") + \
+                          ("_on_access" if m.group(3) == "1" else "_main_loop")
+                    late.setdefault(key, []).append(round(int(m.group(1)) / 1000, 1))
+    except OSError:
+        pass
+    out = {"trace_counts": counts}
+    if sync_reads:
+        out["sync_sr_reads_us"] = sync_reads    # [us after TACK, SR_INT set, pending]
+    if srst:
+        out["srst_done_us"] = srst              # [us after edge, released, on access]
+    if late:
+        # shift interrupts: us after due, sync steps in full, the rest summarised
+        out["sr_int_late_us"] = {k: (v if k.startswith("sync") else percentiles(v))
+                                 for k, v in late.items()}
+    return out
 
 
 def screendump(rel, name):
@@ -181,9 +258,11 @@ def boot(a, index, arm_name, arm_args, lock):
     # relative socket paths: macOS limits AF_UNIX paths to 104 bytes
     argv = [x.replace(os.path.abspath(rel), rel) for x in argv]
     argv[argv.index("-cpu") + 1] = a.cpu
-    if a.trace_t2:
-        argv += ["-trace", "mos6522_set_counter", "-msg", "timestamp=on",
-                 "-D", os.path.join(rel, "trace.log")]
+    events = (["mos6522_set_counter"] if a.trace_t2 else []) + a.trace
+    if events:
+        for event in events:
+            argv += ["-trace", event]
+        argv += ["-msg", "timestamp=on", "-D", os.path.join(rel, "trace.log")]
     argv += arm_args + a.extra
     with open(os.path.join(rel, "argv.json"), "w") as f:
         json.dump(argv, f, indent=1)
@@ -208,7 +287,7 @@ def boot(a, index, arm_name, arm_args, lock):
                 with open(os.path.join(rel, "registers.txt"), "w") as f:
                     f.write(regs)
                 r["registers"] = {k: v.lower() for k, v in REGS.findall(regs)}
-                r["hang_type"] = "B" if r["registers"].get("SRR0", "").endswith("6806d444") else "?"
+                r["hang_type"] = hang_type(regs)
                 G.shot(rel, "hang")
                 break
             time.sleep(a.poll)
@@ -246,6 +325,8 @@ def boot(a, index, arm_name, arm_args, lock):
             if len(loads) >= 8:
                 r["t2_timed_runs_ms"] = [round(loads[i + 1][0] - loads[i][0], 3)
                                          for i in (2, 4, 6)]
+        if a.trace:
+            r.update(trace_summary(os.path.join(rel, "trace.log")))
         for f in os.listdir(rel):
             if f.endswith(".ppm"):
                 os.unlink(os.path.join(rel, f))
@@ -298,6 +379,8 @@ def main():
     ap.add_argument("--poll", type=float, default=0.5)
     ap.add_argument("--settle", type=float, default=3)
     ap.add_argument("--trace-t2", action="store_true")
+    ap.add_argument("--trace", action="append", default=[], metavar="EVENT",
+                    help="QEMU trace event or pattern, counted per boot")
     ap.add_argument("extra", nargs="*", help="QEMU arguments for every arm")
     a = ap.parse_args()
     for name in ("qemu", "bios", "disk", "ndrvloader"):
