@@ -219,7 +219,7 @@ if [ -d "$QEMU_DIR/.git" ]; then
   done
 else
   log "Cloning $QEMU_REPO ($QEMU_TAG)"
-  git clone --depth 1 --branch "$QEMU_TAG" "$QEMU_REPO" "$QEMU_DIR"
+  git -c core.autocrlf=false clone --depth 1 --branch "$QEMU_TAG" "$QEMU_REPO" "$QEMU_DIR"
 fi
 
 # ---------------------------------------------------------------------------
