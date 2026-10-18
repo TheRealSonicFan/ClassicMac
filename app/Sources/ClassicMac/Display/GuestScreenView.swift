@@ -101,6 +101,23 @@ final class GuestScreenNSView: NSView {
         if let image = session.takeFrame(force: true) { imageLayer.contents = image }
         NotificationCenter.default.addObserver(self, selector: #selector(windowResigned),
                                                name: NSWindow.didResignKeyNotification, object: window)
+        // The display link pauses while the window is hidden or the display
+        // sleeps; draw the latest frame the moment it can be seen again.
+        NotificationCenter.default.addObserver(self, selector: #selector(drawLatestFrame),
+                                               name: NSWindow.didChangeOcclusionStateNotification, object: window)
+        NotificationCenter.default.addObserver(self, selector: #selector(drawLatestFrame),
+                                               name: Self.refreshNotification, object: nil)
+    }
+
+    /// Posted to make every guest screen draw its latest frame now.
+    static let refreshNotification = Notification.Name("com.classicmac.guest-screen.refresh")
+
+    @objc func drawLatestFrame() {
+        guard let image = session.takeFrame(force: true) else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        imageLayer.contents = image
+        CATransaction.commit()
     }
 
     @objc private func tick() {

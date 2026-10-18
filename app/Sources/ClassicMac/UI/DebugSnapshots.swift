@@ -47,6 +47,9 @@ enum DebugSnapshots {
     }
 
     private static func snapshot(into out: URL, prefix: String) {
+        // Guest screens draw on the display link, which pauses while the
+        // display sleeps; draw their latest frames before capturing.
+        NotificationCenter.default.post(name: GuestScreenNSView.refreshNotification, object: nil)
         var index = 0
         for window in NSApp.orderedWindows.reversed() where window.isVisible {
             index += 1
