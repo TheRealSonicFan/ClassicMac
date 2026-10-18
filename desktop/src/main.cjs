@@ -274,6 +274,6 @@ else app.whenReady().then(async () => {
     }
     if (!engines.size) app.quit();
   }, Number(process.env.CLASSICMAC_TEST_WAIT || 2000));
-}).catch(error => { console.error(error); app.exit(1); });
+}).catch(async error => { console.error(error); if(process.env.CLASSICMAC_TEST_HOME)for(const e of engines.values())await e.forceOff(); app.exit(1); });
 app.on('window-all-closed', () => { if (!engines.size) app.quit(); });
 app.on('quit', () => { quitting = true; downloadJob?.abort(); pasteJob?.abort(); server?.close(); });
