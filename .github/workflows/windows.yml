@@ -97,5 +97,4 @@ jobs:
             output/desktop/smoke/desktop.png.json
             output/desktop/smoke/desktop.png.shutdown.json
             output/desktop/smoke/desktop.log
-            output/desktop/smoke/isolated-home/guest.ppm
           retention-days: 14
