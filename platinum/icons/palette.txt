@@ -1,0 +1,48 @@
+# Shared palette for assets/icons/*.icons: one letter per colour.
+# RRGGBB is opaque; AARRGGBB is blended over whatever is behind the icon.
+# Grays are the Platinum ramp used by the rbui widgets.
+K 000000
+W FFFFFF
+1 222222
+3 3A3A3A
+4 444444
+5 555555
+6 636363
+7 737373
+8 848484
+9 949494
+A A5A5A5
+B B5B5B5
+C C5C5C5
+c CECECE
+D DEDEDE
+E E6E6E6
+F F7F7F7
+l DEDBFF
+a B5B2FF
+s 8486DE
+d 5255B5
+n 31319C
+r E60000
+R 940000
+P FF9494
+o FF8600
+y FFDB00
+Y FFF7A5
+g 00A600
+G 006500
+e 9CE69C
+b 0055D6
+L 7BB5FF
+N 002B8C
+t 00A6A6
+u 8430B5
+h F7EFDE
+H DECEB5
+j B5A68C
+J 7B6B52
+w 9C6B31
+x 40000000
+X 80000000
+# Added with the icon set: shading tones.
+O D6A600

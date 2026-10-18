@@ -104,6 +104,81 @@ enum MachineFamily: String, Codable, CaseIterable, Identifiable {
     var usesPRAMImage: Bool { self == .quadra800 }
 }
 
+// The Power Mac's display card. Standard is ClassicMac's VGA framebuffer with
+// its bundled Mac OS driver: any size, live window resizing, every depth from
+// Black & White to Millions. ATI Radeon is an emulated R100 (PCI 1002:5144,
+// "ATY,Rage6p") that runs Mac OS 9's own ATI drivers, so QuickDraw 3D RAVE
+// and OpenGL games are accelerated by this Mac's GPU without any custom guest
+// driver. Ported from RetroBoot (D018/D023).
+enum GraphicsCard: String, Codable, CaseIterable, Identifiable {
+    case standard
+    case atiRadeon
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .standard: return "Standard"
+        case .atiRadeon: return "ATI Radeon"
+        }
+    }
+
+    var longLabel: String {
+        switch self {
+        case .standard: return "Standard (any size)"
+        case .atiRadeon: return "ATI Radeon (3D acceleration)"
+        }
+    }
+}
+
+// Screen sizes with the ATI card. ATI's Mac OS driver (ATI Driver Update
+// 1.9.5) starts every session at 640 x 480 and offers its own fixed modes plus
+// the detailed timing in the emulated monitor's EDID. ClassicMac gives the
+// monitor exactly the chosen size (landscape, width in 8-pixel steps, within
+// ATI's largest 3D mode), at the highest of 75/60/50 Hz whose pixel clock
+// stays at or below 162 MHz: ATI's driver ignores EDIDs above about 165 MHz.
+// RetroBoot Display, installed in the Library's ATI-ready Macs, switches
+// Mac OS to that size during startup (RetroBoot hostd/retroboot/graphics.py).
+enum ATIDisplay {
+    static let startupSize = (width: 640, height: 480)
+    static let minimum = (width: 640, height: 480)
+    static let maximum = (width: 1920, height: 1440)
+    static let maxPixelClockKHz = 162_000
+    static let refreshRates = [75, 60, 50]
+
+    static let fixedSizes: [ResolutionPreset] = [
+        (640, 480), (800, 600), (832, 624), (1024, 768), (1152, 870), (1280, 800), (1280, 960),
+        (1280, 1024), (1600, 1200), (1920, 1080), (1920, 1200)
+    ].map { ResolutionPreset(width: $0.0, height: $0.1) }
+
+    // QEMU's EDID detailed timing pixel clock (hw/display/edid-generate.c).
+    static func pixelClockKHz(width: Int, height: Int, hz: Int) -> Int {
+        let xblank = width * 35 / 100, yblank = height * 35 / 1000
+        return hz * 1000 * (width + xblank) * (height + yblank) / 10_000_000 * 10
+    }
+
+    static func refresh(width: Int, height: Int) -> Int? {
+        refreshRates.first { pixelClockKHz(width: width, height: height, hz: $0) <= maxPixelClockKHz }
+    }
+
+    /// The size itself when the card can show it exactly, else nil.
+    static func exactSize(width: Int, height: Int) -> (width: Int, height: Int)? {
+        let w = width / 8 * 8
+        guard w >= height, (minimum.width...maximum.width).contains(w),
+              (minimum.height...maximum.height).contains(height),
+              refresh(width: w, height: height) != nil else { return nil }
+        return (w, height)
+    }
+
+    /// The closest size the card can show within width x height.
+    static func size(fitting width: Int, height: Int) -> (width: Int, height: Int) {
+        if let exact = exactSize(width: width, height: height) { return exact }
+        let fits = fixedSizes.filter { $0.width <= width && $0.height <= height }
+        let best = fits.max { ($0.width * $0.height, $0.width) < ($1.width * $1.height, $1.width) }
+        return best.map { ($0.width, $0.height) } ?? startupSize
+    }
+}
+
 // A single emulated classic Macintosh. Each VM is a self-contained ".classic"
 // package (a directory Finder shows as a file) whose location is `bundleURL`;
 // the settings below are persisted as config.json inside that package,
@@ -155,6 +230,9 @@ struct VMConfig: Codable, Identifiable, Hashable {
     var networking: Bool
     var sound: Bool
 
+    // Display card (Power Mac only). Older packages have no key: Standard.
+    var graphicsCard: GraphicsCard
+
     // PowerPC CPU generation. The 7400/G4 model substantially improves
     // classic QuickDraw and mixed 68K/PowerPC workloads on Mac OS 8.6 and 9.
     // Mac OS 8.5 predates G4 hardware, so it can retain the G3 model.
@@ -186,7 +264,7 @@ struct VMConfig: Codable, Identifiable, Hashable {
         case width, height, depth, useEnhancedFramebuffer, customResolution
         case useBrowserDisplay
         case cdImagePath, bootFromCD, floppyImagePath
-        case networking, sound, useG4CPU, sharedFolderPath
+        case networking, sound, useG4CPU, sharedFolderPath, graphicsCard
         case classicInputHelpers, tabletInput, toolsCDInserted
         case toolsDeliveryVersion
     }
@@ -209,6 +287,7 @@ struct VMConfig: Codable, Identifiable, Hashable {
          networking: Bool = true,
          sound: Bool = true,
          useG4CPU: Bool = true,
+         graphicsCard: GraphicsCard = .standard,
          tabletInput: Bool = true,
          classicInputHelpers: Bool = true,
          sharedFolderPath: String? = nil,
@@ -234,6 +313,7 @@ struct VMConfig: Codable, Identifiable, Hashable {
         self.networking = networking
         self.sound = sound
         self.useG4CPU = machineFamily == .powerMacG4 && useG4CPU
+        self.graphicsCard = graphicsCard
         self.tabletInput = tabletInput
         self.classicInputHelpers = classicInputHelpers
         self.sharedFolderPath = sharedFolderPath
@@ -297,6 +377,7 @@ struct VMConfig: Codable, Identifiable, Hashable {
         // Preserve the boot-compatible G3 identity for existing VM packages.
         // Newly created Power Macs opt into G4 through the regular initializer.
         useG4CPU = try c.decodeIfPresent(Bool.self, forKey: .useG4CPU) ?? false
+        graphicsCard = (try? c.decodeIfPresent(GraphicsCard.self, forKey: .graphicsCard)) ?? .standard
         classicInputHelpers = try c.decodeIfPresent(Bool.self, forKey: .classicInputHelpers) ?? true
         tabletInput = try c.decodeIfPresent(Bool.self, forKey: .tabletInput) ?? true
         sharedFolderPath = try c.decodeIfPresent(String.self, forKey: .sharedFolderPath)
@@ -319,6 +400,7 @@ struct VMConfig: Codable, Identifiable, Hashable {
             useEnhancedFramebuffer = false
         } else {
             useG4CPU = false
+            graphicsCard = .standard
         }
         width = Self.clampedWidth(width)
         height = Self.clampedHeight(height)
@@ -329,7 +411,13 @@ struct VMConfig: Codable, Identifiable, Hashable {
         if machineFamily == .quadra800 && !useEnhancedFramebuffer {
             customResolution = false
         }
-        if !customResolution {
+        if graphicsCard == .atiRadeon {
+            // The card shows its own sizes; keep the stored size one it can show.
+            let size = ATIDisplay.size(fitting: width, height: height)
+            width = size.width
+            height = size.height
+            customResolution = ResolutionPreset.matching(width: width, height: height) == nil
+        } else if !customResolution {
             let preset = ResolutionPreset.closest(toWidth: width, height: height)
             width = preset.width
             height = preset.height

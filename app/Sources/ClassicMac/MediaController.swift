@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import PlatinumKit
 
 // The same three drive identities are used by the launcher, native menu, and
 // HMP bridge. Never expose arbitrary monitor commands through the media UI.
@@ -169,11 +170,12 @@ final class MediaController: NSObject, ObservableObject, NSWindowDelegate {
         if let window = windows[id] {
             window.makeKeyAndOrderFront(nil)
         } else {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 660, height: 640), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-            window.title = "Media — \(config.name)"
-            window.contentView = NSHostingView(rootView: MediaWindowContent(id: id))
-            window.minSize = NSSize(width: 580, height: 480)
-            window.isReleasedWhenClosed = false
+            let window = PlatinumWindow(title: "Media \u{2014} \(config.name)", kind: .document,
+                                        boxes: .document, growable: true,
+                                        contentSize: NSSize(width: 540, height: 440)) {
+                MediaWindowContent(id: id)
+            }
+            window.minSize = PlatinumWindow.frameSize(forContent: NSSize(width: 500, height: 380), kind: .document)
             window.delegate = self
             window.center()
             windows[id] = window
@@ -268,7 +270,13 @@ private struct MediaWindowContent: View {
         if let config = store.vms.first(where: { $0.id == id }) {
             MediaDrawerView(config: Binding(get: { store.vms.first(where: { $0.id == id }) ?? config }, set: { _ = store.save($0) }), isRunning: manager.isRunning(id), isPaused: manager.isPaused(id))
         } else {
-            ContentUnavailableView("Machine Unavailable", systemImage: "desktopcomputer", description: Text("Open the machine in ClassicMac again to manage its media."))
+            VStack(spacing: 8) {
+                PlatinumIcon("caution", size: 32)
+                Text("This Mac is no longer in ClassicMac.").platinumText(.emphasis)
+                Text("Open it again to manage its media.").platinumText(.small)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Platinum.face.color)
         }
     }
 }
