@@ -1,4 +1,7 @@
-# Windows prototype — October 18, 2026
+# Historical Windows prototype — October 18, 2026
+
+The prototype below is superseded by the stable 4.1 Windows/Linux release.
+See [current qualification](desktop-release-validation.md) for shipped features and tests.
 
 Source: `3b2d435` on `codex/windows-app`, [draft PR #24](https://github.com/amcchord/ClassicMac/pull/24).
 [Native Windows CI run 39143255474](https://github.com/amcchord/ClassicMac/actions/runs/39143255474)

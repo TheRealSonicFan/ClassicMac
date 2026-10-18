@@ -456,3 +456,24 @@
   the VM running; inspected before retrying, completed post-setup through
   the existing AustinLand helper, avoiding a duplicate VM. Secrets are never
   logged or committed. Unrelated VMs/templates and user machines untouched.
+
+## October 18 — 4.1 real-host qualification and restart correction
+
+- Dedicated AustinLand/Proxmox Debian13 and Windows11 hosts imported the real
+  current 32GB Library archive with interrupted/resumed download, exact size,
+  SHA256 and bounded extraction. Final native OS9 input probe shows ASCII and
+  accented MacRoman text; Linux reads a host file and writes a verified reply.
+  Both hosts boot Quadra/MacOS8.1 CD and complete normal shutdown.
+- Real tests found QEMU's System32/en-US keyboard-map collision, early QMP
+  commands during restart, and hard resets leaving HFS dirty. Fixed runtime
+  CWD and readiness; desktop Restart now completes guest shutdown before
+  relaunch. Final runs require actual menu-title pixels and finish without
+  dismissing a disk-check dialog. Strict CI caught an empty startup menu being
+  misclassified; its detector now excludes borders, Apple icon and clock.
+- Mac 4.1 metadata/notices build signed/notarized; app notary
+  19512f97-9c95-425a-8f82-8e24ea2d6bda and DMG notary
+  70419b9f-a438-4773-b705-42dd68036c67 accepted. Package, Gatekeeper, ATI and
+  native display reconnect gates pass. Refreshed direct Mac screenshots.
+- Final packaged CI and integration/publication pending. No new stable tag
+  published in this entry. VM secrets remain in protected ignored output;
+  no unrelated VM, template or user machine changed.
