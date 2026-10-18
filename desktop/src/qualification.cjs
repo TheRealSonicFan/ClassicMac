@@ -8,6 +8,21 @@ const catalog=require('./catalog.cjs'),{paste}=require('./paste.cjs');
 const run=promisify(execFile),delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function qualify({window,engines,id,home,imageTool,version}) {
  const report={platform:process.platform,version,checks:[],started:new Date().toISOString()};
+ async function finder(engine){
+  const file=path.join(home,'guest.ppm'),deadline=Date.now()+300000;let stable=0;
+  while(Date.now()<deadline){
+   await engine.command('screendump',{filename:file});const data=await fs.readFile(file);
+   const header=data.subarray(0,200).toString('ascii').match(/^P6\s+(\d+)\s+(\d+)\s+255\s/);
+   if(!header)throw new Error('Unexpected guest framebuffer format.');
+   const width=Number(header[1]),rows=Math.min(20,Number(header[2]));let dark=0,bright=0;
+   for(let i=header[0].length,end=i+width*rows*3;i<end;i+=3){const rgb=[data[i],data[i+1],data[i+2]];if(Math.max(...rgb)<50)dark++;if(Math.min(...rgb)>170)bright++;}
+   if(dark>=Math.min(800,Math.max(200,width*rows/25))&&bright>=Math.max(2000,width*rows/2))stable++;else stable=0;
+   if(stable>=2){await delay(10000);return;}
+   await delay(3000);
+  }
+  throw new Error('Finder did not appear before the boot deadline.');
+ }
+
  async function check(name,fn){await fn();report.checks.push(name);console.log('PARITY PASS',name);await writeJSON(path.join(home,'parity.json'),report);}
  await check('create/import/config round trip',async()=>{
   const folder=path.join(home,'Created Test.classic');await fs.mkdir(folder);
@@ -27,8 +42,8 @@ async function qualify({window,engines,id,home,imageTool,version}) {
   const folder=await catalog.install(entry,home,'Library Import Test',cache);
   if(!(await readMachine(folder)).config.toolsCDInserted)throw new Error('Library settings were not sanitized.');
  });
- await delay(Number(process.env.CLASSICMAC_TEST_BOOT_WAIT||45000));
  let engine=engines.get(id);if(!engine)throw new Error('Boot engine stopped.');
+ await finder(engine);
  await check('boot/display connection',async()=>{
   const evidence=await window.webContents.executeJavaScript('window.classicmacEvidence?.()');
   if(!evidence?.connected||!evidence.canvas)throw new Error('Guest display was not connected.');
@@ -38,7 +53,7 @@ async function qualify({window,engines,id,home,imageTool,version}) {
   const previous=engine;await previous.restart();const deadline=Date.now()+20000;
   while((!engines.has(id)||engines.get(id)===previous)&&Date.now()<deadline)await delay(100);
   engine=engines.get(id);if(!engine||engine===previous)throw new Error('Restart did not launch a new engine.');
-  await delay(45000);
+  await finder(engine);
   const evidence=await window.webContents.executeJavaScript('window.classicmacEvidence?.()');if(!evidence.connected)throw new Error('Display did not reconnect.');
  });
  await check('native guest paste chords',async()=>{
