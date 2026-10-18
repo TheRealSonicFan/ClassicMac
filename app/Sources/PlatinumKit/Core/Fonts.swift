@@ -2,6 +2,9 @@ import SwiftUI
 import CoreText
 import CoreGraphics
 import Foundation
+#if os(macOS)
+import AppKit
+#endif
 
 /// The Platinum bitmap fonts, compiled to pixel-square TrueType at build time
 /// (platinum/tools/build_platinum_swift.py) and registered with Core Text for
@@ -32,15 +35,18 @@ public enum PlatinumFont: String, CaseIterable, Sendable {
 
     /// The SwiftUI font at its design size, or an integer multiple of it.
     public func font(scale: Int = 1) -> Font {
-        PlatinumFonts.registerIfNeeded()
-        return Font.custom(rawValue, fixedSize: size * CGFloat(max(1, scale)))
+        Font(ctFont(scale: scale))
     }
 
     /// A Core Text font at its design size (or an integer multiple).
     public func ctFont(scale: Int = 1) -> CTFont {
-        PlatinumFonts.registerIfNeeded()
-        return CTFontCreateWithName(rawValue as CFString, size * CGFloat(max(1, scale)), nil)
+        PlatinumFonts.font(self, size: size * CGFloat(max(1, scale)))
     }
+
+    #if os(macOS)
+    /// The AppKit font at its design size (toll-free bridged from Core Text).
+    public func nsFont(scale: Int = 1) -> NSFont { ctFont(scale: scale) as NSFont }
+    #endif
 }
 
 public extension Font {
@@ -58,27 +64,44 @@ public extension Font {
 
 public enum PlatinumFonts {
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var registered = false
+    nonisolated(unsafe) private static var descriptors: [String: CTFontDescriptor] = [:]
+    nonisolated(unsafe) private static var fonts: [String: CTFont] = [:]
 
-    /// Registers the embedded fonts once per process. Safe from any thread.
+    /// Decodes the embedded fonts once per process. They are used directly as
+    /// Core Text fonts, so nothing is registered system- or process-wide.
     public static func registerIfNeeded() {
         lock.lock()
         defer { lock.unlock() }
-        guard !registered else { return }
-        registered = true
+        loadLocked()
+    }
+
+    private static func loadLocked() {
+        guard descriptors.isEmpty else { return }
         for data in PlatinumAssets.fonts {
             guard let bytes = Data(base64Encoded: data.base64),
-                  let provider = CGDataProvider(data: bytes as CFData),
-                  let font = CGFont(provider) else {
+                  let found = CTFontManagerCreateFontDescriptorsFromData(bytes as CFData) as? [CTFontDescriptor],
+                  let descriptor = found.first else {
                 assertionFailure("PlatinumKit: could not decode \(data.postScriptName)")
                 continue
             }
-            var error: Unmanaged<CFError>?
-            if !CTFontManagerRegisterGraphicsFont(font, &error) {
-                // Already registered (for example by a second bundle) is fine.
-                error?.release()
-            }
+            descriptors[data.postScriptName] = descriptor
         }
+    }
+
+    static func font(_ font: PlatinumFont, size: CGFloat) -> CTFont {
+        lock.lock()
+        defer { lock.unlock() }
+        loadLocked()
+        let key = "\(font.rawValue)@\(size)"
+        if let cached = fonts[key] { return cached }
+        let made: CTFont
+        if let descriptor = descriptors[font.rawValue] {
+            made = CTFontCreateWithFontDescriptor(descriptor, size, nil)
+        } else {
+            made = CTFontCreateUIFontForLanguage(.system, size, nil) ?? CTFontCreateWithName("Helvetica" as CFString, size, nil)
+        }
+        fonts[key] = made
+        return made
     }
 
     /// Advance width of a string in the given font, in points.

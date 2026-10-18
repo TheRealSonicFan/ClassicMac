@@ -55,7 +55,13 @@ public struct PlatinumWindowChrome<Content: View>: View {
     let boxes: Chrome.TitleBoxes
     let growable: Bool
     let content: Content
+    #if os(macOS)
     @Environment(\.controlActiveState) private var activeState
+    private var windowIsActive: Bool { activeState == .key || activeState == .active }
+    #else
+    // An iPad scene shows one window at a time; it is always the active one.
+    private var windowIsActive: Bool { true }
+    #endif
     @Environment(\.platinumStaticRender) private var staticRender
 
     public init(state: PlatinumWindowState, kind: Chrome.WindowKind, boxes: Chrome.TitleBoxes = .none,
@@ -70,8 +76,7 @@ public struct PlatinumWindowChrome<Content: View>: View {
     public var body: some View {
         GeometryReader { geo in
             let w = Int(geo.size.width), h = Int(geo.size.height)
-            let active = activeState == .key || activeState == .active || kind == .modal ||
-                PlatinumDebug.forceActive
+            let active = windowIsActive || kind == .modal || PlatinumDebug.forceActive
             let titled = kind != .modal
             let maxTitle = max(0, w - 1 - 60 - (boxes.zoom ? 24 : 0))
             let fullTitle = titled ? Int(PlatinumFonts.width(state.title, font: .system)) : 0

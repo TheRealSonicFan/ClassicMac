@@ -7,6 +7,10 @@ let package = Package(
         .macOS(.v15),
         .iOS(.v18)
     ],
+    products: [
+        .executable(name: "ClassicMac", targets: ["ClassicMac"]),
+        .library(name: "PlatinumKit", targets: ["PlatinumKit"])
+    ],
     targets: [
         // The Platinum appearance (Mac OS 8/9) shared by every ClassicMac
         // front end: fonts, icons, pixel-exact controls and window chrome.

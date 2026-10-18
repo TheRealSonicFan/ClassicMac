@@ -85,7 +85,7 @@ struct PlatinumNSTextField: NSViewRepresentable {
         field.isBezeled = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = NSFont(name: PlatinumFont.system.rawValue, size: 12)
+        field.font = PlatinumFont.system.nsFont()
         field.textColor = .black
         field.lineBreakMode = .byClipping
         field.usesSingleLineMode = true
@@ -93,7 +93,7 @@ struct PlatinumNSTextField: NSViewRepresentable {
         field.cell?.wraps = false
         field.delegate = context.coordinator
         field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
-            .font: NSFont(name: PlatinumFont.system.rawValue, size: 12) as Any,
+            .font: PlatinumFont.system.nsFont() as Any,
             .foregroundColor: NSColor(Platinum.disabledText.color)
         ])
         return field

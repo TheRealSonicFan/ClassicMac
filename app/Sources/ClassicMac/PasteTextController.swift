@@ -197,7 +197,7 @@ private struct PlatinumTextEditor: NSViewRepresentable {
         scroll.hasVerticalScroller = false
         scroll.borderType = .noBorder
         guard let view = scroll.documentView as? NSTextView else { return scroll }
-        view.font = NSFont(name: PlatinumFont.regular.rawValue, size: 12)
+        view.font = PlatinumFont.regular.nsFont()
         view.textColor = .black
         view.backgroundColor = .white
         view.insertionPointColor = .black
