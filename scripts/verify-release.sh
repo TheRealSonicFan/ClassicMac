@@ -138,7 +138,7 @@ if [ "$VERIFY_NOTARIZATION" -eq 1 ]; then
   spctl --assess --type execute --verbose=2 "$APP"
 fi
 
-log "Verifying the bundled Power Mac executable"
+log "Verifying the bundled Power Mac executable and display cards"
 file "$PPC_QEMU" | grep -q 'arm64' || die "Power Mac QEMU is not arm64"
 file "$QUADRA_QEMU" | grep -q 'arm64' || die "Quadra QEMU is not arm64"
 DEVICE_HELP="$("$PPC_QEMU" -device VGA,help 2>&1)"
@@ -152,6 +152,17 @@ if [ "$VERSION_MAJOR" -ge 4 ]; then
   fi
   if LC_ALL=C grep -a -F "GXMetal" "$TOOLS_CD" >/dev/null; then
     die "Bundled Tools CD still carries the removed GXMetal folder"
+  fi
+  ATI_HELP="$("$PPC_QEMU" -device ati-vga,help 2>&1)"
+  for property in model x-accel-stats x-gl-renderer xres yres refresh_rate; do
+    printf '%s\n' "$ATI_HELP" | grep -q "$property" || \
+      die "Bundled Power Mac QEMU lacks ati-vga.$property"
+  done
+  strings "$APP/Contents/Resources/qemu/pc-bios/openbios-ppc" | \
+    grep -F 'ATY,Rage6p' >/dev/null || \
+    die "Bundled OpenBIOS lacks the ATI Radeon (ATY,Rage6p) node"
+  if otool -L "$PPC_QEMU" | grep -E '/(OpenGL|Metal)\.framework/' >/dev/null; then
+    die "Power Mac QEMU must load OpenGL at run time, not link it"
   fi
 fi
 for qemu in "$PPC_QEMU" "$QUADRA_QEMU"; do

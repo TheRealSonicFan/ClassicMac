@@ -3,7 +3,8 @@
 # build-qemu.sh - Build qemu-system-m68k, qemu-system-ppc and qemu-img for
 # Apple Silicon: the Quadra's enhanced nubus-qfb paravirtualized framebuffer
 # (arbitrary resolutions + Thousands colour) and nubus-virtio-mmio transport,
-# and the Power Mac G4's std-VGA extensions.
+# and the Power Mac G4's std-VGA extensions plus the emulated ATI Radeon R100
+# (ati/, Mac OS 9's own ATI drivers with 3D rendered through host OpenGL).
 #
 # Approach: clone mainline QEMU at a pinned tag and apply every ClassicMac
 # modification kept in this repository (device files and patches).
@@ -27,6 +28,7 @@ QEMU_REPO="${QEMU_REPO:-https://gitlab.com/qemu-project/qemu.git}"
 QEMU_TAG="${QEMU_TAG:-v11.0.2}"
 QFB_DIR="$ROOT_DIR/qfb"
 POWERMAC_DIR="$ROOT_DIR/powermac"
+ATI_DIR="$ROOT_DIR/ati"
 
 # Tracked files modified by the ClassicMac patches (reset before re-applying).
 # Files only earlier releases patched (GXMetal's ui/input.c, bochs-vbe.h) stay
@@ -91,10 +93,21 @@ PATCHED_FILES=(
   target/ppc/mmu_helper.c
   target/ppc/translate.c
   tcg/tcg-op.c
+  hw/display/ati.c
+  hw/display/ati_2d.c
+  hw/display/ati_int.h
+  hw/display/ati_regs.h
+  hw/display/trace-events
 )
 # Untracked files created by patches (git apply refuses to create them again)
 # or copied by earlier releases; removed before the patches are applied.
 UNTRACKED_PATCH_FILES=(
+  hw/display/ati_3d.c
+  hw/display/ati_3d.h
+  hw/display/ati_cp.c
+  hw/display/ati_gl.c
+  hw/display/ati_gl.h
+  hw/display/ati_glr.c
   hw/display/gxmetal_protocol.h
   hw/display/gxmetal_decode.h
   hw/display/gxmetal_decode.c
@@ -380,6 +393,20 @@ git -C "$QEMU_DIR" apply "$POWERMAC_DIR/classicmac-boot-handoff-display.patch" |
 # Read actual media state and safely change Quadra removable media without
 # consuming the QMP connection reserved for shutdown/restart events.
 git -C "$QEMU_DIR" apply "$ROOT_DIR/monitor/media-control.patch" || die "Failed to apply ClassicMac media control bridge"
+
+# ---------------------------------------------------------------------------
+# 3d. Emulated ATI Radeon R100 (ati-vga,model=r100), applied last
+# ---------------------------------------------------------------------------
+# RetroBoot's R100 model (PCI 1002:5144, Open Firmware ATY,Rage6p, driven by
+# Mac OS 9's own ATI drivers): register file, CRTC/PLLs, command processor,
+# 2D engine and the 3D engine rendered on a host GL thread. Only hw/display/
+# ati* changes, so machines without the card are unaffected. ClassicMac's
+# patch adds the macOS back end (CGL, OpenGL 4.1 Core, OpenGL.framework is
+# dlopen()ed when the card is realized), CLASSICMAC_ATI_3D=off and the
+# x-gl-renderer status property. See ati/README.md.
+log "Installing the emulated ATI Radeon R100 (ati-vga,model=r100)"
+git -C "$QEMU_DIR" apply "$ATI_DIR/retroboot-ati-r100.patch" || die "Failed to apply ATI Radeon R100 patch"
+git -C "$QEMU_DIR" apply "$ATI_DIR/classicmac-ati-macos.patch" || die "Failed to apply ATI Radeon macOS GL patch"
 if [ -f "$PPCVID_DIR/qemu_vga.ndrv" ]; then
   cp "$PPCVID_DIR/qemu_vga.ndrv" "$QEMU_DIR/pc-bios/qemu_vga.ndrv"
 else
@@ -510,6 +537,23 @@ if "$QEMU_PPC_BIN" -device VGA,help 2>&1 | grep -q "gxmetal"; then
 else
   printf '    OK  no GXMetal transport (ppc)\n'
 fi
+ATI_HELP="$("$QEMU_PPC_BIN" -device ati-vga,help 2>&1 || true)"
+for property in model x-accel-stats x-gl-renderer xres yres refresh_rate guest_hwcursor; do
+  printf '%s\n' "$ATI_HELP" | grep -q "$property" || \
+    die "ati-vga property $property missing from the ppc build"
+done
+printf '    OK  ATI Radeon R100 device and status properties (ppc)\n'
+if otool -L "$QEMU_PPC_BIN" | grep -E "/(OpenGL|Metal)\.framework/" >/dev/null; then
+  die "qemu-system-ppc must not link OpenGL/Metal (the ATI card loads OpenGL at run time)"
+fi
+# Realize the card on mac99 and read its status: host GL must come up on a
+# Mac with a GPU (CLASSICMAC_ATI_GL_OPTIONAL=1 accepts a GL-less builder).
+ATI_TEST_ARGS=()
+if [ -n "${CLASSICMAC_ATI_GL_OPTIONAL:-}" ]; then
+  ATI_TEST_ARGS+=(--gl-optional)
+fi
+"$PYTHON_BIN" "$ATI_DIR/tests/test_qemu_ati.py" "${ATI_TEST_ARGS[@]+"${ATI_TEST_ARGS[@]}"}" \
+  "$QEMU_PPC_BIN" "$QEMU_DIR/pc-bios" || die "ATI Radeon realization test failed"
 if "$QEMU_PPC_BIN" -device macio-ide,help 2>&1 | grep -q "dma-completion-delay-ns"; then
   printf '    OK  MacIO IDE DMA completion delay (ppc)\n'
 else
@@ -539,6 +583,11 @@ if strings "$QEMU_DIR/pc-bios/openbios-ppc" | grep "iMac,1" >/dev/null && \
   printf '    OK  classic Mac OS 8 OpenBIOS profile\n'
 else
   die "pc-bios/openbios-ppc is missing classic Mac OS 8 compatibility"
+fi
+if strings "$QEMU_DIR/pc-bios/openbios-ppc" | grep "ATY,Rage6p" >/dev/null; then
+  printf '    OK  ATI Radeon-aware OpenBIOS (ATY,Rage6p)\n'
+else
+  die "pc-bios/openbios-ppc lacks the ATI Radeon node (scripts/build-openbios.sh)"
 fi
 
 log "Done. Binaries: $BUILD_DIR/qemu-system-m68k , $BUILD_DIR/qemu-system-ppc , $BUILD_DIR/qemu-img"
