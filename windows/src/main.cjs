@@ -209,6 +209,12 @@ else app.whenReady().then(async () => {
       const evidence = await window.webContents.executeJavaScript('window.classicmacEvidence?.()');
       await fs.writeFile(process.env.CLASSICMAC_TEST_SCREENSHOT + '.json', JSON.stringify(evidence, null, 2));
     } catch (error) { console.error(error); }
+    if (process.env.CLASSICMAC_TEST_AUTOSTOP) {
+      for (const engine of engines.values()) await engine.shutdown();
+      const deadline = Date.now() + 20000;
+      while (engines.size && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 250));
+      await fs.writeFile(process.env.CLASSICMAC_TEST_SCREENSHOT + '.shutdown.json', JSON.stringify({ cleanShutdown: engines.size === 0 }));
+    }
     if (!engines.size) app.quit();
   }, Number(process.env.CLASSICMAC_TEST_WAIT || 2000));
 }).catch(error => { console.error(error); app.exit(1); });

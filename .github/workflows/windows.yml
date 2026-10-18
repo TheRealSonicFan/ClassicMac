@@ -1,4 +1,7 @@
 name: Windows desktop
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
 on:
   push:
     branches: [codex/windows-app]
@@ -63,4 +66,16 @@ jobs:
         with:
           name: ClassicMac-Windows-app
           path: output/windows/packages/*.zip
+          retention-days: 14
+      - name: Test the packaged desktop with a disposable OS9 machine
+        run: node windows/tests/smoke-desktop.cjs output/windows/packages/win-unpacked/ClassicMac.exe output/windows/smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ClassicMac-Windows-smoke
+          path: |
+            output/windows/smoke/desktop.png
+            output/windows/smoke/desktop.png.json
+            output/windows/smoke/desktop.png.shutdown.json
+            output/windows/smoke/desktop.log
           retention-days: 14
