@@ -75,3 +75,11 @@ The Mac Platinum audit covers 32 component states/patterns at 1×/2× and 95
 system-font ASCII glyphs/advances. It does not certify the entire Mac UI or
 the shared CSS desktop as pixel perfect. See the
 [Platinum fidelity audit](platinum-fidelity-audit.md) for remaining coverage.
+
+Final native packaged CI passes: [Windows 39158984879](https://github.com/amcchord/ClassicMac/actions/runs/39158984879)
+at `389792f`, and [Linux 39158930105](https://github.com/amcchord/ClassicMac/actions/runs/39158930105)
+at `b488733`. The source difference is a Windows workflow artifact/cache-only
+change. Every packaged src/UI file was compared with the final implementation
+(allowing Windows CRLF); both match. Bundled runtime inventories, Tools CD hash
+and current notices were checked: Windows 209 files/72 license notices;
+Linux 190 files/37 license notices. Both packaged CI captures were reviewed.
