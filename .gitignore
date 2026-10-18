@@ -40,3 +40,6 @@ artifacts/
 output/
 scratch/
 tmp/
+
+# Windows desktop dependencies
+node_modules/
