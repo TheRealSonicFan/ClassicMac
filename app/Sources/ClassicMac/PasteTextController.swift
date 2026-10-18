@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import PlatinumKit
 import Combine
 
 @MainActor
@@ -34,11 +35,12 @@ final class PasteTextController: NSObject, NSWindowDelegate {
         window?.close()
         let session = PasteTextSession(id: id, name: vm.name)
         self.session = session
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 590, height: 455),
-                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.title = "Paste Text into \(vm.name)"
-        window.contentViewController = NSHostingController(rootView: PasteTextView(session: session))
-        window.isReleasedWhenClosed = false
+        let window = PlatinumWindow(title: "Paste Text into \(vm.name)", kind: .document,
+                                    boxes: Chrome.TitleBoxes(close: true, collapse: true), growable: true,
+                                    contentSize: NSSize(width: 560, height: 420)) {
+            PasteTextView(session: session)
+        }
+        window.minSize = PlatinumWindow.frameSize(forContent: NSSize(width: 480, height: 360), kind: .document)
         window.delegate = self
         window.center()
         self.window = window
@@ -139,48 +141,92 @@ final class PasteTextSession: ObservableObject {
 private struct PasteTextView: View {
     @ObservedObject var session: PasteTextSession
     @ObservedObject private var manager = QEMUManager.shared
-    @FocusState private var editingText: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Paste Text into \(session.name)").font(.title2.bold())
-            Text("Place the text cursor in the Mac first. This types the text below using the Mac's US keyboard layout, with Caps Lock off. It supports English text and common accented letters; other characters must be edited first.")
-                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            TextEditor(text: $session.text)
-                .focused($editingText)
-                .font(.system(.body, design: .monospaced))
-                .scrollContentBackground(.hidden)
-                .padding(6)
-                .background(.background, in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
-                .disabled(session.isPasting)
-                .frame(minHeight: 135)
-            Text("Tabs and line breaks press Tab and Return in the Mac. Keep the destination app and cursor in place while pasting.")
-                .font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                PlatinumIcon("note", size: 32)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Type this text into \u{201C}\(session.name)\u{201D}.").platinumText(.emphasis)
+                    Text("Place the text cursor in the Mac first. ClassicMac types the text using the Mac's U.S. keyboard layout with Caps Lock off. Tabs and line breaks press Tab and Return.")
+                        .platinumText(.small)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            PlatinumWell {
+                PlatinumTextEditor(text: $session.text, editable: !session.isPasting)
+            }
+            .frame(maxHeight: .infinity)
             if session.isPasting {
-                ProgressView(value: Double(session.sent), total: Double(max(session.total, 1))) {
-                    Text("Pasting \(session.sent) of \(session.total) characters…")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Typing \(session.sent) of \(session.total) characters…").platinumText(.small)
+                    PlatinumProgressBar(value: Double(session.sent) / Double(max(session.total, 1)))
                 }
             } else if let validation = session.validation {
-                Text(validation).font(.callout).foregroundStyle(.secondary)
+                Text(validation).platinumText(.small)
             }
             if !session.status.isEmpty {
-                Text(session.status).font(.callout).accessibilityAddTraits(.updatesFrequently)
+                Text(session.status).platinumText(.detail).accessibilityAddTraits(.updatesFrequently)
             }
-            HStack {
-                Toggle("Slow typing for older apps", isOn: $session.slow).disabled(session.isPasting)
+            HStack(spacing: Platinum.buttonGap) {
+                PlatinumCheckbox("Type slowly for older apps", isOn: $session.slow)
+                    .disabled(session.isPasting)
                 Spacer()
                 if session.isPasting {
-                    Button("Cancel Paste", role: .cancel) { session.cancel() }.keyboardShortcut(.cancelAction)
+                    PlatinumButton("Stop", role: .cancel) { session.cancel() }
                 } else {
-                    Button("Paste Text") { session.paste() }
-                        .buttonStyle(.borderedProminent)
+                    PlatinumButton("Paste Text", role: .default, minWidth: 90) { session.paste() }
                         .disabled(session.validation != nil || !manager.isRunning(session.id) || manager.isPaused(session.id))
                 }
             }
         }
-        .padding(22)
-        .frame(minWidth: 540, minHeight: 410)
-        .onAppear { editingText = true }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Platinum.face.color)
+    }
+}
+
+/// A multi-line text area in the Platinum regular font.
+private struct PlatinumTextEditor: NSViewRepresentable {
+    @Binding var text: String
+    let editable: Bool
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSTextView.scrollableTextView()
+        scroll.drawsBackground = false
+        scroll.hasVerticalScroller = false
+        scroll.borderType = .noBorder
+        guard let view = scroll.documentView as? NSTextView else { return scroll }
+        view.font = PlatinumFont.regular.nsFont()
+        view.textColor = .black
+        view.backgroundColor = .white
+        view.insertionPointColor = .black
+        view.selectedTextAttributes = [.backgroundColor: NSColor(Platinum.highlight.color), .foregroundColor: NSColor.black]
+        view.isRichText = false
+        view.allowsUndo = true
+        view.textContainerInset = NSSize(width: 3, height: 3)
+        view.isAutomaticQuoteSubstitutionEnabled = false
+        view.isAutomaticDashSubstitutionEnabled = false
+        view.delegate = context.coordinator
+        view.string = text
+        DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        context.coordinator.parent = self
+        guard let view = scroll.documentView as? NSTextView else { return }
+        if view.string != text { view.string = text }
+        view.isEditable = editable
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: PlatinumTextEditor
+        init(parent: PlatinumTextEditor) { self.parent = parent }
+        func textDidChange(_ notification: Notification) {
+            if let view = notification.object as? NSTextView { parent.text = view.string }
+        }
     }
 }

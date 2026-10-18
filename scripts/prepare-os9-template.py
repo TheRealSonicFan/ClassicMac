@@ -301,7 +301,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path, help="New .classic package")
-    parser.add_argument("--guest-dir", type=Path, default=Path(__file__).resolve().parents[1] / "gxmetal/guest/bin")
     parser.add_argument("--graphics-source", type=Path,
                         help="Read-only OS 9 image containing the complete Apple QuickDraw 3D/OpenGL components")
     parser.add_argument("--capacity-gb", type=int, choices=(8, 16, 32, 64, 128), default=32,
@@ -382,24 +381,9 @@ def main() -> None:
                 "resourceSHA256": hashlib.sha256(resource).hexdigest(),
             })
 
-        guest = args.guest_dir.resolve()
-        for source_name, destination_name in (
-            ("GXMetal", "GXMetal"), ("GXMetal Input", "GXMetal Input"),
-            ("GXMetal Startup", "GXMetal Startup"),
-        ):
-            copy_item(guest / source_name, target_root / "System Folder/Extensions" / destination_name)
-        for source_name, destination_name in (
-            ("GXMetalTest", "GXMetal Test"),
-            ("GXMetal AGL Probe", "GXMetal AGL Probe"),
-            ("GXMetal RAVE Selection", "GXMetal RAVE Selection"),
-            ("GXMetalInstaller", "Install GXMetal"),
-        ):
-            copy_item(guest / source_name, target_root / "ClassicMac Utilities" / destination_name)
         readme = target_root / "Desktop Folder/Start Here"
         readme.write_bytes((
             f"Welcome to ClassicMac\r\rMac OS {os_version} is ready to use.\r\r"
-            "GXMetal and its input companion are already installed. Open ClassicMac Utilities "
-            "on Macintosh HD to run GXMetal Test or the OpenGL probe.\r\r"
             "Use ClassicMac's media menu to attach a disc image. Power Mac disc changes "
             "may need a shutdown and restart before Mac OS sees them.\r\r"
             "Paste Text into Mac types plain text into the focused guest application. "

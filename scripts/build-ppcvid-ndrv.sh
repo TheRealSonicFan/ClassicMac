@@ -19,8 +19,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDOR_DIR="$ROOT_DIR/vendor"
 DRIVER_DIR="$ROOT_DIR/ppcvid/driver"
-RETRO68_SRC="$VENDOR_DIR/Retro68"
-RETRO68_BUILD="$VENDOR_DIR/Retro68-build"
+RETRO68_SRC="${RETRO68_SRC:-$VENDOR_DIR/Retro68}"
+# An existing Retro68 build (with the PPC target and Universal Interfaces) can
+# be reused from another checkout with RETRO68_BUILD=/path/to/Retro68-build.
+RETRO68_BUILD="${RETRO68_BUILD:-$VENDOR_DIR/Retro68-build}"
 RETRO68_TOOLCHAIN="$RETRO68_BUILD/toolchain"
 RETRO68_REPO="${RETRO68_REPO:-https://github.com/autc04/Retro68.git}"
 MPW_DIR="$VENDOR_DIR/mpw"
@@ -182,8 +184,6 @@ make -C "$DRIVER_DIR"
 
 [ -f "$DRIVER_DIR/bin/qemu_vga.ndrv" ] || die "driver build did not produce bin/qemu_vga.ndrv"
 cp "$DRIVER_DIR/bin/qemu_vga.ndrv" "$ROOT_DIR/ppcvid/qemu_vga.ndrv"
-shasum -a 256 "$ROOT_DIR/gxmetal/protocol/gxmetal_protocol.h" | \
-  awk '{ print $1 }' > "$ROOT_DIR/ppcvid/qemu_vga.ndrv.gxmetal-protocol.sha256"
-log "Installed ppcvid/qemu_vga.ndrv"
+log "Installed ppcvid/qemu_vga.ndrv ($(shasum -a 256 "$ROOT_DIR/ppcvid/qemu_vga.ndrv" | awk '{ print $1 }'))"
 
 log "Done. Rebuild QEMU (scripts/build-qemu.sh) to install the new driver."

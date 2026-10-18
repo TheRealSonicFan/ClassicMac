@@ -1,5 +1,70 @@
 # Changelog
 
+## 4.0.0 Preview 3 — 2026-10-18 (local test build)
+
+### Fixed
+
+- Startup hangs RetroBoot found on slower or busy hosts, now safe to pair
+  with the faster CPU: coherent VIA timers with the timer-2 calibration hold
+  (Mac OS ROM timer calibration), the Cuda sync handshake hold and shift
+  interrupt on access, and MacIO IDE soft reset completed on access. Twelve
+  cold boots each of Deluxe v6 (ATI, including 36 busy host processes on 18
+  cores) and Mac OS 9.2.1 (Standard) reached a responsive Finder with no
+  hangs. See `docs/engine-4.0-via-timers.md` and
+  `docs/engine-4.0-startup-races.md`.
+- A guest screen draws its latest frame as soon as its window is visible
+  again (the display link pauses while hidden or asleep).
+
+## 4.0.0 Preview 2 — 2026-10-17 (local test build, unpublished)
+
+### Added
+
+- Each Mac's screen in a ClassicMac Platinum window instead of QEMU's Cocoa
+  window: whole-number sharp scaling, safe-shutdown close box, zoom,
+  WindowShade, Standard-card screens that follow the window, full screen,
+  and a toolbar with Shut Down, Restart, Pause, Media, Paste Text and the
+  graphics status. A classic checkerboard startup screen covers firmware
+  until Mac OS draws, so black and OpenBIOS yellow never show.
+- `-display classicmac`, RetroBoot's presenter backend ported to macOS
+  (stream socket, shared-memory framebuffer, damage tiles, cursor messages,
+  60 fps or the display's rate). QEMU's window stays available with
+  `defaults write com.classicmac.emulator ClassicMacUseQEMUWindow -bool YES`.
+- Quit offers to shut running Macs down safely first.
+
+### Fixed
+
+- Std-VGA hardware cursor pixels are delivered as ARGB.
+
+## 4.0.0 Preview 1 — 2026-10-17 (local test build, unpublished)
+
+### Added
+
+- An Apple Platinum interface for every window, built on the new
+  `PlatinumKit` (also builds for iPad): RetroBoot's MIT bitmap fonts compiled
+  to pixel-square TrueType, measured Mac OS 8.1 control tables, Platinum
+  menus with Mac OS menu tracking and MenuFlash, borderless windows with
+  pinstriped title bars, close/zoom/WindowShade boxes, grow box and movable
+  modal dialogs, default-button flashing and caution-alert beeps.
+- The Mac OS Library: the catalog with curated SuperDeluxe, Deluxe, Mac OS
+  9.2.1 and Copland editions, contents by category, older-version hiding and
+  a classic download progress dialog.
+- An emulated ATI Radeon R100 (from RetroBoot) as a per-Mac graphics card,
+  driven by Mac OS 9's own ATI drivers with 3D on the host GPU through
+  OpenGL 4.1. About This Mac reports the GPU drawing a running Mac's 3D.
+  ClassicMac Display on the Tools disk applies the chosen size.
+- Faster PowerPC emulation (RetroBoot's MMU-context, FPU and branch-cache
+  patches): Quake III's demo rose from about 104 to 154 fps on an M5 Max.
+- Get Info (⌘I) with General, Display and Sharing panes; New Mac; original
+  machine icons; and optional use of The Iconfactory's classic icons from
+  the person's own downloaded copy.
+
+### Changed
+
+- GXMetal, its Tools CD folder, status menu and release gates are removed.
+- OpenBIOS keeps the screamer `sound-objects` list terminated, fixing an
+  intermittent "Apple Audio Extension illegal instruction" at startup.
+- Installer and CD starts always use the Standard card.
+
 ## Unreleased
 
 ### Added

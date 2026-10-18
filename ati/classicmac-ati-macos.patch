@@ -1,0 +1,361 @@
+diff --git a/hw/display/ati.c b/hw/display/ati.c
+index 96c26c0..b2e76b3 100644
+--- a/hw/display/ati.c
++++ b/hw/display/ati.c
+@@ -1472,11 +1472,20 @@ static char *ati_get_accel_stats(Object *o, Error **errp)
+                            s->r3d ? ati_3d_stats(s) : "");
+ }
+ 
++/* ClassicMac: the host GL renderer the 3D engine uses ("" when 3D is off) */
++static char *ati_get_gl_renderer(Object *o, Error **errp)
++{
++    ATIVGAState *s = ATI_VGA(o);
++
++    return g_strdup(ati_3d_gl_info(s));
++}
++
+ static void ati_vga_init(Object *o)
+ {
+     ATIVGAState *s = ATI_VGA(o);
+ 
+     object_property_add_str(o, "x-accel-stats", ati_get_accel_stats, NULL);
++    object_property_add_str(o, "x-gl-renderer", ati_get_gl_renderer, NULL);
+ 
+     object_initialize_child(o, "edid", &s->i2cddc, TYPE_I2CDDC);
+     object_property_set_description(o, "x-pixman", "Use pixman for: "
+diff --git a/hw/display/ati_3d.c b/hw/display/ati_3d.c
+index 210ae5d..31c46fc 100644
+--- a/hw/display/ati_3d.c
++++ b/hw/display/ati_3d.c
+@@ -147,6 +147,7 @@ struct ATI3DState {
+     uint64_t rb_why[ATI_SYNC_N];      /* readbacks by cause: 2D, status read, vblank */
+     uint64_t vb_fetch, vb_idx;        /* vertices fetched and decoded / drawn, 3D_RNDR_GEN_INDX_PRIM */
+     char stats[512];
++    char gl_info[256];                /* ClassicMac: host GL renderer, "" when off */
+ };
+ 
+ static inline uint32_t R(ATIVGAState *s, hwaddr a)
+@@ -1403,19 +1404,30 @@ void ati_3d_reg_write(ATIVGAState *s, hwaddr addr, uint32_t data)
+     /* state lives in the register file; draws decode it there */
+ }
+ 
++/* ClassicMac: the host renderer for status ("" while 3D is off) */
++const char *ati_3d_gl_info(ATIVGAState *s)
++{
++    return s->r3d && s->r3d->r ? s->r3d->gl_info : "";
++}
++
+ void ati_3d_init(ATIVGAState *s)
+ {
+     ATI3DState *t = g_new0(ATI3DState, 1);
+     char info[256] = "";
+-    const char *env = getenv("RETROBOOT_ATI_3D");
++    /* ClassicMac's switch, and RetroBoot's, which is kept */
++    static const char *const knobs[] = { "CLASSICMAC_ATI_3D", "RETROBOOT_ATI_3D" };
+ 
+     s->r3d = t;
+-    if (env && !strcmp(env, "off")) {
+-        info_report("ati: 3D engine disabled (RETROBOOT_ATI_3D=off)");
+-        return;
++    for (size_t i = 0; i < ARRAY_SIZE(knobs); i++) {
++        const char *env = getenv(knobs[i]);
++        if (env && !strcmp(env, "off")) {
++            info_report("ati: 3D engine disabled (%s=off)", knobs[i]);
++            return;
++        }
+     }
+     t->r = ati_glr_new(info, sizeof(info));
+     if (t->r) {
++        snprintf(t->gl_info, sizeof(t->gl_info), "%s", info);
+         info_report("ati: 3D engine on host GL: %s", info);
+     } else {
+         warn_report("ati: no host GL (%s); 3D drawing is discarded", info);
+diff --git a/hw/display/ati_gl.c b/hw/display/ati_gl.c
+index de12797..b8dd95a 100644
+--- a/hw/display/ati_gl.c
++++ b/hw/display/ati_gl.c
+@@ -1,12 +1,16 @@
+ /*
+- * QEMU ATI Radeon (R100) emulation: run-time EGL/GLES loader.
++ * QEMU ATI Radeon (R100) emulation: run-time host GL loader.
+  *
+  * Copyright (c) 2026 RetroBoot contributors
++ * Copyright (c) 2026 ClassicMac contributors (macOS CGL back end)
+  *
+  * This work is licensed under the GNU GPL license version 2 or later.
+  *
+  * Written without QEMU dependencies so it can be built into a small
+- * stand-alone test (tools/gltest in research/gfx).
++ * stand-alone test (tools/gltest in research/gfx; ati/tests in ClassicMac).
++ *
++ * Linux: EGL surfaceless + OpenGL ES 3.0 (libEGL/libGLESv2, dlopen()ed).
++ * macOS: CGL + OpenGL 4.1 Core profile (OpenGL.framework, dlopen()ed).
+  */
+ 
+ #include <dlfcn.h>
+@@ -15,6 +19,168 @@
+ #include <string.h>
+ #include "ati_gl.h"
+ 
++#ifdef __APPLE__
++/*
++ * ClassicMac: Apple's OpenGL.framework through CGL with an OpenGL 4.1 Core
++ * profile context and no drawable; the renderer only draws into framebuffer
++ * objects.  The framework is loaded when the card is realized, as libEGL is
++ * on Linux, so the emulator gains no link-time dependency and machines
++ * without the card never load it.  Only CGLTypes.h (enums and opaque types)
++ * is included and every entry point is resolved with dlsym(), so none of the
++ * framework's deprecated declarations are used.
++ */
++#define GL_SILENCE_DEPRECATION 1
++#include <OpenGL/CGLTypes.h>
++
++#define ATI_CGL_FRAMEWORK "/System/Library/Frameworks/OpenGL.framework/OpenGL"
++
++static struct {
++    void *lib;
++    CGLContextObj ctx;
++    CGLError (*ChoosePixelFormat)(const CGLPixelFormatAttribute *,
++                                  CGLPixelFormatObj *, GLint *);
++    CGLError (*DestroyPixelFormat)(CGLPixelFormatObj);
++    CGLError (*CreateContext)(CGLPixelFormatObj, CGLContextObj,
++                              CGLContextObj *);
++    CGLError (*DestroyContext)(CGLContextObj);
++    CGLError (*SetCurrentContext)(CGLContextObj);
++    const char *(*ErrorString)(CGLError);
++} cgl;
++
++static const char *ati_cgl_error(CGLError e)
++{
++    const char *s = cgl.ErrorString ? cgl.ErrorString(e) : NULL;
++
++    return s ? s : "unknown CGL error";
++}
++
++bool ati_gl_open(ATIGL *gl, char *info, size_t infolen)
++{
++    /*
++     * A hardware renderer first.  Without one (a Mac without a usable GPU),
++     * any OpenGL 4.1 Core renderer, which is Apple's software renderer; the
++     * info string then says so, and RAVE/OpenGL still draw correctly.
++     */
++    static const CGLPixelFormatAttribute accelerated[] = {
++        kCGLPFAOpenGLProfile,
++        (CGLPixelFormatAttribute)kCGLOGLPVersion_GL4_Core,
++        kCGLPFAAccelerated,
++        kCGLPFAAllowOfflineRenderers,
++        kCGLPFAColorSize, (CGLPixelFormatAttribute)24,
++        kCGLPFAAlphaSize, (CGLPixelFormatAttribute)8,
++        (CGLPixelFormatAttribute)0
++    };
++    static const CGLPixelFormatAttribute any[] = {
++        kCGLPFAOpenGLProfile,
++        (CGLPixelFormatAttribute)kCGLOGLPVersion_GL4_Core,
++        kCGLPFAAllowOfflineRenderers,
++        kCGLPFAColorSize, (CGLPixelFormatAttribute)24,
++        kCGLPFAAlphaSize, (CGLPixelFormatAttribute)8,
++        (CGLPixelFormatAttribute)0
++    };
++    const CGLPixelFormatAttribute *const choices[] = { accelerated, any };
++    CGLPixelFormatObj pix = NULL;
++    CGLError err = kCGLNoError;
++    GLint npix = 0;
++    bool software = false;
++    const char *version, *renderer;
++
++    memset(gl, 0, sizeof(*gl));
++    if (!cgl.lib) {
++        cgl.lib = dlopen(ATI_CGL_FRAMEWORK, RTLD_NOW | RTLD_LOCAL);
++    }
++    if (!cgl.lib) {
++        snprintf(info, infolen, "OpenGL.framework not available (%s)",
++                 dlerror());
++        return false;
++    }
++#define CGLSYM(n) (*(void **)&cgl.n = dlsym(cgl.lib, "CGL" #n))
++    CGLSYM(ChoosePixelFormat);
++    CGLSYM(DestroyPixelFormat);
++    CGLSYM(CreateContext);
++    CGLSYM(DestroyContext);
++    CGLSYM(SetCurrentContext);
++    CGLSYM(ErrorString);
++#undef CGLSYM
++    if (!cgl.ChoosePixelFormat || !cgl.DestroyPixelFormat ||
++        !cgl.CreateContext || !cgl.DestroyContext || !cgl.SetCurrentContext) {
++        snprintf(info, infolen, "OpenGL.framework lacks CGL entry points");
++        goto fail;
++    }
++    for (size_t i = 0; i < sizeof(choices) / sizeof(choices[0]); i++) {
++        pix = NULL;
++        npix = 0;
++        err = cgl.ChoosePixelFormat(choices[i], &pix, &npix);
++        if (err == kCGLNoError && pix && npix > 0) {
++            software = i > 0;
++            break;
++        }
++        if (pix) {
++            cgl.DestroyPixelFormat(pix);
++            pix = NULL;
++        }
++    }
++    if (!pix) {
++        snprintf(info, infolen, "no OpenGL 4.1 Core pixel format (%s)",
++                 ati_cgl_error(err));
++        goto fail;
++    }
++    err = cgl.CreateContext(pix, NULL, &cgl.ctx);
++    cgl.DestroyPixelFormat(pix);
++    if (err != kCGLNoError || !cgl.ctx) {
++        snprintf(info, infolen, "CGLCreateContext failed (%s)",
++                 ati_cgl_error(err));
++        cgl.ctx = NULL;
++        goto fail;
++    }
++    err = cgl.SetCurrentContext(cgl.ctx);
++    if (err != kCGLNoError) {
++        snprintf(info, infolen, "CGLSetCurrentContext failed (%s)",
++                 ati_cgl_error(err));
++        goto fail;
++    }
++#define ATI_GL_LOAD(ret, name, args) \
++    *(void **)&gl->name = dlsym(cgl.lib, "gl" #name); \
++    if (!gl->name) { \
++        snprintf(info, infolen, "missing gl" #name); \
++        goto fail; \
++    }
++    ATI_GL_FUNCS(ATI_GL_LOAD)
++#undef ATI_GL_LOAD
++    version = (const char *)gl->GetString(GL_VERSION);
++    renderer = (const char *)gl->GetString(GL_RENDERER);
++    if (!version || version[0] < '4' || version[0] > '9' || version[1] != '.') {
++        snprintf(info, infolen, "not an OpenGL 4 Core context (%s)",
++                 version ? version : "no GL_VERSION");
++        goto fail;
++    }
++    if (renderer && strstr(renderer, "Software")) {
++        software = true;
++    }
++    snprintf(info, infolen, "CGL; GL %s; %s%s", version,
++             renderer ? renderer : "unknown renderer",
++             software ? " (software)" : "");
++    return true;
++
++fail:
++    ati_gl_close();
++    return false;
++}
++
++void ati_gl_close(void)
++{
++    if (cgl.SetCurrentContext) {
++        cgl.SetCurrentContext(NULL);
++    }
++    if (cgl.ctx && cgl.DestroyContext) {
++        cgl.DestroyContext(cgl.ctx);
++    }
++    cgl.ctx = NULL;
++    /* the framework stays loaded, as Mesa does on Linux */
++}
++
++#else /* !__APPLE__: EGL surfaceless + OpenGL ES 3.0 (RetroBoot) */
++
+ typedef void *EGLDisplay;
+ typedef void *EGLContext;
+ typedef void *EGLSurface;
+@@ -165,3 +331,5 @@ void ati_gl_close(void)
+     egl.dpy = NULL;
+     /* the libraries stay loaded: Mesa does not like being unloaded */
+ }
++
++#endif /* __APPLE__ */
+diff --git a/hw/display/ati_gl.h b/hw/display/ati_gl.h
+index 997cc45..aeb69d1 100644
+--- a/hw/display/ati_gl.h
++++ b/hw/display/ati_gl.h
+@@ -10,6 +10,11 @@
+  * The context is surfaceless (EGL_MESA_platform_surfaceless): Mesa then uses
+  * the first render node with a hardware driver, else llvmpipe.  No window
+  * system is involved.
++ *
++ * ClassicMac (macOS): OpenGL.framework is loaded the same way and a CGL
++ * OpenGL 4.1 Core profile context without a drawable is used instead.  Every
++ * entry point below is core in both OpenGL ES 3.0 and OpenGL 4.1; the shaders
++ * get the matching GLSL version line (ATI_GLSL_VERSION).
+  */
+ #ifndef ATI_GL_H
+ #define ATI_GL_H
+@@ -148,6 +153,13 @@ typedef uint64_t GLuint64;
+ #define GL_SYNC_FLUSH_COMMANDS_BIT     0x00000001
+ #define GL_NEAREST_                    GL_NEAREST
+ 
++/* the first line of every shader: GLSL ES 3.00, or GLSL 4.10 on macOS */
++#ifdef __APPLE__
++#define ATI_GLSL_VERSION "#version 410 core\n"
++#else
++#define ATI_GLSL_VERSION "#version 300 es\n"
++#endif
++
+ #define ATI_GL_FUNCS(X) \
+     X(const GLubyte *, GetString, (GLenum)) \
+     X(GLenum, GetError, (void)) \
+diff --git a/hw/display/ati_glr.c b/hw/display/ati_glr.c
+index da3c484..a017617 100644
+--- a/hw/display/ati_glr.c
++++ b/hw/display/ati_glr.c
+@@ -1,5 +1,5 @@
+ /*
+- * QEMU ATI Radeon (R100) emulation: OpenGL ES 3.0 renderer thread.
++ * QEMU ATI Radeon (R100) emulation: OpenGL ES 3.0 / OpenGL 4.1 renderer thread.
+  *
+  * Copyright (c) 2026 RetroBoot contributors
+  *
+@@ -268,8 +268,8 @@ static void encode_row(const uint8_t *src, uint8_t *dst, unsigned w,
+  * alpha test, fog) is selected by uniforms.
+  */
+ 
++/* sources start after the version line, which glr_shader() supplies */
+ static const char *vs_src =
+-    "#version 300 es\n"
+     "uniform vec2 fbsize;\n"
+     "in vec4 a_pos;\n"            /* x, y (pixels), z (0..1), rhw */
+     "in vec4 a_c0;\n"
+@@ -296,7 +296,6 @@ static const char *vs_src =
+     "}\n";
+ 
+ static const char *fs_src =
+-    "#version 300 es\n"
+     "precision highp float;\n"
+     "uniform sampler2D tex0;\n"
+     "uniform sampler2D tex1;\n"
+@@ -320,7 +319,7 @@ static const char *fs_src =
+     "in vec4 v_t1;\n"
+     "in vec4 v_t2;\n"
+     "in float v_z;\n"
+-    "out vec4 o_c;\n"
++    "layout(location = 0) out vec4 o_c;\n"
+     "vec4 T[4];\n"
+     "vec4 cur; vec4 dif; vec4 spec;\n"
+     "vec3 carg(int a, int s) {\n"
+@@ -416,8 +415,9 @@ static GLuint glr_shader(ATIRenderer *r, GLenum type, const char *src)
+     ATIGL *gl = &r->gl;
+     GLuint s = gl->CreateShader(type);
+     GLint ok = 0;
++    const GLchar *srcs[2] = { ATI_GLSL_VERSION, src };
+ 
+-    gl->ShaderSource(s, 1, &src, NULL);
++    gl->ShaderSource(s, 2, srcs, NULL);
+     gl->CompileShader(s);
+     gl->GetShaderiv(s, GL_COMPILE_STATUS, &ok);
+     if (!ok) {
+diff --git a/hw/display/ati_int.h b/hw/display/ati_int.h
+index 6bd73e1..6a87a3e 100644
+--- a/hw/display/ati_int.h
++++ b/hw/display/ati_int.h
+@@ -210,6 +210,7 @@ bool ati_3d_flip(ATIVGAState *s, uint64_t mc, uint64_t len);
+ bool ati_3d_range_ready(ATIVGAState *s, uint64_t mc, uint64_t len);
+ void ati_3d_land(ATIVGAState *s);
+ const char *ati_3d_stats(ATIVGAState *s);
++const char *ati_3d_gl_info(ATIVGAState *s);
+ bool ati_host_data_flush(ATIVGAState *s);
+ void ati_host_data_finish(ATIVGAState *s);
+ 

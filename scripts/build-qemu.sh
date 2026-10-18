@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 #
-# build-qemu.sh - Build qemu-system-m68k (+ qemu-img) for Apple Silicon with both
-# the enhanced nubus-qfb paravirtualized framebuffer (arbitrary resolutions +
-# Thousands colour) and the nubus-virtio-mmio transport used for host folder
-# sharing.
+# build-qemu.sh - Build qemu-system-m68k, qemu-system-ppc and qemu-img for
+# Apple Silicon: the Quadra's enhanced nubus-qfb paravirtualized framebuffer
+# (arbitrary resolutions + Thousands colour) and nubus-virtio-mmio transport,
+# and the Power Mac G4's std-VGA extensions plus the emulated ATI Radeon R100
+# (ati/, Mac OS 9's own ATI drivers with 3D rendered through host OpenGL),
+# and the ClassicMac display backend (display/, -display classicmac) that
+# hands the guest screen to the app through shared memory.
 #
-# Approach: clone mainline QEMU (which has nubus-virtio-mmio) at a pinned tag and
-# port the nubus-qfb framebuffer onto it from files kept in qfb/.
+# Approach: clone mainline QEMU at a pinned tag and apply every ClassicMac
+# modification kept in this repository (device files and patches).
 #
 # This script is idempotent: re-running it resets the tree to pristine, re-applies
-# the qfb port, and performs an incremental rebuild.
+# every patch, and performs an incremental rebuild. CLASSICMAC_PREPARE_ONLY=1
+# stops after the sources are prepared (no configure or build).
 
 set -euo pipefail
 
@@ -26,10 +30,15 @@ QEMU_REPO="${QEMU_REPO:-https://gitlab.com/qemu-project/qemu.git}"
 QEMU_TAG="${QEMU_TAG:-v11.0.2}"
 QFB_DIR="$ROOT_DIR/qfb"
 POWERMAC_DIR="$ROOT_DIR/powermac"
-GXMETAL_DIR="$ROOT_DIR/gxmetal"
+ATI_DIR="$ROOT_DIR/ati"
+CPU_DIR="$ROOT_DIR/cpu"
+DISPLAY_DIR="$ROOT_DIR/display"
+TIMERS_DIR="$ROOT_DIR/timers"
+STARTUP_DIR="$ROOT_DIR/startup"
 
-# Tracked files modified by the qfb and screamer integration patches (reset
-# before re-applying).
+# Tracked files modified by the ClassicMac patches (reset before re-applying).
+# Files only earlier releases patched (GXMetal's ui/input.c, bochs-vbe.h) stay
+# listed so an existing vendor tree is reset correctly.
 PATCHED_FILES=(
   hw/display/macfb.c
   include/hw/display/macfb.h
@@ -90,6 +99,60 @@ PATCHED_FILES=(
   target/ppc/mmu_helper.c
   target/ppc/translate.c
   tcg/tcg-op.c
+  hw/display/ati.c
+  hw/display/ati_2d.c
+  hw/display/ati_int.h
+  hw/display/ati_regs.h
+  hw/display/trace-events
+  accel/tcg/tcg-runtime.c
+  include/exec/cputlb.h
+  target/ppc/cpu.h
+  target/ppc/cpu_init.c
+  target/ppc/fpu_helper.c
+  target/ppc/helper.h
+  target/ppc/helper_regs.c
+  target/ppc/int_helper.c
+  target/ppc/machine.c
+  target/ppc/misc_helper.c
+  target/ppc/translate/fp-impl.c.inc
+  target/ppc/translate/vmx-impl.c.inc
+  meson.build
+  ui/meson.build
+  hw/misc/mos6522.c
+  include/hw/misc/mos6522.h
+  hw/misc/macio/pmu.c
+  hw/ide/core.c
+  include/hw/ide/ide-bus.h
+)
+# Untracked files created by patches (git apply refuses to create them again)
+# or copied by earlier releases; removed before the patches are applied.
+UNTRACKED_PATCH_FILES=(
+  ui/classicmac-display.c
+  hw/display/ati_3d.c
+  hw/display/ati_3d.h
+  hw/display/ati_cp.c
+  hw/display/ati_gl.c
+  hw/display/ati_gl.h
+  hw/display/ati_glr.c
+  include/exec/tb-slot.h
+  include/qemu/rb-stats.h
+  target/ppc/ff_stats.h
+  target/ppc/fpu_fast.c.inc
+  target/ppc/vmx_fast.c.inc
+  hw/display/gxmetal_protocol.h
+  hw/display/gxmetal_decode.h
+  hw/display/gxmetal_decode.c
+  hw/display/gxmetal_dirty.h
+  hw/display/gxmetal_dirty.c
+  hw/display/gxmetal_queue.h
+  hw/display/gxmetal_queue.c
+  hw/display/gxmetal_metal.h
+  hw/display/gxmetal_metal.m
+  hw/display/gxmetal_metal_stub.c
+  hw/display/gxmetal_renderer.h
+  hw/display/gxmetal_renderer.c
+  hw/display/gxmetal_qemu.h
+  hw/display/gxmetal_qemu.c
 )
 SCREAMER_DIR="$ROOT_DIR/screamer"
 PPCVID_DIR="$ROOT_DIR/ppcvid"
@@ -143,6 +206,9 @@ mkdir -p "$VENDOR_DIR"
 if [ -d "$QEMU_DIR/.git" ]; then
   log "QEMU already present; resetting tracked files to pristine $QEMU_TAG"
   git -C "$QEMU_DIR" checkout -- "${PATCHED_FILES[@]}" 2>/dev/null || true
+  for untracked in "${UNTRACKED_PATCH_FILES[@]}"; do
+    rm -f "$QEMU_DIR/$untracked"
+  done
 else
   log "Cloning $QEMU_REPO ($QEMU_TAG)"
   git clone --depth 1 --branch "$QEMU_TAG" "$QEMU_REPO" "$QEMU_DIR"
@@ -159,25 +225,15 @@ if [ -n "${QFB_BUILD_ROM:-}" ]; then
   "$ROOT_DIR/scripts/build-qfb-rom.sh"
 fi
 
-# The PowerPC video NDRV publishes GXMetal's PCI BAR layout to Mac OS and must
-# therefore be rebuilt whenever the shared protocol header changes. A checked
-# stamp keeps ordinary QEMU builds fast while preventing a stale committed
-# NDRV from silently disabling RAVE after a protocol/layout bump.
-GXMETAL_PROTOCOL_SHA="$(shasum -a 256 \
-  "$GXMETAL_DIR/protocol/gxmetal_protocol.h" | awk '{ print $1 }')"
-PPCVID_PROTOCOL_STAMP="$PPCVID_DIR/qemu_vga.ndrv.gxmetal-protocol.sha256"
-PPCVID_PROTOCOL_SHA="$(sed -n '1p' "$PPCVID_PROTOCOL_STAMP" 2>/dev/null || true)"
-if [ -n "${PPCVID_BUILD_NDRV:-}" ] || \
-   [ ! -f "$PPCVID_DIR/qemu_vga.ndrv" ] || \
-   [ "$PPCVID_PROTOCOL_SHA" != "$GXMETAL_PROTOCOL_SHA" ]; then
-  log "Rebuilding ppcvid/qemu_vga.ndrv for the current GXMetal protocol"
+# The PowerPC video NDRV (ppcvid/qemu_vga.ndrv) is committed prebuilt; its
+# source build needs Retro68 and Apple's Universal Interfaces. Set
+# PPCVID_BUILD_NDRV=1 to rebuild it from ppcvid/driver.
+if [ -n "${PPCVID_BUILD_NDRV:-}" ]; then
+  log "PPCVID_BUILD_NDRV set: rebuilding ppcvid/qemu_vga.ndrv"
   "$ROOT_DIR/scripts/build-ppcvid-ndrv.sh"
 fi
 [ -f "$PPCVID_DIR/qemu_vga.ndrv" ] || \
-  die "ppcvid/qemu_vga.ndrv was not produced"
-[ "$(sed -n '1p' "$PPCVID_PROTOCOL_STAMP" 2>/dev/null || true)" = \
-  "$GXMETAL_PROTOCOL_SHA" ] || \
-  die "ppcvid/qemu_vga.ndrv protocol stamp is stale"
+  die "ppcvid/qemu_vga.ndrv is missing"
 
 # Rebuild the classicvirtio declaration ROM and PowerPC NDRV loader when
 # requested. This uses the same Retro68 toolchain.
@@ -243,13 +299,7 @@ git -C "$QEMU_DIR" apply "$ROOT_DIR/cocoaui/floppy-menu.patch" || die "Failed to
 # Faster 32-bit Power Mac scanout: let Cocoa consume a big-endian framebuffer
 # directly, and poll display updates at roughly the guest's 60 Hz VBL cadence.
 git -C "$QEMU_DIR" apply "$ROOT_DIR/cocoaui/display-performance.patch" || die "Failed to apply Cocoa display performance patch"
-# GXMetal InputSprocket activation switches Cocoa from the seamless absolute
-# tablet to captured relative motion at runtime, then restores the tablet when
-# the game releases input. This keeps first-person games from fighting a host
-# cursor that cannot follow the guest's recentering.
-git -C "$QEMU_DIR" apply "$ROOT_DIR/cocoaui/game-input-handoff.patch" || die "Failed to apply game input handoff patch"
-# Compact, live GXMetal status and explicit host-to-guest text entry.
-git -C "$QEMU_DIR" apply "$ROOT_DIR/cocoaui/gxmetal-status-menu.patch" || die "Failed to apply GXMetal status menu patch"
+# Explicit host-to-guest text entry and the shared media drawer.
 git -C "$QEMU_DIR" apply "$ROOT_DIR/cocoaui/paste-text.patch" || die "Failed to apply paste text menu patch"
 git -C "$QEMU_DIR" apply "$ROOT_DIR/cocoaui/media-drawer.patch" || die "Failed to apply shared media drawer menu patch"
 # Allow a VirtIO block device to start empty, exchange raw media while running,
@@ -367,25 +417,6 @@ git -C "$QEMU_DIR" apply "$PPCVID_DIR/vga-hardware-cursor.patch" || die "Failed 
 # Pixman layouts directly.
 git -C "$QEMU_DIR" apply "$PPCVID_DIR/vga-fast-scanout.patch" || die "Failed to apply vga fast-scanout patch"
 
-# GXMetal's RAVE transport extends std-VGA with a validated command queue in a
-# separate shared PCI BAR. Metal is selected on supported macOS hosts, with the
-# portable reference rasterizer retained as a deterministic fallback.
-log "Installing GXMetal command transport"
-cp "$GXMETAL_DIR/protocol/gxmetal_protocol.h" "$QEMU_DIR/hw/display/gxmetal_protocol.h"
-cp "$GXMETAL_DIR/host/gxmetal_decode.h" "$QEMU_DIR/hw/display/gxmetal_decode.h"
-cp "$GXMETAL_DIR/host/gxmetal_decode.c" "$QEMU_DIR/hw/display/gxmetal_decode.c"
-cp "$GXMETAL_DIR/host/gxmetal_dirty.h" "$QEMU_DIR/hw/display/gxmetal_dirty.h"
-cp "$GXMETAL_DIR/host/gxmetal_dirty.c" "$QEMU_DIR/hw/display/gxmetal_dirty.c"
-cp "$GXMETAL_DIR/host/gxmetal_queue.h" "$QEMU_DIR/hw/display/gxmetal_queue.h"
-cp "$GXMETAL_DIR/host/gxmetal_queue.c" "$QEMU_DIR/hw/display/gxmetal_queue.c"
-cp "$GXMETAL_DIR/host/gxmetal_metal.h" "$QEMU_DIR/hw/display/gxmetal_metal.h"
-cp "$GXMETAL_DIR/host/gxmetal_metal.m" "$QEMU_DIR/hw/display/gxmetal_metal.m"
-cp "$GXMETAL_DIR/host/gxmetal_metal_stub.c" "$QEMU_DIR/hw/display/gxmetal_metal_stub.c"
-cp "$GXMETAL_DIR/host/gxmetal_renderer.h" "$QEMU_DIR/hw/display/gxmetal_renderer.h"
-cp "$GXMETAL_DIR/host/gxmetal_renderer.c" "$QEMU_DIR/hw/display/gxmetal_renderer.c"
-cp "$GXMETAL_DIR/qemu/gxmetal_qemu.h" "$QEMU_DIR/hw/display/gxmetal_qemu.h"
-cp "$GXMETAL_DIR/qemu/gxmetal_qemu.c" "$QEMU_DIR/hw/display/gxmetal_qemu.c"
-git -C "$QEMU_DIR" apply "$GXMETAL_DIR/qemu-integration.patch" || die "Failed to apply GXMetal integration patch"
 # Recognize Finder's menu bar directly in guest VRAM so startup acceleration
 # ends automatically even in headless/VNC sessions and at arbitrary supported
 # resolutions. The app keeps a conservative HMP fallback for custom themes.
@@ -393,6 +424,70 @@ git -C "$QEMU_DIR" apply "$POWERMAC_DIR/classicmac-boot-handoff-display.patch" |
 # Read actual media state and safely change Quadra removable media without
 # consuming the QMP connection reserved for shutdown/restart events.
 git -C "$QEMU_DIR" apply "$ROOT_DIR/monitor/media-control.patch" || die "Failed to apply ClassicMac media control bridge"
+
+# ---------------------------------------------------------------------------
+# 3d. Faster PowerPC CPU emulation (RetroBoot; see cpu/README.md)
+# ---------------------------------------------------------------------------
+# 32-bit hash-MMU translation contexts, host-FPU fast paths for scalar and
+# AltiVec floating point (bit-identical to softfloat), and cached branch
+# destinations. Each is a CPU property that defaults on and can be turned
+# off (-cpu 7400,mmu-contexts=off,fast-fpu=off,fast-branch=off). They need
+# -ffp-contract=off (configure flags below) so the host compiler never fuses
+# a*b+c into an FMA that rounds differently.
+log "Installing faster PowerPC CPU emulation (MMU contexts, FPU, branch cache)"
+for patch in retroboot-ppc-mmu-contexts retroboot-ppc-fpu-fast \
+             retroboot-ppc-fpu-vmx retroboot-ppc-fpu-r17 retroboot-ppc-branch-cache; do
+  git -C "$QEMU_DIR" apply "$CPU_DIR/$patch.patch" || die "Failed to apply $patch.patch"
+done
+
+# ---------------------------------------------------------------------------
+# 3e. Host-timing races before the Mac OS gray screen (RetroBoot; see
+#     startup/README.md and timers/README.md)
+# ---------------------------------------------------------------------------
+# Applied in RetroBoot's lock order. Each property defaults on; =off restores
+# QEMU's behaviour.
+#  - Cuda sync handshake ("type A", startup/): the ROM reads SR and only then
+#    polls, for a few milliseconds, for the sync step's shift interrupt.
+#    QEMU's main loop raises it 20 us after the TACK write at the earliest
+#    and, on macOS (no ppoll, timeouts in whole milliseconds), typically
+#    1.2 ms late. One that came before the read was discarded, one that came
+#    after the polls was missed; either way the ROM halted.
+#    cuda.sr-int-on-access delivers a due shift interrupt when the guest
+#    reads the VIA; cuda.sync-sr-hold keeps the sync step's over that read.
+#  - VIA timer 2 ("type B", timers/): the faster branches above make the
+#    ROM's first calibration loop run out close to its 1 ms deadline, which
+#    can then land in first-time code being translated. coherent-timers
+#    raises VIA timer interrupts when the guest-visible counter passes zero
+#    and makes timer 2 one-shot; t2-hold lets a due timer-2 interrupt wait
+#    while the vCPU is translating (single vCPU, no icount; at most 4 ms).
+#  - IDE soft reset ("type C", startup/): QEMU finishes SRST in a main-loop
+#    bottom half; run late, it reset the hard disk in the middle of
+#    OpenBIOS's probe of the absent slave. macio-ide.srst-complete-on-access
+#    finishes a released reset on the guest's next access instead.
+# A and B need real time (ATI and CD starts); C is a main-loop race under
+# icount too.
+log "Installing startup race fixes (Cuda sync, VIA timer 2, IDE soft reset)"
+for patch in "$STARTUP_DIR/retroboot-cuda-shift-interrupt-timing" \
+             "$TIMERS_DIR/retroboot-cuda-via-timers" \
+             "$STARTUP_DIR/retroboot-macio-ide-srst-complete" \
+             "$TIMERS_DIR/retroboot-pmu-via-timers" \
+             "$TIMERS_DIR/retroboot-via-t2-hold"; do
+  git -C "$QEMU_DIR" apply "$patch.patch" || die "Failed to apply ${patch#"$ROOT_DIR"/}.patch"
+done
+
+# ---------------------------------------------------------------------------
+# 3f. Emulated ATI Radeon R100 (ati-vga,model=r100), applied last
+# ---------------------------------------------------------------------------
+# RetroBoot's R100 model (PCI 1002:5144, Open Firmware ATY,Rage6p, driven by
+# Mac OS 9's own ATI drivers): register file, CRTC/PLLs, command processor,
+# 2D engine and the 3D engine rendered on a host GL thread. Only hw/display/
+# ati* changes, so machines without the card are unaffected. ClassicMac's
+# patch adds the macOS back end (CGL, OpenGL 4.1 Core, OpenGL.framework is
+# dlopen()ed when the card is realized), CLASSICMAC_ATI_3D=off and the
+# x-gl-renderer status property. See ati/README.md.
+log "Installing the emulated ATI Radeon R100 (ati-vga,model=r100)"
+git -C "$QEMU_DIR" apply "$ATI_DIR/retroboot-ati-r100.patch" || die "Failed to apply ATI Radeon R100 patch"
+git -C "$QEMU_DIR" apply "$ATI_DIR/classicmac-ati-macos.patch" || die "Failed to apply ATI Radeon macOS GL patch"
 if [ -f "$PPCVID_DIR/qemu_vga.ndrv" ]; then
   cp "$PPCVID_DIR/qemu_vga.ndrv" "$QEMU_DIR/pc-bios/qemu_vga.ndrv"
 else
@@ -400,9 +495,31 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 3f. ClassicMac display backend (-display classicmac,socket=PATH)
+# ---------------------------------------------------------------------------
+# Ported from RetroBoot's display backend: the guest frame goes to the app in
+# a shared memory buffer announced over an AF_UNIX stream socket (the app
+# listens, QEMU connects), together with the std-VGA hardware cursor, and the
+# app's keyboard and pointer input comes back. See display/README.md.
+log "Installing the ClassicMac display backend (-display classicmac)"
+git -C "$QEMU_DIR" apply "$DISPLAY_DIR/classicmac-display.patch" || die "Failed to apply ClassicMac display backend patch"
+
+if [ -n "${CLASSICMAC_PREPARE_ONLY:-}" ]; then
+  log "CLASSICMAC_PREPARE_ONLY set: sources prepared in $QEMU_DIR"
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
 # 4. Configure (out-of-tree) if not already configured
 # ---------------------------------------------------------------------------
-if [ -f "$BUILD_DIR/build.ninja" ] && [ -z "${FORCE_CONFIGURE:-}" ]; then
+# -ffp-contract=off: clang's default on arm64 fuses a*b+c into one FMA, which
+# rounds differently from the separate operations the PowerPC FPU fast paths
+# and the ATI vertex decoder are written for.
+QEMU_CFLAGS="-O3 -ffp-contract=off"
+CONFIGURE_STAMP="$BUILD_DIR/classicmac-configure.stamp"
+CONFIGURE_ID="cflags=$QEMU_CFLAGS"
+if [ -f "$BUILD_DIR/build.ninja" ] && [ -z "${FORCE_CONFIGURE:-}" ] && \
+   [ "$(cat "$CONFIGURE_STAMP" 2>/dev/null || true)" = "$CONFIGURE_ID" ]; then
   log "Already configured (set FORCE_CONFIGURE=1 to reconfigure)"
 else
   log "Configuring QEMU for m68k-softmmu + ppc-softmmu (cocoa, VNC, slirp, coreaudio, 9p)"
@@ -426,12 +543,13 @@ else
       --disable-guest-agent \
       --disable-debug-info \
       --enable-lto \
-      --extra-cflags=-O3 \
-      --extra-cxxflags=-O3 \
-      --extra-objcflags=-O3
+      --extra-cflags="$QEMU_CFLAGS" \
+      --extra-cxxflags="$QEMU_CFLAGS" \
+      --extra-objcflags="$QEMU_CFLAGS"
   )
   "$BUILD_DIR/pyvenv/bin/meson" configure "$BUILD_DIR" \
     -Doptimization=3 -Db_lto_mode=thin
+  printf '%s\n' "$CONFIGURE_ID" > "$CONFIGURE_STAMP"
 fi
 
 # ---------------------------------------------------------------------------
@@ -514,23 +632,73 @@ else
   printf '    OK  PowerPC timebase and decrementer share QEMU virtual time\n'
 fi
 if "$QEMU_PPC_BIN" -device VGA,help 2>&1 | grep -q "gxmetal"; then
-  printf '    OK  GXMetal command transport (ppc)\n'
+  die "VGA still has the removed GXMetal transport"
 else
-  die "VGA gxmetal property missing from the ppc build"
+  printf '    OK  no GXMetal transport (ppc)\n'
 fi
-if nm "$QEMU_PPC_BIN" 2>/dev/null | grep "_gxmetal_metal_dispatch" >/dev/null &&
-   otool -L "$QEMU_PPC_BIN" | grep "/Metal.framework/" >/dev/null; then
-  printf '    OK  GXMetal native Metal renderer (ppc)\n'
+ATI_HELP="$("$QEMU_PPC_BIN" -device ati-vga,help 2>&1 || true)"
+for property in model x-accel-stats x-gl-renderer xres yres refresh_rate guest_hwcursor; do
+  printf '%s\n' "$ATI_HELP" | grep -q "$property" || \
+    die "ati-vga property $property missing from the ppc build"
+done
+printf '    OK  ATI Radeon R100 device and status properties (ppc)\n'
+if otool -L "$QEMU_PPC_BIN" | grep -E "/(OpenGL|Metal)\.framework/" >/dev/null; then
+  die "qemu-system-ppc must not link OpenGL/Metal (the ATI card loads OpenGL at run time)"
+fi
+# Realize the card on mac99 and read its status: host GL must come up on a
+# Mac with a GPU (CLASSICMAC_ATI_GL_OPTIONAL=1 accepts a GL-less builder).
+ATI_TEST_ARGS=()
+if [ -n "${CLASSICMAC_ATI_GL_OPTIONAL:-}" ]; then
+  ATI_TEST_ARGS+=(--gl-optional)
+fi
+"$PYTHON_BIN" "$ATI_DIR/tests/test_qemu_ati.py" "${ATI_TEST_ARGS[@]+"${ATI_TEST_ARGS[@]}"}" \
+  "$QEMU_PPC_BIN" "$QEMU_DIR/pc-bios" || die "ATI Radeon realization test failed"
+CPU_HELP="$("$QEMU_PPC_BIN" -device 7400_v2.9-powerpc-cpu,help 2>&1 || true)"
+for property in mmu-contexts fast-fpu x-fast-fpu-mask fast-branch x-fast-branch-mask; do
+  printf '%s\n' "$CPU_HELP" | grep -q "$property" || \
+    die "PowerPC CPU property $property missing from the ppc build"
+done
+grep -q -- "-ffp-contract=off" "$BUILD_DIR/build.ninja" || \
+  die "QEMU was not compiled with -ffp-contract=off"
+printf '    OK  PowerPC MMU contexts, FPU fast paths and branch cache (ppc)\n'
+if "$QEMU_PPC_BIN" -display help 2>&1 | grep -qx "classicmac"; then
+  printf '    OK  ClassicMac display backend listed (ppc)\n'
 else
-  die "GXMetal Metal renderer missing from the ppc build"
+  die "-display classicmac missing from the ppc build"
 fi
-"$PYTHON_BIN" "$GXMETAL_DIR/tests/test_qemu_transport.py" "$QEMU_PPC_BIN" || \
-  die "GXMetal QEMU realization tests failed"
-if "$QEMU_PPC_BIN" -device macio-ide,help 2>&1 | grep -q "dma-completion-delay-ns"; then
+# Start a paused mac99 with -display classicmac,socket=PATH, then a test
+# listener (QEMU keeps retrying until it appears): QEMU must connect and
+# deliver HELLO, a SURFACE whose shared buffer maps, a full DAMAGE and the
+# clock/pointer-mode events, and greet the listener again after it drops.
+"$PYTHON_BIN" "$DISPLAY_DIR/tests/test_display_gate.py" \
+  "$QEMU_PPC_BIN" "$QEMU_DIR/pc-bios" || die "ClassicMac display backend test failed"
+for via in mos6522-cuda mos6522-pmu; do
+  VIA_HELP="$("$QEMU_PPC_BIN" -device "$via,help" 2>&1 || true)"
+  for property in coherent-timers t2-hold x-t2-hold-quiet-us x-t2-hold-max-us; do
+    printf '%s\n' "$VIA_HELP" | grep -Eq "^ *$property=" || \
+      die "$via property $property missing from the ppc build"
+  done
+  for property in coherent-timers t2-hold; do
+    printf '%s\n' "$VIA_HELP" | grep -Eq "^ *$property=.*default: on" || \
+      die "$via property $property is not on by default"
+  done
+done
+printf '    OK  VIA timer-2 coherent timers and calibration hold (ppc)\n'
+CUDA_HELP="$("$QEMU_PPC_BIN" -device cuda,help 2>&1 || true)"
+for property in sync-sr-hold sr-int-on-access; do
+  printf '%s\n' "$CUDA_HELP" | grep -Eq "^ *$property=.*default: on" || \
+    die "cuda property $property missing or not on by default"
+done
+printf '    OK  Cuda sync handshake hold and shift interrupt on access (ppc)\n'
+MACIO_IDE_HELP="$("$QEMU_PPC_BIN" -device macio-ide,help 2>&1 || true)"
+if printf '%s\n' "$MACIO_IDE_HELP" | grep -q "dma-completion-delay-ns"; then
   printf '    OK  MacIO IDE DMA completion delay (ppc)\n'
 else
   die "MacIO IDE DMA completion delay property missing from the ppc build"
 fi
+printf '%s\n' "$MACIO_IDE_HELP" | grep -Eq "^ *srst-complete-on-access=.*default: on" || \
+  die "macio-ide property srst-complete-on-access missing or not on by default"
+printf '    OK  MacIO IDE soft reset completed on access (ppc)\n'
 if grep -F 'qemu_input_queue_rel(dcl.con, INPUT_AXIS_Y, [event deltaY]);' \
     "$QEMU_DIR/ui/cocoa.m" >/dev/null; then
   printf '    OK  Cocoa raw relative mouse Y forwarding\n'
@@ -555,6 +723,11 @@ if strings "$QEMU_DIR/pc-bios/openbios-ppc" | grep "iMac,1" >/dev/null && \
   printf '    OK  classic Mac OS 8 OpenBIOS profile\n'
 else
   die "pc-bios/openbios-ppc is missing classic Mac OS 8 compatibility"
+fi
+if strings "$QEMU_DIR/pc-bios/openbios-ppc" | grep "ATY,Rage6p" >/dev/null; then
+  printf '    OK  ATI Radeon-aware OpenBIOS (ATY,Rage6p)\n'
+else
+  die "pc-bios/openbios-ppc lacks the ATI Radeon node (scripts/build-openbios.sh)"
 fi
 
 log "Done. Binaries: $BUILD_DIR/qemu-system-m68k , $BUILD_DIR/qemu-system-ppc , $BUILD_DIR/qemu-img"

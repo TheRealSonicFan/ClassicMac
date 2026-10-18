@@ -79,6 +79,8 @@ final class QEMUManager: ObservableObject {
     // kept after shutdown so the library shows what was last on screen.
     @Published private(set) var previews: [UUID: NSImage] = [:]
     @Published private(set) var coplandHaltedIDs: Set<UUID> = []
+    /// The host renderer drawing each running ATI Mac's 3D ("" when 3D is off).
+    @Published private(set) var atiRenderers: [UUID: String] = [:]
     @Published var lastError: AppError?
     @Published private(set) var pendingStopID: UUID?
 
@@ -166,6 +168,18 @@ final class QEMUManager: ObservableObject {
             try? FileManager.default.removeItem(at: displayServer.endpoint.vncSocketURL)
         }
 
+        if QEMUManager.usesClassicMacDisplay(config) {
+            do {
+                _ = try GuestWindows.shared.prepare(config)
+            } catch {
+                lastError = AppError(
+                    "Couldn't Start \u{201C}\(config.name)\u{201D}",
+                    "The Mac's screen could not be prepared. \(error.localizedDescription)"
+                )
+                return
+            }
+        }
+
         let process = Process()
         process.executableURL = AppPaths.qemuBinary(for: config.machineFamily)
         process.arguments = QEMUManager.buildArguments(
@@ -222,6 +236,7 @@ final class QEMUManager: ObservableObject {
                 let monitor = self.qmpMonitors.removeValue(forKey: config.id)
                 self.runningIDs.remove(config.id)
                 self.pausedIDs.remove(config.id)
+                self.atiRenderers[config.id] = nil
                 if self.pendingStopID == config.id {
                     self.pendingStopID = nil
                 }
@@ -248,6 +263,7 @@ final class QEMUManager: ObservableObject {
                 if proc.terminationStatus != 0 && proc.terminationReason == .exit {
                     monitor?.cancel()
                     self.stopBrowserDisplay(for: config.id)
+                    GuestWindows.shared.machineStopped(config.id)
                     self.lastError = AppError(
                         "\u{201C}\(config.name)\u{201D} Shut Down Unexpectedly",
                         "The Mac stopped on its own. Try starting it again.",
@@ -270,6 +286,7 @@ final class QEMUManager: ObservableObject {
                 }
                 guard let monitor = monitor else {
                     self.stopBrowserDisplay(for: config.id)
+                    GuestWindows.shared.machineStopped(config.id)
                     return
                 }
                 // A restart (from inside the guest or via the app's Restart
@@ -288,6 +305,7 @@ final class QEMUManager: ObservableObject {
                     )
                 } else {
                     self.stopBrowserDisplay(for: config.id)
+                    GuestWindows.shared.machineStopped(config.id)
                 }
             }
         }
@@ -295,6 +313,7 @@ final class QEMUManager: ObservableObject {
         do {
             try process.run()
         } catch {
+            GuestWindows.shared.machineStopped(config.id)
             coplandControls.removeValue(forKey: config.id)
             if let displayServer {
                 if browserServers[config.id] === displayServer {
@@ -329,8 +348,12 @@ final class QEMUManager: ObservableObject {
 
         let bootingFromUserCD = config.bootFromCD &&
             config.cdImagePath?.isEmpty == false
+        // ATI starts run in real time from power-on (no instruction clock).
         let acceleratedHardDiskBoot = config.machineFamily == .powerMacG4 &&
-            !bootingFromUserCD
+            !bootingFromUserCD && Self.effectiveGraphicsCard(for: config) == .standard
+        if Self.effectiveGraphicsCard(for: config) == .atiRadeon {
+            probeATIRenderer(for: config.id)
+        }
         if acceleratedHardDiskBoot {
             startBootClockHandoff(for: config)
         }
@@ -345,6 +368,9 @@ final class QEMUManager: ObservableObject {
         if openDisplay {
             if config.useBrowserDisplay {
                 activate(config.id)
+            } else if QEMUManager.usesClassicMacDisplay(config) {
+                // The window opens at once on the startup screen.
+                GuestWindows.shared.show(config.id)
             } else {
                 // The native QEMU Cocoa window appears shortly after the
                 // process spawns, so bring it forward twice as it settles.
@@ -378,6 +404,10 @@ final class QEMUManager: ObservableObject {
 
     // Opens the optional VNC viewer or brings the native Cocoa window forward.
     func activate(_ id: UUID) {
+        if GuestWindows.shared.session(for: id) != nil {
+            GuestWindows.shared.show(id)
+            return
+        }
         if let url = browserURLs[id] {
             if !NSWorkspace.shared.open(url) {
                 lastError = AppError(
@@ -407,6 +437,24 @@ final class QEMUManager: ObservableObject {
     }
 
     // MARK: Screen previews
+
+    /// Asks the running ATI card which host renderer draws its 3D
+    /// (QOM x-gl-renderer on /machine/peripheral/ati0), once the monitor is up.
+    private func probeATIRenderer(for id: UUID) {
+        let socket = Self.monitorSocketURL(for: id).path
+        Task.detached(priority: .utility) { [weak self] in
+            for _ in 0..<20 {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard let reply = HMPClient.command(
+                    "qom-get /machine/peripheral/\(ATIDisplay.deviceID) x-gl-renderer", socketPath: socket) else {
+                    continue
+                }
+                let renderer = ATIDisplay.rendererName(fromHMP: reply)
+                await MainActor.run { self?.atiRenderers[id] = renderer }
+                return
+            }
+        }
+    }
 
     static func screenDumpURL(for id: UUID) -> URL {
         let dir = URL(fileURLWithPath: "/tmp/ClassicMac", isDirectory: true)
@@ -495,6 +543,22 @@ final class QEMUManager: ObservableObject {
 
     func cancelStop() {
         pendingStopID = nil
+    }
+
+    /// Shuts every running Mac down safely (for Quit), then calls back once
+    /// they have all stopped, or after 25 seconds.
+    func shutDownAll(then completion: @escaping () -> Void) {
+        pendingStopID = nil
+        for id in runningIDs { stop(id) }
+        let deadline = Date().addingTimeInterval(25)
+        func poll() {
+            if runningIDs.isEmpty || Date() > deadline {
+                completion()
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { poll() }
+        }
+        poll()
     }
 
     func confirmStop() {
@@ -723,10 +787,21 @@ final class QEMUManager: ObservableObject {
         if config.useBrowserDisplay {
             return ["-display", display.qemuDisplay]
         }
+        if usesClassicMacDisplay(config) {
+            // ClassicMac draws the Mac's screen in its own Platinum window;
+            // QEMU hands over the framebuffer and takes input on this socket.
+            return ["-display", "classicmac,socket=\(GuestDisplaySession.socketPath(for: config.id))"]
+        }
         return [
             "-display",
             "cocoa,swap-opt-cmd=off\(inputHelperOptions(for: config))"
         ]
+    }
+
+    /// Whether this Mac's screen appears in ClassicMac's own window.
+    static func usesClassicMacDisplay(_ config: VMConfig) -> Bool {
+        !config.useBrowserDisplay && config.machineFamily != .powerMac7500 &&
+            !UserDefaults.standard.bool(forKey: "ClassicMacUseQEMUWindow")
     }
 
     // Extra Cocoa options for the classic input helpers (right-click as
@@ -757,6 +832,75 @@ final class QEMUManager: ObservableObject {
         }
         options.append("readonly=on")
         return options.joined(separator: ",")
+    }
+
+    /// The card a start actually uses. Installer and CD starts stay on the
+    /// standard card, as RetroBoot does: the CD route is qualified there.
+    static func effectiveGraphicsCard(for config: VMConfig) -> GraphicsCard {
+        let bootingFromUserCD = config.bootFromCD && config.cdImagePath?.isEmpty == false
+        return config.machineFamily == .powerMacG4 && !bootingFromUserCD ? config.graphicsCard : .standard
+    }
+
+    // The Power Mac's display card and its boot framebuffer.
+    static func graphicsCardArguments(for config: VMConfig, bootingFromUserCD: Bool) -> [String] {
+        var args: [String] = []
+        switch effectiveGraphicsCard(for: config) {
+        case .standard:
+            // Keep the host-resize registers available for the native window
+            // and compatibility with the bundled qemu_vga.ndrv. Browser viewing
+            // normally scales the configured framebuffer without changing it.
+            // "-vga std" must be explicit: QEMU treats a -global for the VGA
+            // driver as a user-configured display and would otherwise skip
+            // creating the default one. 64 MB of VRAM covers 3840x2160 at
+            // 32-bit (the default 16 MB tops out below 4K).
+            args += ["-vga", "std"]
+            args += ["-global", "VGA.host-resize=on"]
+            args += ["-global", "VGA.vgamem_mb=64"]
+            // Packed 1/2/4-bpp modes (ppcvid/vga-packed-depths.patch) let the
+            // bundled qemu_vga.ndrv offer Black & White, 4 and 16 colors in
+            // the Monitors control panel alongside 256/thousands/millions.
+            args += ["-global", "VGA.packed-lowbpp=on"]
+            // The optimized display path does not need QEMU to write-protect
+            // and dirty-track each framebuffer page. Disabling those repeated
+            // TCG traps is particularly important for QuickDraw's
+            // framebuffer-heavy BitBlt and shape operations. Shadowed
+            // low-color modes keep normal tracking.
+            args += ["-global", "VGA.untracked-vram=on"]
+            // Move the classic Mac cursor through QEXT and let Cocoa composite
+            // it, avoiding framebuffer redraws for pointer motion. Older guest
+            // drivers ignore the advertised feature and keep their software
+            // cursor.
+            args += ["-global", "VGA.hardware-cursor=on"]
+            if !bootingFromUserCD {
+                // Let QEMU recognize Finder directly in guest VRAM and perform
+                // the clock handoff without full-frame screenshots or a VNC
+                // client. BootClockHandoff above remains a 15-second fallback.
+                args += ["-global", "VGA.classicmac-boot-handoff=on"]
+            }
+            // OpenBIOS sizes the framebuffer from -g at boot. QEMU's mac99
+            // firmware interface names the classic direct-color modes 15 and
+            // 32 bpp; the UI presents those as Thousands and Millions.
+            let depth = config.depth == ColorDepth.millions.rawValue ? 32 : 15
+            args += ["-g", "\(config.width)x\(config.height)x\(depth)"]
+        case .atiRadeon:
+            // The emulated R100 Radeon. No card ROM ("romfile=" is required:
+            // QEMU's x86 vgabios-ati.bin is not bundled): the bundled OpenBIOS
+            // builds its device node and boot mode. The emulated monitor's
+            // EDID offers exactly the chosen size, which ClassicMac Display
+            // (Tools) or RetroBoot Display (the Library's ATI-ready Macs)
+            // selects during startup. "ati0" names the QOM status path.
+            let size = ATIDisplay.size(fitting: config.width, height: config.height)
+            var device = "ati-vga,id=\(ATIDisplay.deviceID),model=r100,vgamem_mb=32,romfile=,guest_hwcursor=on"
+            if let hz = ATIDisplay.refresh(width: size.width, height: size.height) {
+                device += ",xres=\(size.width),yres=\(size.height),refresh_rate=\(hz * 1000)"
+            }
+            args += ["-vga", "none", "-device", device]
+            args += ["-prom-env", "classicmac-display=\(size.width)x\(size.height)"]
+            args += ["-prom-env", "retroboot-display=\(size.width)x\(size.height)"]
+            // ATI's driver starts every session at 640 x 480.
+            args += ["-g", "\(ATIDisplay.startupSize.width)x\(ATIDisplay.startupSize.height)x32"]
+        }
+        return args
     }
 
     // qemu-system-ppc -M mac99: a New World Power Mac that boots Mac OS 8.5
@@ -807,12 +951,15 @@ final class QEMUManager: ObservableObject {
         // 195 MB during a single arena; a 512 MB cache prevents translation
         // churn across longer sessions and multiple maps.
         args += ["-accel", "tcg,tb-size=512"]
-        if !bootingFromUserCD {
+        let ati = effectiveGraphicsCard(for: config) == .atiRadeon
+        if !bootingFromUserCD && !ati {
             // Mac OS 9 spends much of hard-disk startup polling timers for
             // hardware that mac99 does not expose. Instruction timing lets
             // those waits finish without sleeping on the host. The Finder
             // watcher above then invokes QEMU's atomic real-time handoff, so
             // applications, games, sound, and the system clock run normally.
+            // The in-VRAM Finder detector belongs to the standard card, so
+            // ATI starts run in real time from power-on, as on RetroBoot.
             args += ["-icount", "shift=4,sleep=off"]
         }
         args += ["-M", "mac99,via=cuda,audiodev=snd0"]
@@ -822,41 +969,7 @@ final class QEMUManager: ObservableObject {
         // Native Cocoa is the default. The opt-in browser viewer instead uses
         // a private Unix VNC socket and a loopback-only WebSocket/noVNC page.
         args += displayArguments(for: config, browser: display)
-        // Keep the host-resize registers available for the native window and
-        // compatibility with the bundled qemu_vga.ndrv. Browser viewing
-        // normally scales the configured framebuffer without changing it.
-        // "-vga std" must be explicit: QEMU treats a -global for the VGA
-        // driver as a user-configured display and would otherwise skip
-        // creating the default one. 64 MB of VRAM covers 3840x2160 at 32-bit
-        // (the default 16 MB tops out below 4K).
-        args += ["-vga", "std"]
-        args += ["-global", "VGA.host-resize=on"]
-        args += ["-global", "VGA.vgamem_mb=64"]
-        // Packed 1/2/4-bpp modes (ppcvid/vga-packed-depths.patch) let the
-        // bundled qemu_vga.ndrv offer Black & White, 4 and 16 colors in the
-        // Monitors control panel alongside 256/thousands/millions.
-        args += ["-global", "VGA.packed-lowbpp=on"]
-        // The optimized display path does not need QEMU to write-protect and
-        // dirty-track each framebuffer page. Disabling those repeated TCG
-        // traps is particularly important for QuickDraw's framebuffer-heavy
-        // BitBlt and shape operations. Shadowed low-color modes keep normal
-        // tracking.
-        args += ["-global", "VGA.untracked-vram=on"]
-        // Move the classic Mac cursor through QEXT and let Cocoa composite it,
-        // avoiding framebuffer redraws for pointer motion. Older guest drivers
-        // ignore the advertised feature and keep their software cursor.
-        args += ["-global", "VGA.hardware-cursor=on"]
-        // GXMetal exposes a versioned QuickDraw 3D RAVE command queue through
-        // the VGA device. The guest engine still checks the advertised feature
-        // bits before claiming a context, so unfinished or unsupported drawing
-        // paths continue through the system software renderer.
-        args += ["-global", "VGA.gxmetal=on"]
-        if !bootingFromUserCD {
-            // Let QEMU recognize Finder directly in guest VRAM and perform
-            // the clock handoff without full-frame screenshots or a VNC
-            // client. BootClockHandoff above remains a 15-second fallback.
-            args += ["-global", "VGA.classicmac-boot-handoff=on"]
-        }
+        args += graphicsCardArguments(for: config, bootingFromUserCD: bootingFromUserCD)
         // Cached host I/O can complete a MacIO DBDMA command before the Mac OS
         // 9.2.x Installer arms its synchronous wait. Installer starts retain
         // the 1 ms safeguard that closes that race. A normal hard-disk start
@@ -873,11 +986,6 @@ final class QEMUManager: ObservableObject {
         // scripts/build-qemu.sh), the display stays black until the Mac OS
         // boot screen takes over.
         args += ["-prom-env", "output-device=ttya"]
-        // OpenBIOS sizes the framebuffer from -g at boot. QEMU's mac99
-        // firmware interface names the classic direct-color modes 15 and 32
-        // bpp; the UI presents those as Thousands and Millions.
-        let powerMacBootDepth = config.depth == ColorDepth.millions.rawValue ? 32 : 15
-        args += ["-g", "\(config.width)x\(config.height)x\(powerMacBootDepth)"]
         args += ["-name", config.name]
 
         // Audio through the screamer at 44.1 kHz. When sound is off, route to

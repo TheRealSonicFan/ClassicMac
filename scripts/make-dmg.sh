@@ -13,20 +13,27 @@
 #   scripts/make-dmg.sh
 #
 # Idempotent: the DMG is rebuilt from scratch on every run.
+#
+# Environment overrides (defaults unchanged): DIST_DIR (default dist/, holding
+# ClassicMac.app), DIST_NAME (default ClassicMac: DIST_DIR/DIST_NAME.dmg, and
+# the notarized zip's name) and DMG_VOLUME_NAME (default ClassicMac).
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="$ROOT_DIR/dist/ClassicMac.app"
-DMG="$ROOT_DIR/dist/ClassicMac.dmg"
-STAGING="$ROOT_DIR/dist/dmg-staging"
-VOLNAME="ClassicMac"
+DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
+DIST_NAME="${DIST_NAME:-ClassicMac}"
+export DIST_DIR DIST_NAME
+APP="$DIST_DIR/ClassicMac.app"
+DMG="$DIST_DIR/$DIST_NAME.dmg"
+STAGING="$DIST_DIR/dmg-staging"
+VOLNAME="${DMG_VOLUME_NAME:-ClassicMac}"
 PROFILE="${NOTARY_PROFILE:-classicmac-notary}"
 
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
-[ -d "$APP" ] || die "dist/ClassicMac.app not found. Run scripts/bundle-qemu.sh first."
+[ -d "$APP" ] || die "$APP not found. Run scripts/bundle-qemu.sh first."
 
 SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 if [ -z "$SIGN_IDENTITY" ]; then

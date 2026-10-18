@@ -46,25 +46,68 @@ final class QEMURunnerArgumentTests: XCTestCase {
 
         XCTAssertTrue(optionValues("-global", in: thousands).contains("VGA.hardware-cursor=on"))
         XCTAssertTrue(optionValues("-global", in: thousands).contains("VGA.untracked-vram=on"))
-        XCTAssertTrue(optionValues("-global", in: thousands).contains("VGA.gxmetal=on"))
+        XCTAssertFalse(thousands.contains { $0.contains("gxmetal") }, "GXMetal is gone in 4.0")
+        XCTAssertEqual(optionValues("-vga", in: thousands), ["std"])
         XCTAssertEqual(optionValues("-accel", in: thousands), ["tcg,tb-size=512"])
         XCTAssertEqual(optionValues("-cpu", in: thousands), ["7400"])
         XCTAssertEqual(optionValues("-g", in: thousands), ["1024x768x15"])
         XCTAssertEqual(optionValues("-g", in: millions), ["1024x768x32"])
     }
 
-    func testBothMachinesDefaultToNativeCocoaWindow() {
+    func testATIRadeonCardUsesStockDriversAtTheChosenSize() {
+        var vm = config(cdImagePath: nil, bootFromCD: false)
+        vm.graphicsCard = .atiRadeon
+        vm.width = 1024
+        vm.height = 768
+        let arguments = QEMUManager.buildArguments(for: vm)
+
+        XCTAssertEqual(optionValues("-vga", in: arguments), ["none"])
+        XCTAssertTrue(optionValues("-device", in: arguments).contains(
+            "ati-vga,id=ati0,model=r100,vgamem_mb=32,romfile=,guest_hwcursor=on,xres=1024,yres=768,refresh_rate=75000"))
+        XCTAssertTrue(optionValues("-prom-env", in: arguments).contains("classicmac-display=1024x768"))
+        XCTAssertTrue(optionValues("-prom-env", in: arguments).contains("retroboot-display=1024x768"))
+        XCTAssertEqual(optionValues("-g", in: arguments), ["640x480x32"])
+        // ATI starts run in real time and never use the VGA-only Finder detector.
+        XCTAssertTrue(optionValues("-icount", in: arguments).isEmpty)
+        XCTAssertFalse(optionValues("-global", in: arguments).contains { $0.hasPrefix("VGA.") })
+    }
+
+    func testATIMacStartsFromCDOnTheStandardCard() {
+        var vm = config()
+        vm.graphicsCard = .atiRadeon
+        let arguments = QEMUManager.buildArguments(for: vm)
+        XCTAssertEqual(optionValues("-vga", in: arguments), ["std"])
+        XCTAssertFalse(arguments.contains { $0.hasPrefix("ati-vga") })
+    }
+
+    func testATIRendererNameFromMonitorReply() {
+        XCTAssertEqual(ATIDisplay.rendererName(fromHMP: "\"CGL; GL 4.1 Metal - 91.7; Apple M5 Max\"\r\n"), "Apple M5 Max")
+        XCTAssertEqual(ATIDisplay.rendererName(fromHMP: "\"\"\r\n"), "")
+    }
+
+    func testATIDisplaySizesFollowTheDriverLimits() {
+        XCTAssertEqual(ATIDisplay.refresh(width: 1024, height: 768), 75)
+        XCTAssertEqual(ATIDisplay.refresh(width: 1920, height: 1080), 50, "60 Hz would need 173.7 MHz")
+        // 1922 rounds down to an 8-pixel width; portrait and oversize fall back.
+        XCTAssertEqual(ATIDisplay.size(fitting: 1922, height: 1080).width, 1920)
+        XCTAssertEqual(ATIDisplay.size(fitting: 900, height: 1400).width, 832)
+        XCTAssertEqual(ATIDisplay.size(fitting: 3840, height: 2160).width, 1920)
+        XCTAssertEqual(ATIDisplay.size(fitting: 500, height: 300).width, 640)
+        var quadra = config(family: .quadra800)
+        quadra.graphicsCard = .atiRadeon
+        let decoded = try! JSONDecoder().decode(VMConfig.self, from: JSONEncoder().encode(quadra))
+        XCTAssertEqual(decoded.graphicsCard, .standard, "Only Power Macs have the ATI card")
+    }
+
+    func testBothMachinesShowTheirScreenInClassicMacsWindow() {
         let powerMac = config()
         let quadra = config(family: .quadra800)
 
         for vm in [powerMac, quadra] {
             let arguments = QEMUManager.buildArguments(for: vm)
             let display = try! XCTUnwrap(optionValues("-display", in: arguments).first)
-
-            XCTAssertTrue(display.hasPrefix("cocoa,swap-opt-cmd=off"))
-            XCTAssertTrue(display.contains("right-click-ctrl=on"))
-            XCTAssertTrue(display.contains("scroll-keys=on"))
-            XCTAssertFalse(display.contains("vnc="))
+            XCTAssertEqual(display, "classicmac,socket=\(GuestDisplaySession.socketPath(for: vm.id))")
+            XCTAssertLessThan(GuestDisplaySession.socketPath(for: vm.id).utf8.count, 104, "AF_UNIX path limit")
         }
     }
 
@@ -87,7 +130,9 @@ final class QEMURunnerArgumentTests: XCTestCase {
         }
     }
 
-    func testNativeWindowCanDisableClassicInputHelpers() {
+    func testQEMUWindowFallbackCanDisableClassicInputHelpers() {
+        UserDefaults.standard.set(true, forKey: "ClassicMacUseQEMUWindow")
+        defer { UserDefaults.standard.removeObject(forKey: "ClassicMacUseQEMUWindow") }
         let arguments = QEMUManager.buildArguments(
             for: config(classicInputHelpers: false)
         )

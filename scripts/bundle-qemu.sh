@@ -8,6 +8,13 @@
 # Silicon.
 #
 # Idempotent: the app bundle is rebuilt from scratch on every run.
+#
+# Environment overrides (defaults unchanged):
+#   APP_VERSION / APP_BUILD_VERSION  CFBundleShortVersionString / CFBundleVersion
+#   DIST_DIR                         output directory (default dist/); the app is
+#                                    always DIST_DIR/ClassicMac.app
+#   TOOLS_CD_SRC                     Tools CD image (default dist/ClassicMacTools.iso)
+#   SIGN_IDENTITY                    signing identity, "-" for ad-hoc
 
 set -euo pipefail
 
@@ -25,7 +32,7 @@ ENTITLEMENTS="$ROOT_DIR/scripts/qemu.entitlements"
 THIRD_PARTY_NOTICES="$ROOT_DIR/THIRD_PARTY_NOTICES.md"
 BROWSER_SRC="$ROOT_DIR/browser"
 
-DIST_DIR="$ROOT_DIR/dist"
+DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
 FINAL_APP="$DIST_DIR/ClassicMac.app"
 BUNDLE_LOCK_DIR="$DIST_DIR/.bundle-qemu.lock"
 BUNDLE_STAGE_DIR=""
@@ -278,21 +285,15 @@ copy_brew_license pcre2 COPYING pcre2.txt
 # Guest additions CD (StuffIt Expander, USB Overdrive, Disk Copy, ...).
 # Built by scripts/build-guest-cd.sh; optional so a plain QEMU rebuild
 # doesn't require network access.
-TOOLS_CD_SRC="$ROOT_DIR/dist/ClassicMacTools.iso"
+TOOLS_CD_SRC="${TOOLS_CD_SRC:-$ROOT_DIR/dist/ClassicMacTools.iso}"
 if [ -f "$TOOLS_CD_SRC" ]; then
-  for guest_artifact in \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetal.bin" \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetalInput.bin" \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetalStartup.bin" \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetalInstaller.bin" \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetalTest.bin"; do
-    if [ -f "$guest_artifact" ] && [ "$guest_artifact" -nt "$TOOLS_CD_SRC" ]; then
-      die "ClassicMacTools.iso is older than $(basename "$guest_artifact"). Run scripts/build-guest-cd.sh before bundling."
-    fi
-  done
+  # A 3.x Tools CD still carries the removed GXMetal folder.
+  if LC_ALL=C grep -a -F "GXMetal" "$TOOLS_CD_SRC" >/dev/null; then
+    die "$(basename "$TOOLS_CD_SRC") still contains GXMetal. Run scripts/build-guest-cd.sh before bundling."
+  fi
   cp "$TOOLS_CD_SRC" "$RES_DIR/ClassicMacTools.iso"
 else
-  log "WARNING: dist/ClassicMacTools.iso not found; app will lack the Tools CD (run scripts/build-guest-cd.sh)"
+  log "WARNING: $TOOLS_CD_SRC not found; app will lack the Tools CD (run scripts/build-guest-cd.sh)"
 fi
 
 # ---------------------------------------------------------------------------

@@ -298,3 +298,70 @@
 - All task-owned emulators are stopped. User library and root iPad checkout are
   unchanged. Follow-up complete; further OS/control-panel compatibility remains
   experimental, with D7 full boot not yet qualified.
+
+## October 17 — ClassicMac 4.0 Preview 1 (ATI Radeon, Library, Platinum)
+
+- Scope: port RetroBoot's ATI Radeon R100 and drop GXMetal, bring over the
+  Library of OS images, and rebuild the UI in Apple Platinum. Two worktrees:
+  `claude/4.0-engine` (engine agent: GXMetal removal `0004bcd`, ATI with a
+  CGL/OpenGL 4.1 back end and OpenBIOS node `273ebc7`, script overrides
+  `5f2c378`, ClassicMac Display `c5701c9`, faster PPC `74275dd`, harness
+  `90a7e4c`, report `ab0d314`) and `claude/4.0-platinum` (PlatinumKit
+  `f813b2d`, Platinum app/Library/graphics card `8c946a2`, tests `d5b3d4d`,
+  iPad build `f9b09a1`). Integrated on `claude/4.0` (`6b29ac7` onward): ATI
+  launch arguments and 3D status `e143884`, OpenBIOS sound-objects fix
+  `88e9c39` (firmware `f1cd3599…`, built under a temporary Rosetta colima
+  profile that was deleted; the 3.x firmware still reproduces), Iconfactory
+  support `4c220c3`.
+- The user asked to use The Iconfactory's freeware icons. Their license is
+  personal desktop use only, no redistribution, so ClassicMac reads the
+  person's own downloaded collections from Application Support and keeps
+  its MIT icons as the default; nothing Iconfactory is committed.
+- Verification: 117 Swift tests; build gates incl. host GL; Deluxe v6 ATI
+  boots (harness ×2 and bundled-app smoke test with the Cocoa window, 3D on
+  Apple M5 Max, clean app Shut Down); engine evidence in
+  `worktrees/4.0-engine/output/4.0-engine/` and `docs/engine-4.0-ati.md`.
+- Release: 4.0.0 Preview 1 bundled, notarized (app `31625b34…`, DMG
+  `b208a142…`), stapled, `verify-release.sh` passed; DMG SHA-256 `afb6b04a…`.
+  Not published. No production, catalog or GitHub changes; the user's
+  library and machines were not touched (UI runs used a scratch home).
+- Next: user testing of the Preview DMG, then the CPU-commit and publication
+  decisions.
+
+## October 17 — ClassicMac 4.0 Preview 2 (Platinum guest window)
+
+- The user found QEMU's Cocoa guest window (black at boot, OpenBIOS yellow)
+  unacceptable and asked for a Platinum window with a lower toolbar.
+- `claude/4.0-display` (display agent): `-display classicmac`, RetroBoot's
+  presenter backend ported to macOS (stream socket, mmap'd shared buffer,
+  damage tiles, CURSOR/MOUSE) `c00bbc4`, ARGB hardware-cursor fix `efa8f35`.
+  Yellow came only from unpatched firmware; the staged firmware is black on
+  both cards. Merged as `335cc9e`.
+- `claude/4.0`: GuestDisplaySession/GuestScreenView/GuestWindows and the
+  startup curtain `8f55c43`, safe shutdown on Quit `05fe98b`, window-size
+  re-assertion and display refresh `1690b06`, dither margins `485a447`;
+  `verify-release.sh` requires `classicmac` in 4.x.
+- Preview 2 bundled, notarized (app `c39a82ca…`, DMG `c50c13be…`), stapled,
+  verified; DMG SHA-256 `80eabae0…`. Smoke test of the notarized app:
+  Deluxe v6 ATI Finder in the Platinum window, clean shutdown.
+- A parallel VIA-timer session's stress soak briefly saturated the host
+  (36 busy loops); it finished on its own.
+- No pushes, publication or catalog changes; user machines untouched.
+
+## October 18 — startup-race fixes merged; 4.0 to main
+
+- Merged `claude/4.0-via-timers` (VIA timer-2 calibration fixes, `d199dcd`)
+  and the stacked Cuda sync / IDE soft-reset fixes (`392cf73`, branch
+  `claude/charming-blackburn-59de84`) into `claude/4.0` (`a6d171c`;
+  `build-qemu.sh` conflicts resolved by keeping both display and timer
+  sections). All build gates pass, including the new VIA, Cuda and IDE
+  gates; both Macs boot to the Finder through the app's Platinum window.
+- The fix sessions' soaks: 12/12 responsive Finders each for Deluxe ATI,
+  9.2.1 VGA and Deluxe ATI under 36 busy host processes.
+- Screen snapshots were blank because the display slept (display link
+  paused); guest screens now draw their latest frame when visible again.
+- Preview 3 bundle signed; notarization waits for an unlocked session
+  (notary keychain profile unreadable while locked).
+- At the user's request `claude/4.0` was pushed and merged into `main`
+  through a PR; local `main` fast-forwarded. No release published.
+

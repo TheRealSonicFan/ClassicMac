@@ -1,6 +1,6 @@
 --- a/ui/cocoa.m
 +++ b/ui/cocoa.m
-@@ -1636,6 +1636,7 @@
+@@ -1632,6 +1632,7 @@ - (void)displayPause;
  - (void)removePause;
  - (void)forceQuitFrontmostGuestApp:(id)sender;
  - (void)pasteTextIntoGuest:(id)sender;
@@ -8,13 +8,10 @@
  - (void)restartQEMU:(id)sender;
  - (void)powerDownQEMU:(id)sender;
  - (void)ejectDeviceMedia:(id)sender;
-@@ -2063,6 +2064,26 @@
-     [cocoaView raiseAllButtons];
-     [[NSDistributedNotificationCenter defaultCenter]
-         postNotificationName:@"com.classicmac.paste-text"
-+                      object:identifier userInfo:nil deliverImmediately:YES];
-+}
-+
+@@ -2062,6 +2063,26 @@ - (void)pasteTextIntoGuest:(id)sender
+                       object:identifier userInfo:nil deliverImmediately:YES];
+ }
+ 
 +/* Managed Macs route every media action to one host drawer so changes are
 + * saved and Power Mac IDE media is staged honestly for the next startup. */
 +- (void)openClassicMacMedia:(id)sender
@@ -32,10 +29,13 @@
 +    [cocoaView raiseAllButtons];
 +    [[NSDistributedNotificationCenter defaultCenter]
 +        postNotificationName:@"com.classicmac.media"
-                       object:identifier userInfo:nil deliverImmediately:YES];
- }
- 
-@@ -2400,7 +2421,8 @@
++                      object:identifier userInfo:nil deliverImmediately:YES];
++}
++
+ /* Restarts QEMU */
+ - (void)restartQEMU:(id)sender
+ {
+@@ -2396,7 +2417,8 @@ static void create_initial_menus(void)
      [menu addItem: [[[NSMenuItem alloc] initWithTitle: @"Shut Down" action: @selector(powerDownQEMU:) keyEquivalent: @""] autorelease]];
      /* One stateful command for the bundled tools disc. Its title is refreshed
       * from the real drive state each time the menu opens. */
@@ -45,7 +45,7 @@
          [menu addItem: [NSMenuItem separatorItem]];
          tools_cd_menu_item = [[[NSMenuItem alloc]
              initWithTitle: @"Insert “ClassicMac Tools”"
-@@ -2480,6 +2502,16 @@
+@@ -2476,6 +2498,16 @@ static void create_initial_menus(void)
  static void addRemovableDevicesMenuItems(void)
  {
      NSMenu *menu = [[[NSApp mainMenu] itemWithTitle:@"Mac"] submenu];

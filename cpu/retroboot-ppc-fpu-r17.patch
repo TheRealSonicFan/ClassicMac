@@ -1,0 +1,1691 @@
+diff --git a/target/ppc/cpu.h b/target/ppc/cpu.h
+--- a/target/ppc/cpu.h
++++ b/target/ppc/cpu.h
+@@ -864,6 +864,7 @@
+     HFLAGS_TM = 8,   /* computed from MSR_TM */
+     HFLAGS_BE = 9,   /* MSR_BE -- from elsewhere on embedded ppc */
+     HFLAGS_SE = 10,  /* MSR_SE -- from elsewhere on embedded ppc */
++    HFLAGS_FPEXC = 11, /* MSR_FE0 | MSR_FE1, with fast-fpu CALLS only */
+     HFLAGS_FP = 13,  /* MSR_FP */
+     HFLAGS_PR = 14,  /* MSR_PR */
+     HFLAGS_PMCC0 = 15,  /* MMCR0 PMCC bit 0 */
+@@ -1382,6 +1383,8 @@
+     float_status vec_status;
+     float_status fp_status; /* Floating point execution context */
+     bool fast_vmx;          /* fast-fpu AltiVec lanes (vmx_fast.c.inc) */
++    bool fast_vmx_simd;     /* fast-fpu AltiVec: 4 lanes at once */
++    bool fast_fpexc;        /* fast-fpu CALLS: HFLAGS_FPEXC is maintained */
+     target_ulong fpscr;     /* Floating point status and control register */
+ 
+     /* Internal devices resources */
+@@ -3067,7 +3070,10 @@
+ #define PPC_FAST_FPU_LDST   0x2   /* lfs/stfs conversions inline */
+ #define PPC_FAST_FPU_FSEL   0x4   /* fsel inline */
+ #define PPC_FAST_FPU_VMX    0x8   /* AltiVec FP lanes on the host (vmx_fast) */
+-#define PPC_FAST_FPU_ALL    0xf
++#define PPC_FAST_FPU_CALLS  0x10  /* FP helpers that cannot trap: no global spills */
++#define PPC_FAST_FPU_SIMD   0x20  /* AltiVec: 4 lanes at once (SSE2), vperm (SSSE3) */
++#define PPC_FAST_FPU_VLDST  0x40  /* AltiVec element loads and stores inline */
++#define PPC_FAST_FPU_ALL    0x7f
+ 
+ static inline uint64_t *cpu_fpr_ptr(CPUPPCState *env, int i)
+ {
+diff --git a/target/ppc/cpu_init.c b/target/ppc/cpu_init.c
+--- a/target/ppc/cpu_init.c
++++ b/target/ppc/cpu_init.c
+@@ -7254,6 +7254,9 @@
+         pcc->parent_phases.hold(obj, type);
+     }
+     env->fast_vmx = cpu->fast_fpu && (cpu->fast_fpu_mask & PPC_FAST_FPU_VMX);
++    env->fast_vmx_simd = env->fast_vmx &&
++                         (cpu->fast_fpu_mask & PPC_FAST_FPU_SIMD);
++    env->fast_fpexc = cpu->fast_fpu && (cpu->fast_fpu_mask & PPC_FAST_FPU_CALLS);
+ 
+     msr = (target_ulong)0;
+     if (!(env->flags & POWERPC_FLAG_PPE42)) {
+diff --git a/target/ppc/fpu_fast.c.inc b/target/ppc/fpu_fast.c.inc
+--- a/target/ppc/fpu_fast.c.inc
++++ b/target/ppc/fpu_fast.c.inc
+@@ -39,6 +39,9 @@
+ #define FF_ENABLED 0
+ #endif
+ 
++/* the original sequence, out of line: the fast paths need no stack frame */
++#define QEMU_NOINLINE_FF __attribute__((noinline))
++
+ #define FF_SIGN    0x8000000000000000ULL
+ #define FF_ABS     0x7fffffffffffffffULL
+ #define FF_FRAC    0x000fffffffffffffULL
+@@ -134,11 +137,16 @@
+     return (r >> 63) ? 0x12 : 0x02;         /* -zero, +zero */
+ }
+ 
+-static inline bool ff_ok(CPUPPCState *env)
++/*
++ * nr: called TCG_CALL_NO_RWG from a TB in which MSR[FE0] = MSR[FE1] = 0.
++ * Then float_check_status never raises, so a pending deferred exception
++ * cannot change the outcome and need not be checked for.
++ */
++static inline bool ff_ok(CPUPPCState *env, bool nr)
+ {
+     return !(env->fpscr & FP_XE) &&
+            get_float_rounding_mode(&env->fp_status) == float_round_nearest_even &&
+-           env_cpu(env)->exception_index != POWERPC_EXCP_PROGRAM;
++           (nr || env_cpu(env)->exception_index != POWERPC_EXCP_PROGRAM);
+ }
+ 
+ /* the FPSCR and status flags of compute_fprf + float_check_status */
+@@ -247,6 +255,23 @@
+         *inexact = false;
+         return true;
+     }
++    if (single && !((a | b) & FF_S_LOW) && ff_exp(rp) - 2u < 0x7fcu) {
++        /*
++         * Both operands are singles: the 48-bit product is exact in double
++         * (it is normal and not next to the denormals), so one conversion
++         * rounds it to single.
++         */
++        float y = (float)p;
++        double yd = y;
++        uint64_t ry = ff_u(yd);
++
++        if (!ff_res_ok_s(ry)) {
++            return false;
++        }
++        *res = ry;
++        *inexact = yd != p;
++        return true;
++    }
+     exact = ff_mul_exact(ff_sig(a), ff_sig(b));
+     if (single) {
+         return ff_normal(rp) && ff_to_single(p, exact, res, inexact);
+@@ -481,8 +506,8 @@
+             r = b;
+             *inexact = false;
+         }
+-    } else if (ff_mul_exact(ff_sig(a), ff_sig(c)) && ff_addend(b) &&
+-               ff_exp(ff_u(ff_d(a) * ff_d(c))) - 2u < 0x7fcu) {
++    } else if ((!((a | c) & FF_S_LOW) || ff_mul_exact(ff_sig(a), ff_sig(c))) &&
++               ff_addend(b) && ff_exp(ff_u(ff_d(a) * ff_d(c))) - 2u < 0x7fcu) {
+         /*
+          * exact product: one 2Sum gives the exact sum.  The integer test
+          * only covers the significand: the product must also be normal, so
+@@ -534,25 +559,47 @@
+     return r;
+ }
+ 
++/*
++ * Each helper is its fast path plus a tail call of the original sequence,
++ * kept out of line so that the fast path needs no stack frame.
++ */
+ #define FF_BINOP(NAME, SOFT, HANDLER, FAST, NEG, SINGLE)                      \
+-uint64_t helper_fast_##NAME(CPUPPCState *env, uint64_t a, uint64_t b,         \
+-                            uint32_t frt)                                     \
++static QEMU_NOINLINE_FF uint64_t                                             \
++ff_##NAME##_slow(CPUPPCState *env, uint64_t a, uint64_t b, uint32_t frt,      \
++                 uintptr_t ra)                                                \
+ {                                                                             \
+-    uintptr_t ra = GETPC();                                                   \
+     uint64_t r;                                                               \
++                                                                              \
++    FF_STAT(#NAME, false);                                                    \
++    set_float_exception_flags(0, &env->fp_status);                            \
++    r = SOFT(a, b, &env->fp_status);                                          \
++    HANDLER(env, get_float_exception_flags(&env->fp_status), ra);             \
++    return ff_slow_finish(env, frt, r, ra);                                   \
++}                                                                             \
++static inline QEMU_ALWAYS_INLINE uint64_t                                     \
++ff_##NAME(CPUPPCState *env, uint64_t a, uint64_t b, uint32_t frt,             \
++          uintptr_t ra, bool nr)                                              \
++{                                                                             \
++    uint64_t r;                                                               \
+     bool inexact;                                                             \
+                                                                               \
+-    if (FF_ENABLED && likely(ff_ok(env)) &&                                   \
++    if (FF_ENABLED && likely(ff_ok(env, nr)) &&                               \
+         likely(FAST(a, (NEG) ? b ^ FF_SIGN : b, SINGLE, &r, &inexact))) {     \
+         ff_done(env, r, inexact);                                             \
+         FF_STAT(#NAME, true);                                                 \
+         return r;                                                             \
+     }                                                                         \
+-    FF_STAT(#NAME, false);                                                    \
+-    set_float_exception_flags(0, &env->fp_status);                            \
+-    r = SOFT(a, b, &env->fp_status);                                          \
+-    HANDLER(env, get_float_exception_flags(&env->fp_status), ra);             \
+-    return ff_slow_finish(env, frt, r, ra);                                   \
++    return ff_##NAME##_slow(env, a, b, frt, ra);                              \
++}                                                                             \
++uint64_t helper_fast_##NAME(CPUPPCState *env, uint64_t a, uint64_t b,         \
++                            uint32_t frt)                                     \
++{                                                                             \
++    return ff_##NAME(env, a, b, frt, GETPC(), false);                         \
++}                                                                             \
++uint64_t helper_fastnr_##NAME(CPUPPCState *env, uint64_t a, uint64_t b,       \
++                              uint32_t frt)                                   \
++{                                                                             \
++    return ff_##NAME(env, a, b, frt, GETPC(), true);                          \
+ }
+ 
+ FF_BINOP(FADD, float64_add, addsub_flags_handler, ff_add, false, false)
+@@ -570,58 +617,62 @@
+ #define FF_FMA_FAST(a, c, b, fl, s, r, ix) false
+ #endif
+ 
+-#define FF_FMA(NAME, FLAGS)                                                   \
+-uint64_t helper_fast_##NAME(CPUPPCState *env, uint64_t a, uint64_t c,         \
+-                            uint64_t b, uint32_t frt)                         \
++#define FF_FMA1(NAME, FLAGS, SINGLE, SOFT)                                    \
++static QEMU_NOINLINE_FF uint64_t                                             \
++ff_##NAME##_slow(CPUPPCState *env, uint64_t a, uint64_t c, uint64_t b,        \
++                 uint32_t frt, uintptr_t ra)                                  \
+ {                                                                             \
+-    uintptr_t ra = GETPC();                                                   \
+     uint64_t r;                                                               \
+-    bool inexact;                                                             \
+                                                                               \
+-    if (likely(ff_ok(env)) &&                                                 \
+-        likely(FF_FMA_FAST(a, c, b, FLAGS, false, &r, &inexact))) {           \
+-        ff_done(env, r, inexact);                                             \
+-        FF_STAT(#NAME, true);                                                 \
+-        return r;                                                             \
+-    }                                                                         \
+     FF_STAT(#NAME, false);                                                    \
+     set_float_exception_flags(0, &env->fp_status);                            \
+-    r = do_fmadd(env, a, c, b, FLAGS, ra);                                    \
++    r = SOFT(env, a, c, b, FLAGS, ra);                                        \
+     return ff_slow_finish(env, frt, r, ra);                                   \
+ }                                                                             \
+-uint64_t helper_fast_##NAME##S(CPUPPCState *env, uint64_t a, uint64_t c,      \
+-                               uint64_t b, uint32_t frt)                      \
++static inline QEMU_ALWAYS_INLINE uint64_t                                     \
++ff_##NAME(CPUPPCState *env, uint64_t a, uint64_t c, uint64_t b,               \
++          uint32_t frt, uintptr_t ra, bool nr)                                \
+ {                                                                             \
+-    uintptr_t ra = GETPC();                                                   \
+     uint64_t r;                                                               \
+     bool inexact;                                                             \
+                                                                               \
+-    if (likely(ff_ok(env)) &&                                                 \
+-        likely(FF_FMA_FAST(a, c, b, FLAGS, true, &r, &inexact))) {            \
++    if (likely(ff_ok(env, nr)) &&                                             \
++        likely(FF_FMA_FAST(a, c, b, FLAGS, SINGLE, &r, &inexact))) {          \
+         ff_done(env, r, inexact);                                             \
+-        FF_STAT(#NAME "S", true);                                             \
++        FF_STAT(#NAME, true);                                                 \
+         return r;                                                             \
+     }                                                                         \
+-    FF_STAT(#NAME "S", false);                                                \
+-    set_float_exception_flags(0, &env->fp_status);                            \
+-    r = do_fmadds(env, a, c, b, FLAGS, ra);                                   \
+-    return ff_slow_finish(env, frt, r, ra);                                   \
++    return ff_##NAME##_slow(env, a, c, b, frt, ra);                           \
++}                                                                             \
++uint64_t helper_fast_##NAME(CPUPPCState *env, uint64_t a, uint64_t c,         \
++                            uint64_t b, uint32_t frt)                         \
++{                                                                             \
++    return ff_##NAME(env, a, c, b, frt, GETPC(), false);                      \
++}                                                                             \
++uint64_t helper_fastnr_##NAME(CPUPPCState *env, uint64_t a, uint64_t c,       \
++                              uint64_t b, uint32_t frt)                       \
++{                                                                             \
++    return ff_##NAME(env, a, c, b, frt, GETPC(), true);                       \
+ }
+ 
++#define FF_FMA(NAME, FLAGS)                                                   \
++    FF_FMA1(NAME, FLAGS, false, do_fmadd)                                     \
++    FF_FMA1(NAME##S, FLAGS, true, do_fmadds)
++
+ FF_FMA(FMADD, MADD_FLGS)
+ FF_FMA(FNMADD, NMADD_FLGS)
+ FF_FMA(FMSUB, MSUB_FLGS)
+ FF_FMA(FNMSUB, NMSUB_FLGS)
+ 
+ /* fres: 1 / b rounded to single (QEMU computes the estimate exactly) */
+-uint64_t helper_fast_FRES(CPUPPCState *env, uint64_t b, uint32_t frt)
++static inline QEMU_ALWAYS_INLINE uint64_t ff_FRES(CPUPPCState *env, uint64_t b,
++                                          uint32_t frt, uintptr_t ra, bool nr)
+ {
+-    uintptr_t ra = GETPC();
+     uint64_t r;
+     bool inexact;
+     int flags;
+ 
+-    if (FF_ENABLED && likely(ff_ok(env)) &&
++    if (FF_ENABLED && likely(ff_ok(env, nr)) &&
+         likely(ff_div(0x3ff0000000000000ULL, b, true, &r, &inexact))) {
+         ff_done(env, r, inexact);
+         FF_STAT("FRES", true);
+@@ -642,14 +693,24 @@
+     return ff_slow_finish(env, frt, r, ra);
+ }
+ 
++uint64_t helper_fast_FRES(CPUPPCState *env, uint64_t b, uint32_t frt)
++{
++    return ff_FRES(env, b, frt, GETPC(), false);
++}
++
++uint64_t helper_fastnr_FRES(CPUPPCState *env, uint64_t b, uint32_t frt)
++{
++    return ff_FRES(env, b, frt, GETPC(), true);
++}
++
+ /* frsqrte: 1 / sqrt(b), double precision, two roundings as in QEMU */
+-uint64_t helper_fast_FRSQRTE(CPUPPCState *env, uint64_t b, uint32_t frt)
++static inline QEMU_ALWAYS_INLINE uint64_t
++ff_FRSQRTE(CPUPPCState *env, uint64_t b, uint32_t frt, uintptr_t ra, bool nr)
+ {
+-    uintptr_t ra = GETPC();
+     uint64_t r;
+     int flags;
+ 
+-    if (FF_ENABLED && likely(ff_ok(env)) && ff_normal(b) && !(b >> 63)) {
++    if (FF_ENABLED && likely(ff_ok(env, nr)) && ff_normal(b) && !(b >> 63)) {
+         double s = __builtin_sqrt(ff_d(b));
+         uint64_t rs = ff_u(s);
+         bool exact_s = ff_mul_exact(ff_sig(rs), ff_sig(rs)) && s * s == ff_d(b);
+@@ -678,14 +739,24 @@
+     return ff_slow_finish(env, frt, r, ra);
+ }
+ 
++uint64_t helper_fast_FRSQRTE(CPUPPCState *env, uint64_t b, uint32_t frt)
++{
++    return ff_FRSQRTE(env, b, frt, GETPC(), false);
++}
++
++uint64_t helper_fastnr_FRSQRTE(CPUPPCState *env, uint64_t b, uint32_t frt)
++{
++    return ff_FRSQRTE(env, b, frt, GETPC(), true);
++}
++
+ /* frsp */
+-uint64_t helper_fast_FRSP(CPUPPCState *env, uint64_t b, uint32_t frt)
++static inline QEMU_ALWAYS_INLINE uint64_t ff_FRSP(CPUPPCState *env, uint64_t b,
++                                          uint32_t frt, uintptr_t ra, bool nr)
+ {
+-    uintptr_t ra = GETPC();
+     uint64_t r;
+     bool inexact;
+ 
+-    if (FF_ENABLED && likely(ff_ok(env)) && ff_normal_or_zero(b) &&
++    if (FF_ENABLED && likely(ff_ok(env, nr)) && ff_normal_or_zero(b) &&
+         ff_to_single(ff_d(b), true, &r, &inexact)) {
+         ff_done(env, r, inexact);
+         FF_STAT("FRSP", true);
+@@ -697,6 +768,16 @@
+     return ff_slow_finish(env, frt, r, ra);
+ }
+ 
++uint64_t helper_fast_FRSP(CPUPPCState *env, uint64_t b, uint32_t frt)
++{
++    return ff_FRSP(env, b, frt, GETPC(), false);
++}
++
++uint64_t helper_fastnr_FRSP(CPUPPCState *env, uint64_t b, uint32_t frt)
++{
++    return ff_FRSP(env, b, frt, GETPC(), true);
++}
++
+ /* fctiw, fctiwz: |b| < 2^31, result within int32 */
+ static inline bool ff_cti(uint64_t b, bool trunc, uint64_t *res, bool *inexact)
+ {
+@@ -727,14 +808,14 @@
+ }
+ 
+ #define FF_CTI(NAME, CVT, TRUNC)                                              \
+-uint64_t helper_fast_##NAME(CPUPPCState *env, uint64_t b, uint32_t frt)       \
++static inline QEMU_ALWAYS_INLINE uint64_t                                     \
++ff_##NAME(CPUPPCState *env, uint64_t b, uint32_t frt, uintptr_t ra, bool nr) \
+ {                                                                             \
+-    uintptr_t ra = GETPC();                                                   \
+     uint64_t r;                                                               \
+     bool inexact;                                                             \
+     int flags;                                                                \
+                                                                               \
+-    if (FF_ENABLED && likely(ff_ok(env)) &&                                   \
++    if (FF_ENABLED && likely(ff_ok(env, nr)) &&                               \
+         likely(ff_cti(b, TRUNC, &r, &inexact))) {                             \
+         ff_done_nofprf(env, inexact);                                         \
+         FF_STAT(#NAME, true);                                                 \
+@@ -750,6 +831,14 @@
+     ff_set_fpr(env, frt, r);                                                  \
+     do_float_check_status(env, true, ra);                                     \
+     return r;                                                                 \
++}                                                                             \
++uint64_t helper_fast_##NAME(CPUPPCState *env, uint64_t b, uint32_t frt)       \
++{                                                                             \
++    return ff_##NAME(env, b, frt, GETPC(), false);                            \
++}                                                                             \
++uint64_t helper_fastnr_##NAME(CPUPPCState *env, uint64_t b, uint32_t frt)     \
++{                                                                             \
++    return ff_##NAME(env, b, frt, GETPC(), true);                             \
+ }
+ 
+ FF_CTI(FCTIW, int32, false)
+@@ -775,26 +864,33 @@
+     return true;
+ }
+ 
+-void helper_fast_FCMPU(CPUPPCState *env, uint64_t a, uint64_t b, uint32_t crf)
+-{
+-    if (FF_ENABLED && likely(ff_ok(env)) && likely(ff_cmp(env, a, b, crf))) {
+-        FF_STAT("FCMPU", true);
+-        return;
+-    }
+-    FF_STAT("FCMPU", false);
+-    set_float_exception_flags(0, &env->fp_status);
+-    ff_fcmpu(env, a, b, crf, GETPC());
+-    do_float_check_status(env, true, GETPC());
++#define FF_CMP(NAME, SOFT)                                                    \
++static inline QEMU_ALWAYS_INLINE void                                         \
++ff_##NAME(CPUPPCState *env, uint64_t a, uint64_t b, uint32_t crf,             \
++          uintptr_t ra, bool nr)                                              \
++{                                                                             \
++    if (FF_ENABLED && likely(ff_ok(env, nr)) &&                               \
++        likely(ff_cmp(env, a, b, crf))) {                                     \
++        FF_STAT(#NAME, true);                                                 \
++        return;                                                               \
++    }                                                                         \
++    FF_STAT(#NAME, false);                                                    \
++    set_float_exception_flags(0, &env->fp_status);                            \
++    SOFT(env, a, b, crf, ra);                                                 \
++    do_float_check_status(env, true, ra);                                     \
++}                                                                             \
++void helper_fast_##NAME(CPUPPCState *env, uint64_t a, uint64_t b,             \
++                        uint32_t crf)                                         \
++{                                                                             \
++    ff_##NAME(env, a, b, crf, GETPC(), false);                                \
++}                                                                             \
++/* returns the CR field; the translator copies it to the cpu_crf global */   \
++uint32_t helper_fastnr_##NAME(CPUPPCState *env, uint64_t a, uint64_t b,       \
++                              uint32_t crf)                                   \
++{                                                                             \
++    ff_##NAME(env, a, b, crf, GETPC(), true);                                 \
++    return env->crf[crf];                                                     \
+ }
+ 
+-void helper_fast_FCMPO(CPUPPCState *env, uint64_t a, uint64_t b, uint32_t crf)
+-{
+-    if (FF_ENABLED && likely(ff_ok(env)) && likely(ff_cmp(env, a, b, crf))) {
+-        FF_STAT("FCMPO", true);
+-        return;
+-    }
+-    FF_STAT("FCMPO", false);
+-    set_float_exception_flags(0, &env->fp_status);
+-    ff_fcmpo(env, a, b, crf, GETPC());
+-    do_float_check_status(env, true, GETPC());
+-}
++FF_CMP(FCMPU, ff_fcmpu)
++FF_CMP(FCMPO, ff_fcmpo)
+diff --git a/target/ppc/helper.h b/target/ppc/helper.h
+--- a/target/ppc/helper.h
++++ b/target/ppc/helper.h
+@@ -163,6 +163,34 @@
+ DEF_HELPER_3(fast_FCTIWZ, i64, env, i64, i32)
+ DEF_HELPER_4(fast_FCMPU, void, env, i64, i64, i32)
+ DEF_HELPER_4(fast_FCMPO, void, env, i64, i64, i32)
++/*
++ * The same, for TBs in which no FP exception can trap (MSR[FE0] = MSR[FE1]
++ * = 0): they never raise and touch no TCG global (FPSCR is read from memory
++ * by such TBs, the compares return the CR field).
++ */
++DEF_HELPER_FLAGS_4(fastnr_FADD, TCG_CALL_NO_RWG, i64, env, i64, i64, i32)
++DEF_HELPER_FLAGS_4(fastnr_FADDS, TCG_CALL_NO_RWG, i64, env, i64, i64, i32)
++DEF_HELPER_FLAGS_4(fastnr_FSUB, TCG_CALL_NO_RWG, i64, env, i64, i64, i32)
++DEF_HELPER_FLAGS_4(fastnr_FSUBS, TCG_CALL_NO_RWG, i64, env, i64, i64, i32)
++DEF_HELPER_FLAGS_4(fastnr_FMUL, TCG_CALL_NO_RWG, i64, env, i64, i64, i32)
++DEF_HELPER_FLAGS_4(fastnr_FMULS, TCG_CALL_NO_RWG, i64, env, i64, i64, i32)
++DEF_HELPER_FLAGS_4(fastnr_FDIV, TCG_CALL_NO_RWG, i64, env, i64, i64, i32)
++DEF_HELPER_FLAGS_4(fastnr_FDIVS, TCG_CALL_NO_RWG, i64, env, i64, i64, i32)
++DEF_HELPER_FLAGS_5(fastnr_FMADD, TCG_CALL_NO_RWG, i64, env, i64, i64, i64, i32)
++DEF_HELPER_FLAGS_5(fastnr_FMADDS, TCG_CALL_NO_RWG, i64, env, i64, i64, i64, i32)
++DEF_HELPER_FLAGS_5(fastnr_FMSUB, TCG_CALL_NO_RWG, i64, env, i64, i64, i64, i32)
++DEF_HELPER_FLAGS_5(fastnr_FMSUBS, TCG_CALL_NO_RWG, i64, env, i64, i64, i64, i32)
++DEF_HELPER_FLAGS_5(fastnr_FNMADD, TCG_CALL_NO_RWG, i64, env, i64, i64, i64, i32)
++DEF_HELPER_FLAGS_5(fastnr_FNMADDS, TCG_CALL_NO_RWG, i64, env, i64, i64, i64, i32)
++DEF_HELPER_FLAGS_5(fastnr_FNMSUB, TCG_CALL_NO_RWG, i64, env, i64, i64, i64, i32)
++DEF_HELPER_FLAGS_5(fastnr_FNMSUBS, TCG_CALL_NO_RWG, i64, env, i64, i64, i64, i32)
++DEF_HELPER_FLAGS_3(fastnr_FRES, TCG_CALL_NO_RWG, i64, env, i64, i32)
++DEF_HELPER_FLAGS_3(fastnr_FRSQRTE, TCG_CALL_NO_RWG, i64, env, i64, i32)
++DEF_HELPER_FLAGS_3(fastnr_FRSP, TCG_CALL_NO_RWG, i64, env, i64, i32)
++DEF_HELPER_FLAGS_3(fastnr_FCTIW, TCG_CALL_NO_RWG, i64, env, i64, i32)
++DEF_HELPER_FLAGS_3(fastnr_FCTIWZ, TCG_CALL_NO_RWG, i64, env, i64, i32)
++DEF_HELPER_FLAGS_4(fastnr_FCMPU, TCG_CALL_NO_RWG, i32, env, i64, i64, i32)
++DEF_HELPER_FLAGS_4(fastnr_FCMPO, TCG_CALL_NO_RWG, i32, env, i64, i64, i32)
+ 
+ DEF_HELPER_FLAGS_2(FTDIV, TCG_CALL_NO_RWG_SE, i32, i64, i64)
+ DEF_HELPER_FLAGS_1(FTSQRT, TCG_CALL_NO_RWG_SE, i32, i64)
+@@ -336,6 +364,28 @@
+ DEF_HELPER_4(vcfsx, void, env, avr, avr, i32)
+ DEF_HELPER_4(vctuxs, void, env, avr, avr, i32)
+ DEF_HELPER_4(vctsxs, void, env, avr, avr, i32)
++/*
++ * RetroBoot fast-fpu CALLS: AltiVec FP helpers called without spilling TCG
++ * globals (they never raise and touch no global; the Rc forms that write
++ * CR6 keep the plain helpers).  fast_VPERM: SSSE3 byte shuffle.
++ */
++DEF_HELPER_FLAGS_4(nr_vaddfp, TCG_CALL_NO_RWG, void, env, avr, avr, avr)
++DEF_HELPER_FLAGS_4(nr_vsubfp, TCG_CALL_NO_RWG, void, env, avr, avr, avr)
++DEF_HELPER_FLAGS_4(nr_vmaxfp, TCG_CALL_NO_RWG, void, env, avr, avr, avr)
++DEF_HELPER_FLAGS_4(nr_vminfp, TCG_CALL_NO_RWG, void, env, avr, avr, avr)
++DEF_HELPER_FLAGS_4(nr_vcmpeqfp, TCG_CALL_NO_RWG, void, env, avr, avr, avr)
++DEF_HELPER_FLAGS_4(nr_vcmpgefp, TCG_CALL_NO_RWG, void, env, avr, avr, avr)
++DEF_HELPER_FLAGS_4(nr_vcmpgtfp, TCG_CALL_NO_RWG, void, env, avr, avr, avr)
++DEF_HELPER_FLAGS_4(nr_vcmpbfp, TCG_CALL_NO_RWG, void, env, avr, avr, avr)
++DEF_HELPER_FLAGS_5(nr_vmaddfp, TCG_CALL_NO_RWG, void, env, avr, avr, avr, avr)
++DEF_HELPER_FLAGS_5(nr_vnmsubfp, TCG_CALL_NO_RWG, void, env, avr, avr, avr, avr)
++DEF_HELPER_FLAGS_3(nr_vrefp, TCG_CALL_NO_RWG, void, env, avr, avr)
++DEF_HELPER_FLAGS_3(nr_vrsqrtefp, TCG_CALL_NO_RWG, void, env, avr, avr)
++DEF_HELPER_FLAGS_4(nr_vcfux, TCG_CALL_NO_RWG, void, env, avr, avr, i32)
++DEF_HELPER_FLAGS_4(nr_vcfsx, TCG_CALL_NO_RWG, void, env, avr, avr, i32)
++DEF_HELPER_FLAGS_4(nr_vctuxs, TCG_CALL_NO_RWG, void, env, avr, avr, i32)
++DEF_HELPER_FLAGS_4(nr_vctsxs, TCG_CALL_NO_RWG, void, env, avr, avr, i32)
++DEF_HELPER_FLAGS_4(fast_VPERM, TCG_CALL_NO_RWG, void, avr, avr, avr, avr)
+ 
+ DEF_HELPER_FLAGS_2(vclzb, TCG_CALL_NO_RWG, void, avr, avr)
+ DEF_HELPER_FLAGS_2(vclzh, TCG_CALL_NO_RWG, void, avr, avr)
+diff --git a/target/ppc/helper_regs.c b/target/ppc/helper_regs.c
+--- a/target/ppc/helper_regs.c
++++ b/target/ppc/helper_regs.c
+@@ -168,6 +168,14 @@
+     }
+     if ((ppc_flags & POWERPC_FLAG_SPE) && (msr & (1 << MSR_SPE))) {
+         hflags |= 1 << HFLAGS_SPE;
++    }
++    /*
++     * RetroBoot fast-fpu: whether an FP instruction can raise a program
++     * exception (MSR[FE0] or MSR[FE1] set).  Translation calls the FP
++     * helpers without spilling TCG globals only when it cannot.
++     */
++    if (env->fast_fpexc && (msr & ((1ull << MSR_FE0) | (1ull << MSR_FE1)))) {
++        hflags |= 1 << HFLAGS_FPEXC;
+     }
+     if (ppc_flags & POWERPC_FLAG_VRE) {
+         QEMU_BUILD_BUG_ON(MSR_VR != HFLAGS_VR);
+diff --git a/target/ppc/int_helper.c b/target/ppc/int_helper.c
+--- a/target/ppc/int_helper.c
++++ b/target/ppc/int_helper.c
+@@ -505,13 +505,17 @@
+     r->VsrD(0) = 0;
+ }
+ 
+-#define VARITHFP(suffix, func, fast)                                    \
++#define VARITHFP(suffix, func, fast, simd)                              \
+     void helper_v##suffix(CPUPPCState *env, ppc_avr_t *r, ppc_avr_t *a, \
+                           ppc_avr_t *b)                                 \
+     {                                                                   \
+         int i;                                                          \
+         uint32_t y;                                                     \
+                                                                         \
++        if (env->fast_vmx_simd && (simd)) {                             \
++            FF_STAT("v" #suffix "4", true);                             \
++            return;                                                     \
++        }                                                               \
+         for (i = 0; i < ARRAY_SIZE(r->f32); i++) {                      \
+             if (env->fast_vmx && fast(a->u32[i], b->u32[i], &y)) {      \
+                 r->u32[i] = y;                                          \
+@@ -522,12 +526,27 @@
+             r->f32[i] = func(a->f32[i], b->f32[i], &env->vec_status);   \
+         }                                                               \
+     }
+-VARITHFP(addfp, float32_add, fv_add)
+-VARITHFP(subfp, float32_sub, fv_sub)
+-VARITHFP(minfp, float32_min, fv_min)
+-VARITHFP(maxfp, float32_max, fv_max)
++#if FV_SIMD
++VARITHFP(addfp, float32_add, fv_add, fv4_add(r, a, b, false))
++VARITHFP(subfp, float32_sub, fv_sub, fv4_add(r, a, b, true))
++#else
++VARITHFP(addfp, float32_add, fv_add, false)
++VARITHFP(subfp, float32_sub, fv_sub, false)
++#endif
++#if FV_SIMD
++VARITHFP(minfp, float32_min, fv_min, fv4_maxmin(r, a, b, false))
++VARITHFP(maxfp, float32_max, fv_max, fv4_maxmin(r, a, b, true))
++#else
++VARITHFP(minfp, float32_min, fv_min, false)
++VARITHFP(maxfp, float32_max, fv_max, false)
++#endif
+ #undef VARITHFP
+ 
++#if FV_SIMD
++#define FV4_MADD(r, a, c, b, nmsub) fv4_madd(r, a, c, b, nmsub)
++#else
++#define FV4_MADD(r, a, c, b, nmsub) false
++#endif
+ #define VARITHFPFMA(suffix, type, nmsub)                                \
+     void helper_v##suffix(CPUPPCState *env, ppc_avr_t *r, ppc_avr_t *a, \
+                            ppc_avr_t *b, ppc_avr_t *c)                  \
+@@ -535,6 +554,10 @@
+         int i;                                                          \
+         uint32_t y;                                                     \
+                                                                         \
++        if (env->fast_vmx_simd && FV4_MADD(r, a, c, b, nmsub)) {        \
++            FF_STAT("v" #suffix "4", true);                             \
++            return;                                                     \
++        }                                                               \
+         for (i = 0; i < ARRAY_SIZE(r->f32); i++) {                      \
+             if (env->fast_vmx &&                                        \
+                 fv_madd(a->u32[i], c->u32[i], b->u32[i], nmsub, &y)) {  \
+@@ -666,7 +689,12 @@
+ VCMPNEZ(VCMPNEZW, u32)
+ #undef VCMPNEZ
+ 
+-#define VCMPFP_DO(suffix, compare, order, record)                       \
++#if FV_SIMD
++#define FV4_CMP(r, a, b, kind, all, none) fv4_cmp(r, a, b, kind, all, none)
++#else
++#define FV4_CMP(r, a, b, kind, all, none) false
++#endif
++#define VCMPFP_DO(suffix, compare, order, record, kind)                 \
+     void helper_vcmp##suffix(CPUPPCState *env, ppc_avr_t *r,            \
+                              ppc_avr_t *a, ppc_avr_t *b)                \
+     {                                                                   \
+@@ -675,6 +703,10 @@
+         uint32_t none = 0;                                              \
+         int i;                                                          \
+                                                                         \
++        if (env->fast_vmx_simd && FV4_CMP(r, a, b, kind, &all, &none)) { \
++            FF_STAT("vcmp" #suffix "4", true);                          \
++            goto done;                                                  \
++        }                                                               \
+         for (i = 0; i < ARRAY_SIZE(r->f32); i++) {                      \
+             uint32_t result;                                            \
+             FloatRelation rel;                                          \
+@@ -699,16 +731,17 @@
+             all &= result;                                              \
+             none |= result;                                             \
+         }                                                               \
++    done:                                                               \
+         if (record) {                                                   \
+             env->crf[6] = ((all != 0) << 3) | ((none == 0) << 1);       \
+         }                                                               \
+     }
+-#define VCMPFP(suffix, compare, order)          \
+-    VCMPFP_DO(suffix, compare, order, 0)        \
+-    VCMPFP_DO(suffix##_dot, compare, order, 1)
+-VCMPFP(eqfp, ==, float_relation_equal)
+-VCMPFP(gefp, !=, float_relation_less)
+-VCMPFP(gtfp, ==, float_relation_greater)
++#define VCMPFP(suffix, compare, order, kind)    \
++    VCMPFP_DO(suffix, compare, order, 0, kind)  \
++    VCMPFP_DO(suffix##_dot, compare, order, 1, kind)
++VCMPFP(eqfp, ==, float_relation_equal, 0)
++VCMPFP(gefp, !=, float_relation_less, 1)
++VCMPFP(gtfp, ==, float_relation_greater, 2)
+ #undef VCMPFP_DO
+ #undef VCMPFP
+ 
+@@ -1299,6 +1332,18 @@
+     *r = result;
+ }
+ 
++/* PPC_FAST_FPU_SIMD: vperm with SSSE3 where the host has it */
++void helper_fast_VPERM(ppc_avr_t *r, ppc_avr_t *a, ppc_avr_t *b, ppc_avr_t *c)
++{
++#if FV_SIMD
++    if (likely(fv_have_ssse3())) {
++        fv_vperm_ssse3(r, a, b, c);
++        return;
++    }
++#endif
++    helper_VPERM(r, a, b, c);
++}
++
+ void helper_VPERMR(ppc_avr_t *r, ppc_avr_t *a, ppc_avr_t *b, ppc_avr_t *c)
+ {
+     ppc_avr_t result;
+@@ -1574,6 +1619,11 @@
+ {
+     int i;
+ 
++#if FV_SIMD
++    if (env->fast_vmx_simd && fv4_re(r, b, false)) {
++        return;
++    }
++#endif
+     for (i = 0; i < ARRAY_SIZE(r->f32); i++) {
+         uint32_t y;
+ 
+@@ -1607,6 +1657,11 @@
+ {
+     int i;
+ 
++#if FV_SIMD
++    if (env->fast_vmx_simd && fv4_re(r, b, true)) {
++        return;
++    }
++#endif
+     for (i = 0; i < ARRAY_SIZE(r->f32); i++) {
+         uint32_t y;
+         float32 t;
+@@ -3170,4 +3225,58 @@
+         env->crf[0] |= xer_so;
+     }
+     return i;
++}
++
++/*
++ * RetroBoot fast-fpu CALLS: the AltiVec FP helpers under the names declared
++ * TCG_CALL_NO_RWG (they raise nothing and touch no TCG global).
++ */
++#define FV_NR3(name)                                                    \
++    void helper_nr_##name(CPUPPCState *env, ppc_avr_t *r, ppc_avr_t *a, \
++                          ppc_avr_t *b)                                 \
++    {                                                                   \
++        helper_##name(env, r, a, b);                                    \
++    }
++FV_NR3(vaddfp)
++FV_NR3(vsubfp)
++FV_NR3(vmaxfp)
++FV_NR3(vminfp)
++FV_NR3(vcmpeqfp)
++FV_NR3(vcmpgefp)
++FV_NR3(vcmpgtfp)
++FV_NR3(vcmpbfp)
++#undef FV_NR3
++
++void helper_nr_vmaddfp(CPUPPCState *env, ppc_avr_t *r, ppc_avr_t *a,
++                       ppc_avr_t *b, ppc_avr_t *c)
++{
++    helper_vmaddfp(env, r, a, b, c);
+ }
++
++void helper_nr_vnmsubfp(CPUPPCState *env, ppc_avr_t *r, ppc_avr_t *a,
++                        ppc_avr_t *b, ppc_avr_t *c)
++{
++    helper_vnmsubfp(env, r, a, b, c);
++}
++
++void helper_nr_vrefp(CPUPPCState *env, ppc_avr_t *r, ppc_avr_t *b)
++{
++    helper_vrefp(env, r, b);
++}
++
++void helper_nr_vrsqrtefp(CPUPPCState *env, ppc_avr_t *r, ppc_avr_t *b)
++{
++    helper_vrsqrtefp(env, r, b);
++}
++
++#define FV_NRU(name)                                                    \
++    void helper_nr_##name(CPUPPCState *env, ppc_avr_t *r, ppc_avr_t *b, \
++                          uint32_t uim)                                 \
++    {                                                                   \
++        helper_##name(env, r, b, uim);                                  \
++    }
++FV_NRU(vcfux)
++FV_NRU(vcfsx)
++FV_NRU(vctuxs)
++FV_NRU(vctsxs)
++#undef FV_NRU
+diff --git a/target/ppc/translate.c b/target/ppc/translate.c
+--- a/target/ppc/translate.c
++++ b/target/ppc/translate.c
+@@ -186,6 +186,7 @@
+ #endif
+     bool fpu_enabled;
+     uint32_t fast_fpu;      /* PPC_FAST_FPU_* parts enabled */
++    bool ff_norwg;          /* FP helpers cannot trap: call them NO_RWG */
+     bool altivec_enabled;
+     bool vsx_enabled;
+     bool spe_enabled;
+@@ -6618,6 +6619,8 @@
+     ctx->fpu_enabled = (hflags >> HFLAGS_FP) & 1;
+     ctx->fast_fpu = POWERPC_CPU(cs)->fast_fpu ?
+                     POWERPC_CPU(cs)->fast_fpu_mask : 0;
++    ctx->ff_norwg = (ctx->fast_fpu & PPC_FAST_FPU_CALLS) &&
++                    !((hflags >> HFLAGS_FPEXC) & 1);
+     ctx->spe_enabled = (hflags >> HFLAGS_SPE) & 1;
+     ctx->altivec_enabled = (hflags >> HFLAGS_VR) & 1;
+     ctx->vsx_enabled = (hflags >> HFLAGS_VSX) & 1;
+diff --git a/target/ppc/translate/fp-impl.c.inc b/target/ppc/translate/fp-impl.c.inc
+--- a/target/ppc/translate/fp-impl.c.inc
++++ b/target/ppc/translate/fp-impl.c.inc
+@@ -15,17 +15,35 @@
+     gen_helper_float_check_status(tcg_env);
+ }
+ 
++/*
++ * RetroBoot fast-fpu CALLS: the FP helpers are then called TCG_CALL_NO_RWG
++ * and write env->fpscr behind TCG's back, so FPSCR is read from memory, not
++ * through the cpu_fpscr global (which TCG code never writes, so its memory
++ * copy is always current and a register copy could be stale).
++ */
++static TCGv ff_fpscr(DisasContext *ctx)
++{
++    TCGv t;
++
++    if (!(ctx->fast_fpu & PPC_FAST_FPU_CALLS)) {
++        return cpu_fpscr;
++    }
++    t = tcg_temp_new();
++    tcg_gen_ld_tl(t, tcg_env, offsetof(CPUPPCState, fpscr));
++    return t;
++}
++
+ #if defined(TARGET_PPC64)
+ static void gen_set_cr1_from_fpscr(DisasContext *ctx)
+ {
+     TCGv_i32 tmp = tcg_temp_new_i32();
+-    tcg_gen_trunc_tl_i32(tmp, cpu_fpscr);
++    tcg_gen_trunc_tl_i32(tmp, ff_fpscr(ctx));
+     tcg_gen_shri_i32(cpu_crf[1], tmp, 28);
+ }
+ #else
+ static void gen_set_cr1_from_fpscr(DisasContext *ctx)
+ {
+-    tcg_gen_shri_tl(cpu_crf[1], cpu_fpscr, 28);
++    tcg_gen_shri_tl(cpu_crf[1], ff_fpscr(ctx), 28);
+ }
+ #endif
+ 
+@@ -44,11 +62,13 @@
+ 
+ #define ff_arith(ctx, fast) \
+     ((fast) != NULL && ((ctx)->fast_fpu & PPC_FAST_FPU_ARITH))
++/* the variant declared TCG_CALL_NO_RWG when no FP exception can trap */
++#define ff_pick(ctx, fast, fastnr) ((ctx)->ff_norwg ? (fastnr) : (fast))
+ 
+ static bool do_helper_acb(DisasContext *ctx, arg_A *a,
+                           void (*helper)(TCGv_i64, TCGv_ptr, TCGv_i64,
+                                          TCGv_i64, TCGv_i64),
+-                          ff_gen3 *fast)
++                          ff_gen3 *fast, ff_gen3 *fastnr)
+ {
+     TCGv_i64 t0, t1, t2, t3;
+     REQUIRE_INSNS_FLAGS(ctx, FLOAT);
+@@ -61,7 +81,8 @@
+         get_fpr(t0, a->fra);
+         get_fpr(t1, a->frc);
+         get_fpr(t2, a->frb);
+-        fast(t3, tcg_env, t0, t1, t2, tcg_constant_i32(a->frt));
++        ff_pick(ctx, fast, fastnr)(t3, tcg_env, t0, t1, t2,
++                                   tcg_constant_i32(a->frt));
+         set_fpr(a->frt, t3);
+     } else {
+         gen_reset_fpstatus();
+@@ -81,7 +102,7 @@
+ static bool do_helper_ab(DisasContext *ctx, arg_A_tab *a,
+                          void (*helper)(TCGv_i64, TCGv_ptr, TCGv_i64,
+                                         TCGv_i64),
+-                         ff_gen2 *fast)
++                         ff_gen2 *fast, ff_gen2 *fastnr)
+ {
+     TCGv_i64 t0, t1, t2;
+     REQUIRE_INSNS_FLAGS(ctx, FLOAT);
+@@ -92,7 +113,8 @@
+     if (ff_arith(ctx, fast)) {
+         get_fpr(t0, a->fra);
+         get_fpr(t1, a->frb);
+-        fast(t2, tcg_env, t0, t1, tcg_constant_i32(a->frt));
++        ff_pick(ctx, fast, fastnr)(t2, tcg_env, t0, t1,
++                                   tcg_constant_i32(a->frt));
+         set_fpr(a->frt, t2);
+     } else {
+         gen_reset_fpstatus();
+@@ -111,7 +133,7 @@
+ static bool do_helper_ac(DisasContext *ctx, arg_A_tac *a,
+                          void (*helper)(TCGv_i64, TCGv_ptr, TCGv_i64,
+                                         TCGv_i64),
+-                         ff_gen2 *fast)
++                         ff_gen2 *fast, ff_gen2 *fastnr)
+ {
+     TCGv_i64 t0, t1, t2;
+     REQUIRE_INSNS_FLAGS(ctx, FLOAT);
+@@ -122,7 +144,8 @@
+     if (ff_arith(ctx, fast)) {
+         get_fpr(t0, a->fra);
+         get_fpr(t1, a->frc);
+-        fast(t2, tcg_env, t0, t1, tcg_constant_i32(a->frt));
++        ff_pick(ctx, fast, fastnr)(t2, tcg_env, t0, t1,
++                                   tcg_constant_i32(a->frt));
+         set_fpr(a->frt, t2);
+     } else {
+         gen_reset_fpstatus();
+@@ -140,7 +163,7 @@
+ 
+ static bool do_round_convert(DisasContext *ctx, arg_X_tb_rc *a,
+                              void (*helper)(TCGv_i64, TCGv_env, TCGv_i64),
+-                             bool set_fprf, ff_gen1 *fast)
++                             bool set_fprf, ff_gen1 *fast, ff_gen1 *fastnr)
+ {
+     TCGv_i64 t0, t1;
+     REQUIRE_FPU(ctx);
+@@ -148,7 +171,7 @@
+     t1 = tcg_temp_new_i64();
+     if (ff_arith(ctx, fast)) {
+         get_fpr(t0, a->rb);
+-        fast(t1, tcg_env, t0, tcg_constant_i32(a->rt));
++        ff_pick(ctx, fast, fastnr)(t1, tcg_env, t0, tcg_constant_i32(a->rt));
+         set_fpr(a->rt, t1);
+     } else {
+         gen_reset_fpstatus();
+@@ -168,7 +191,7 @@
+ 
+ static bool do_helper_bs(DisasContext *ctx, arg_A_tb *a,
+                          void (*helper)(TCGv_i64, TCGv_ptr, TCGv_i64),
+-                         ff_gen1 *fast)
++                         ff_gen1 *fast, ff_gen1 *fastnr)
+ {
+     TCGv_i64 t0, t1;
+     REQUIRE_FPU(ctx);
+@@ -176,7 +199,7 @@
+     t1 = tcg_temp_new_i64();
+     if (ff_arith(ctx, fast)) {
+         get_fpr(t0, a->frb);
+-        fast(t1, tcg_env, t0, tcg_constant_i32(a->frt));
++        ff_pick(ctx, fast, fastnr)(t1, tcg_env, t0, tcg_constant_i32(a->frt));
+         set_fpr(a->frt, t1);
+     } else {
+         gen_reset_fpstatus();
+@@ -249,69 +272,90 @@
+     return true;
+ }
+ 
+-TRANS(FADD, do_helper_ab, gen_helper_FADD, gen_helper_fast_FADD);
+-TRANS(FADDS, do_helper_ab, gen_helper_FADDS, gen_helper_fast_FADDS);
+-TRANS(FSUB, do_helper_ab, gen_helper_FSUB, gen_helper_fast_FSUB);
+-TRANS(FSUBS, do_helper_ab, gen_helper_FSUBS, gen_helper_fast_FSUBS);
+-TRANS(FDIV, do_helper_ab, gen_helper_FDIV, gen_helper_fast_FDIV);
+-TRANS(FDIVS, do_helper_ab, gen_helper_FDIVS, gen_helper_fast_FDIVS);
+-TRANS(FMUL, do_helper_ac, gen_helper_FMUL, gen_helper_fast_FMUL);
+-TRANS(FMULS, do_helper_ac, gen_helper_FMULS, gen_helper_fast_FMULS);
++TRANS(FADD, do_helper_ab, gen_helper_FADD,
++      gen_helper_fast_FADD, gen_helper_fastnr_FADD);
++TRANS(FADDS, do_helper_ab, gen_helper_FADDS,
++      gen_helper_fast_FADDS, gen_helper_fastnr_FADDS);
++TRANS(FSUB, do_helper_ab, gen_helper_FSUB,
++      gen_helper_fast_FSUB, gen_helper_fastnr_FSUB);
++TRANS(FSUBS, do_helper_ab, gen_helper_FSUBS,
++      gen_helper_fast_FSUBS, gen_helper_fastnr_FSUBS);
++TRANS(FDIV, do_helper_ab, gen_helper_FDIV,
++      gen_helper_fast_FDIV, gen_helper_fastnr_FDIV);
++TRANS(FDIVS, do_helper_ab, gen_helper_FDIVS,
++      gen_helper_fast_FDIVS, gen_helper_fastnr_FDIVS);
++TRANS(FMUL, do_helper_ac, gen_helper_FMUL,
++      gen_helper_fast_FMUL, gen_helper_fastnr_FMUL);
++TRANS(FMULS, do_helper_ac, gen_helper_FMULS,
++      gen_helper_fast_FMULS, gen_helper_fastnr_FMULS);
+ 
+-TRANS(FMADD, do_helper_acb, gen_helper_FMADD, gen_helper_fast_FMADD);
+-TRANS(FMADDS, do_helper_acb, gen_helper_FMADDS, gen_helper_fast_FMADDS);
+-TRANS(FMSUB, do_helper_acb, gen_helper_FMSUB, gen_helper_fast_FMSUB);
+-TRANS(FMSUBS, do_helper_acb, gen_helper_FMSUBS, gen_helper_fast_FMSUBS);
++TRANS(FMADD, do_helper_acb, gen_helper_FMADD,
++      gen_helper_fast_FMADD, gen_helper_fastnr_FMADD);
++TRANS(FMADDS, do_helper_acb, gen_helper_FMADDS,
++      gen_helper_fast_FMADDS, gen_helper_fastnr_FMADDS);
++TRANS(FMSUB, do_helper_acb, gen_helper_FMSUB,
++      gen_helper_fast_FMSUB, gen_helper_fastnr_FMSUB);
++TRANS(FMSUBS, do_helper_acb, gen_helper_FMSUBS,
++      gen_helper_fast_FMSUBS, gen_helper_fastnr_FMSUBS);
+ 
+-TRANS(FNMADD, do_helper_acb, gen_helper_FNMADD, gen_helper_fast_FNMADD);
+-TRANS(FNMADDS, do_helper_acb, gen_helper_FNMADDS, gen_helper_fast_FNMADDS);
+-TRANS(FNMSUB, do_helper_acb, gen_helper_FNMSUB, gen_helper_fast_FNMSUB);
+-TRANS(FNMSUBS, do_helper_acb, gen_helper_FNMSUBS, gen_helper_fast_FNMSUBS);
++TRANS(FNMADD, do_helper_acb, gen_helper_FNMADD,
++      gen_helper_fast_FNMADD, gen_helper_fastnr_FNMADD);
++TRANS(FNMADDS, do_helper_acb, gen_helper_FNMADDS,
++      gen_helper_fast_FNMADDS, gen_helper_fastnr_FNMADDS);
++TRANS(FNMSUB, do_helper_acb, gen_helper_FNMSUB,
++      gen_helper_fast_FNMSUB, gen_helper_fastnr_FNMSUB);
++TRANS(FNMSUBS, do_helper_acb, gen_helper_FNMSUBS,
++      gen_helper_fast_FNMSUBS, gen_helper_fastnr_FNMSUBS);
+ 
+-TRANS_FLAGS(FLOAT_EXT, FRE, do_helper_bs, gen_helper_FRE, NULL);
++TRANS_FLAGS(FLOAT_EXT, FRE, do_helper_bs, gen_helper_FRE, NULL, NULL);
+ TRANS_FLAGS(FLOAT_FRES, FRES, do_helper_bs, gen_helper_FRES,
+-            gen_helper_fast_FRES);
++            gen_helper_fast_FRES, gen_helper_fastnr_FRES);
+ TRANS_FLAGS(FLOAT_FRSQRTE, FRSQRTE, do_helper_bs, gen_helper_FRSQRTE,
+-            gen_helper_fast_FRSQRTE);
+-TRANS_FLAGS(FLOAT_FRSQRTES, FRSQRTES, do_helper_bs, gen_helper_FRSQRTES, NULL);
++            gen_helper_fast_FRSQRTE, gen_helper_fastnr_FRSQRTE);
++TRANS_FLAGS(FLOAT_FRSQRTES, FRSQRTES, do_helper_bs, gen_helper_FRSQRTES,
++            NULL, NULL);
+ 
+ TRANS(FSQRT, do_helper_fsqrt, gen_helper_FSQRT);
+ TRANS(FSQRTS, do_helper_fsqrt, gen_helper_FSQRTS);
+ 
+ /***                     Floating-Point round & convert                    ***/
+ TRANS_FLAGS(FLOAT, FRSP, do_round_convert, gen_helper_FRSP, true,
+-            gen_helper_fast_FRSP);
+-TRANS_FLAGS(FLOAT_EXT, FRIN, do_round_convert, gen_helper_FRIN, true, NULL);
+-TRANS_FLAGS(FLOAT_EXT, FRIZ, do_round_convert, gen_helper_FRIZ, true, NULL);
+-TRANS_FLAGS(FLOAT_EXT, FRIP, do_round_convert, gen_helper_FRIP, true, NULL);
+-TRANS_FLAGS(FLOAT_EXT, FRIM, do_round_convert, gen_helper_FRIM, true, NULL);
++            gen_helper_fast_FRSP, gen_helper_fastnr_FRSP);
++TRANS_FLAGS(FLOAT_EXT, FRIN, do_round_convert, gen_helper_FRIN, true,
++            NULL, NULL);
++TRANS_FLAGS(FLOAT_EXT, FRIZ, do_round_convert, gen_helper_FRIZ, true,
++            NULL, NULL);
++TRANS_FLAGS(FLOAT_EXT, FRIP, do_round_convert, gen_helper_FRIP, true,
++            NULL, NULL);
++TRANS_FLAGS(FLOAT_EXT, FRIM, do_round_convert, gen_helper_FRIM, true,
++            NULL, NULL);
+ 
+ TRANS_FLAGS(FLOAT, FCTIW, do_round_convert, gen_helper_FCTIW, false,
+-            gen_helper_fast_FCTIW);
++            gen_helper_fast_FCTIW, gen_helper_fastnr_FCTIW);
+ TRANS_FLAGS2(FP_CVT_ISA206, FCTIWU, do_round_convert, gen_helper_FCTIWU, false,
+-             NULL);
++             NULL, NULL);
+ TRANS_FLAGS(FLOAT, FCTIWZ, do_round_convert, gen_helper_FCTIWZ, false,
+-            gen_helper_fast_FCTIWZ);
++            gen_helper_fast_FCTIWZ, gen_helper_fastnr_FCTIWZ);
+ TRANS_FLAGS2(FP_CVT_ISA206, FCTIWUZ, do_round_convert, gen_helper_FCTIWUZ,
+-             false, NULL);
++             false, NULL, NULL);
+ 
+ TRANS_FLAGS2(FP_CVT_S64, FCTID, do_round_convert, gen_helper_FCTID, false,
+-             NULL);
++             NULL, NULL);
+ TRANS_FLAGS2(FP_CVT_ISA206, FCTIDU, do_round_convert, gen_helper_FCTIDU, false,
+-             NULL);
++             NULL, NULL);
+ TRANS_FLAGS2(FP_CVT_S64, FCTIDZ, do_round_convert, gen_helper_FCTIDZ, false,
+-             NULL);
++             NULL, NULL);
+ TRANS_FLAGS2(FP_CVT_ISA206, FCTIDUZ, do_round_convert, gen_helper_FCTIDUZ,
+-             false, NULL);
++             false, NULL, NULL);
+ 
+ TRANS_FLAGS2(FP_CVT_S64, FCFID, do_round_convert, gen_helper_FCFID, true,
+-             NULL);
++             NULL, NULL);
+ TRANS_FLAGS2(FP_CVT_ISA206, FCFIDS, do_round_convert, gen_helper_FCFIDS, false,
+-             NULL);
++             NULL, NULL);
+ TRANS_FLAGS2(FP_CVT_ISA206, FCFIDU, do_round_convert, gen_helper_FCFIDU, false,
+-             NULL);
++             NULL, NULL);
+ TRANS_FLAGS2(FP_CVT_ISA206, FCFIDUS, do_round_convert, gen_helper_FCFIDUS,
+-             false, NULL);
++             false, NULL, NULL);
+ 
+ static bool trans_FTDIV(DisasContext *ctx, arg_X_bf *a)
+ {
+@@ -342,7 +386,9 @@
+                           void (*helper)(TCGv_env, TCGv_i64, TCGv_i64,
+                                          TCGv_i32),
+                           void (*fast)(TCGv_env, TCGv_i64, TCGv_i64,
+-                                       TCGv_i32))
++                                       TCGv_i32),
++                          void (*fastnr)(TCGv_i32, TCGv_env, TCGv_i64,
++                                         TCGv_i64, TCGv_i32))
+ {
+     TCGv_i32 crf;
+     TCGv_i64 t0, t1;
+@@ -354,7 +400,14 @@
+     if (ctx->fast_fpu & PPC_FAST_FPU_ARITH) {
+         get_fpr(t0, a->ra);
+         get_fpr(t1, a->rb);
+-        fast(tcg_env, t0, t1, crf);
++        if (ctx->ff_norwg) {
++            /* the helper returns the CR field instead of writing the global */
++            TCGv_i32 c = tcg_temp_new_i32();
++            fastnr(c, tcg_env, t0, t1, crf);
++            tcg_gen_mov_i32(cpu_crf[a->bf], c);
++        } else {
++            fast(tcg_env, t0, t1, crf);
++        }
+         return true;
+     }
+     gen_reset_fpstatus();
+@@ -365,8 +418,10 @@
+     return true;
+ }
+ 
+-TRANS(FCMPU, do_helper_cmp, gen_helper_FCMPU, gen_helper_fast_FCMPU);
+-TRANS(FCMPO, do_helper_cmp, gen_helper_FCMPO, gen_helper_fast_FCMPO);
++TRANS(FCMPU, do_helper_cmp, gen_helper_FCMPU,
++      gen_helper_fast_FCMPU, gen_helper_fastnr_FCMPU);
++TRANS(FCMPO, do_helper_cmp, gen_helper_FCMPO,
++      gen_helper_fast_FCMPO, gen_helper_fastnr_FCMPO);
+ 
+ /***                         Floating-point move                           ***/
+ 
+@@ -478,11 +533,11 @@
+     bfa = crfS(ctx->opcode);
+     nibble = 7 - bfa;
+     shift = 4 * nibble;
+-    tcg_gen_shri_tl(tmp, cpu_fpscr, shift);
++    tcg_gen_shri_tl(tmp, ff_fpscr(ctx), shift);
+     tcg_gen_trunc_tl_i32(cpu_crf[crfD(ctx->opcode)], tmp);
+     tcg_gen_andi_i32(cpu_crf[crfD(ctx->opcode)], cpu_crf[crfD(ctx->opcode)],
+                      0xf);
+-    tcg_gen_extu_tl_i64(tnew_fpscr, cpu_fpscr);
++    tcg_gen_extu_tl_i64(tnew_fpscr, ff_fpscr(ctx));
+     /* Only the exception bits (including FX) should be cleared if read */
+     tcg_gen_andi_i64(tnew_fpscr, tnew_fpscr,
+                      ~(MAKE_64BIT_MASK(shift, 4) & FP_EX_CLEAR_BITS));
+@@ -491,12 +546,12 @@
+     gen_helper_store_fpscr(tcg_env, tnew_fpscr, tmask);
+ }
+ 
+-static TCGv_i64 place_from_fpscr(int rt, uint64_t mask)
++static TCGv_i64 place_from_fpscr(DisasContext *ctx, int rt, uint64_t mask)
+ {
+     TCGv_i64 fpscr = tcg_temp_new_i64();
+     TCGv_i64 fpscr_masked = tcg_temp_new_i64();
+ 
+-    tcg_gen_extu_tl_i64(fpscr, cpu_fpscr);
++    tcg_gen_extu_tl_i64(fpscr, ff_fpscr(ctx));
+     tcg_gen_andi_i64(fpscr_masked, fpscr, mask);
+     set_fpr(rt, fpscr_masked);
+ 
+@@ -535,7 +590,7 @@
+     REQUIRE_FPU(ctx);
+ 
+     gen_reset_fpstatus();
+-    place_from_fpscr(a->rt, UINT64_MAX);
++    place_from_fpscr(ctx, a->rt, UINT64_MAX);
+     if (a->rc) {
+         gen_set_cr1_from_fpscr(ctx);
+     }
+@@ -549,7 +604,7 @@
+     REQUIRE_FPU(ctx);
+ 
+     gen_reset_fpstatus();
+-    fpscr = place_from_fpscr(a->rt, UINT64_MAX);
++    fpscr = place_from_fpscr(ctx, a->rt, UINT64_MAX);
+     store_fpscr_masked(fpscr, FP_ENABLES, tcg_constant_i64(0), 0x0003);
+     return true;
+ }
+@@ -565,7 +620,8 @@
+     tcg_gen_andi_i64(t1, t1, FP_RN);
+ 
+     gen_reset_fpstatus();
+-    fpscr = place_from_fpscr(a->rt, FP_DRN | FP_ENABLES | FP_NI | FP_RN);
++    fpscr = place_from_fpscr(ctx, a->rt,
++                             FP_DRN | FP_ENABLES | FP_NI | FP_RN);
+     store_fpscr_masked(fpscr, FP_RN, t1, 0x0001);
+     return true;
+ }
+@@ -581,7 +637,8 @@
+     tcg_gen_andi_i64(t1, t1, FP_DRN);
+ 
+     gen_reset_fpstatus();
+-    fpscr = place_from_fpscr(a->rt, FP_DRN | FP_ENABLES | FP_NI | FP_RN);
++    fpscr = place_from_fpscr(ctx, a->rt,
++                             FP_DRN | FP_ENABLES | FP_NI | FP_RN);
+     store_fpscr_masked(fpscr, FP_DRN, t1, 0x0100);
+     return true;
+ }
+@@ -596,7 +653,8 @@
+     tcg_gen_movi_i64(t1, a->imm);
+ 
+     gen_reset_fpstatus();
+-    fpscr = place_from_fpscr(a->rt, FP_DRN | FP_ENABLES | FP_NI | FP_RN);
++    fpscr = place_from_fpscr(ctx, a->rt,
++                             FP_DRN | FP_ENABLES | FP_NI | FP_RN);
+     store_fpscr_masked(fpscr, FP_RN, t1, 0x0001);
+     return true;
+ }
+@@ -611,7 +669,8 @@
+     tcg_gen_movi_i64(t1, (uint64_t)a->imm << FPSCR_DRN0);
+ 
+     gen_reset_fpstatus();
+-    fpscr = place_from_fpscr(a->rt, FP_DRN | FP_ENABLES | FP_NI | FP_RN);
++    fpscr = place_from_fpscr(ctx, a->rt,
++                             FP_DRN | FP_ENABLES | FP_NI | FP_RN);
+     store_fpscr_masked(fpscr, FP_DRN, t1, 0x0100);
+     return true;
+ }
+@@ -621,7 +680,8 @@
+     REQUIRE_FPU(ctx);
+ 
+     gen_reset_fpstatus();
+-    place_from_fpscr(a->rt, FP_DRN | FP_STATUS | FP_ENABLES | FP_NI | FP_RN);
++    place_from_fpscr(ctx, a->rt,
++                     FP_DRN | FP_STATUS | FP_ENABLES | FP_NI | FP_RN);
+     return true;
+ }
+ 
+@@ -640,7 +700,7 @@
+         gen_helper_fpscr_clrbit(tcg_env, tcg_constant_i32(crb));
+     }
+     if (unlikely(Rc(ctx->opcode) != 0)) {
+-        tcg_gen_trunc_tl_i32(cpu_crf[1], cpu_fpscr);
++        tcg_gen_trunc_tl_i32(cpu_crf[1], ff_fpscr(ctx));
+         tcg_gen_shri_i32(cpu_crf[1], cpu_crf[1], FPSCR_OX);
+     }
+ }
+@@ -660,7 +720,7 @@
+         gen_helper_fpscr_setbit(tcg_env, tcg_constant_i32(crb));
+     }
+     if (unlikely(Rc(ctx->opcode) != 0)) {
+-        tcg_gen_trunc_tl_i32(cpu_crf[1], cpu_fpscr);
++        tcg_gen_trunc_tl_i32(cpu_crf[1], ff_fpscr(ctx));
+         tcg_gen_shri_i32(cpu_crf[1], cpu_crf[1], FPSCR_OX);
+     }
+     /* We can raise a deferred exception */
+@@ -696,7 +756,7 @@
+     get_fpr(t1, rB(ctx->opcode));
+     gen_helper_store_fpscr(tcg_env, t1, t0);
+     if (unlikely(Rc(ctx->opcode) != 0)) {
+-        tcg_gen_trunc_tl_i32(cpu_crf[1], cpu_fpscr);
++        tcg_gen_trunc_tl_i32(cpu_crf[1], ff_fpscr(ctx));
+         tcg_gen_shri_i32(cpu_crf[1], cpu_crf[1], FPSCR_OX);
+     }
+     /* We can raise a deferred exception */
+@@ -725,7 +785,7 @@
+     t1 = tcg_constant_i32(1 << sh);
+     gen_helper_store_fpscr(tcg_env, t0, t1);
+     if (unlikely(Rc(ctx->opcode) != 0)) {
+-        tcg_gen_trunc_tl_i32(cpu_crf[1], cpu_fpscr);
++        tcg_gen_trunc_tl_i32(cpu_crf[1], ff_fpscr(ctx));
+         tcg_gen_shri_i32(cpu_crf[1], cpu_crf[1], FPSCR_OX);
+     }
+     /* We can raise a deferred exception */
+diff --git a/target/ppc/translate/vmx-impl.c.inc b/target/ppc/translate/vmx-impl.c.inc
+--- a/target/ppc/translate/vmx-impl.c.inc
++++ b/target/ppc/translate/vmx-impl.c.inc
+@@ -97,14 +97,78 @@
+     return true;
+ }
+ 
+-TRANS(LVEBX, do_ldst_ve_X, 1, gen_helper_LVEBX);
+-TRANS(LVEHX, do_ldst_ve_X, 2, gen_helper_LVEHX);
+-TRANS(LVEWX, do_ldst_ve_X, 4, gen_helper_LVEWX);
++/*
++ * RetroBoot fast-fpu VLDST: lve*x/stve*x as one guest memory access in
++ * TCG instead of a helper call.  The element is the one the helpers pick:
++ * index (EA & 0xf) / size in big-endian element numbering (reversed in
++ * little-endian mode), at byte offset EA & 0xf of the register image when
++ * host and guest byte orders agree and 16 - size - (EA & 0xf) otherwise;
++ * the access is big- or little-endian with MSR[LE] as in the helpers.
++ */
++static bool do_ldst_ve_inline(DisasContext *ctx, arg_X *a, int size,
++                              bool store)
++{
++    TCGv EA;
++    TCGv_ptr p;
++    TCGv_i32 v, off;
++    MemOp mop = size == 1 ? MO_UB : size == 2 ? MO_UW : MO_UL;
+ 
+-TRANS(STVEBX, do_ldst_ve_X, 1, gen_helper_STVEBX);
+-TRANS(STVEHX, do_ldst_ve_X, 2, gen_helper_STVEHX);
+-TRANS(STVEWX, do_ldst_ve_X, 4, gen_helper_STVEWX);
++    REQUIRE_INSNS_FLAGS(ctx, ALTIVEC);
++    REQUIRE_VECTOR(ctx);
++    gen_set_access_type(ctx, ACCESS_INT);
++    EA = do_ea_calc(ctx, a->ra, cpu_gpr[a->rb]);
++    if (size > 1) {
++        tcg_gen_andi_tl(EA, EA, ~(size - 1));
++    }
++    off = tcg_temp_new_i32();
++    tcg_gen_trunc_tl_i32(off, EA);
++    tcg_gen_andi_i32(off, off, 0xf);
++    if (HOST_BIG_ENDIAN == ctx->le_mode) {
++        tcg_gen_subfi_i32(off, 16 - size, off);
++    }
++    p = tcg_temp_new_ptr();
++    tcg_gen_ext_i32_ptr(p, off);
++    tcg_gen_add_ptr(p, p, tcg_env);
++    v = tcg_temp_new_i32();
++    if (store) {
++        if (size == 1) {
++            tcg_gen_ld8u_i32(v, p, avr_full_offset(a->rt));
++        } else if (size == 2) {
++            tcg_gen_ld16u_i32(v, p, avr_full_offset(a->rt));
++        } else {
++            tcg_gen_ld_i32(v, p, avr_full_offset(a->rt));
++        }
++        tcg_gen_qemu_st_i32(v, EA, ctx->mem_idx, DEF_MEMOP(mop));
++    } else {
++        tcg_gen_qemu_ld_i32(v, EA, ctx->mem_idx, DEF_MEMOP(mop));
++        if (size == 1) {
++            tcg_gen_st8_i32(v, p, avr_full_offset(a->rt));
++        } else if (size == 2) {
++            tcg_gen_st16_i32(v, p, avr_full_offset(a->rt));
++        } else {
++            tcg_gen_st_i32(v, p, avr_full_offset(a->rt));
++        }
++    }
++    return true;
++}
+ 
++static bool do_ldst_ve(DisasContext *ctx, arg_X *a, int size, bool store,
++                       void (*helper)(TCGv_env, TCGv_ptr, TCGv))
++{
++    if (ctx->fast_fpu & PPC_FAST_FPU_VLDST) {
++        return do_ldst_ve_inline(ctx, a, size, store);
++    }
++    return do_ldst_ve_X(ctx, a, size, helper);
++}
++
++TRANS(LVEBX, do_ldst_ve, 1, false, gen_helper_LVEBX);
++TRANS(LVEHX, do_ldst_ve, 2, false, gen_helper_LVEHX);
++TRANS(LVEWX, do_ldst_ve, 4, false, gen_helper_LVEWX);
++
++TRANS(STVEBX, do_ldst_ve, 1, true, gen_helper_STVEBX);
++TRANS(STVEHX, do_ldst_ve, 2, true, gen_helper_STVEHX);
++TRANS(STVEWX, do_ldst_ve, 4, true, gen_helper_STVEWX);
++
+ static void gen_mfvscr(DisasContext *ctx)
+ {
+     TCGv_i32 t;
+@@ -249,6 +313,33 @@
+     rb = gen_avr_ptr(rB(ctx->opcode));                                  \
+     rd = gen_avr_ptr(rD(ctx->opcode));                                  \
+     gen_helper_##name(tcg_env, rd, ra, rb);                             \
++}
++
++/*
++ * RetroBoot fast-fpu CALLS: AltiVec FP helpers through their
++ * TCG_CALL_NO_RWG names (helper_nr_*), which spill no TCG globals.
++ */
++#define FV_CALL(ctx, name, ...)                                         \
++    do {                                                                \
++        if ((ctx)->fast_fpu & PPC_FAST_FPU_CALLS) {                     \
++            gen_helper_nr_##name(__VA_ARGS__);                          \
++        } else {                                                        \
++            gen_helper_##name(__VA_ARGS__);                             \
++        }                                                               \
++    } while (0)
++
++#define GEN_VXFORM_ENV_FV(name, opc2, opc3)                             \
++static void glue(gen_, name)(DisasContext *ctx)                         \
++{                                                                       \
++    TCGv_ptr ra, rb, rd;                                                \
++    if (unlikely(!ctx->altivec_enabled)) {                              \
++        gen_exception(ctx, POWERPC_EXCP_VPU);                           \
++        return;                                                         \
++    }                                                                   \
++    ra = gen_avr_ptr(rA(ctx->opcode));                                  \
++    rb = gen_avr_ptr(rB(ctx->opcode));                                  \
++    rd = gen_avr_ptr(rD(ctx->opcode));                                  \
++    FV_CALL(ctx, name, tcg_env, rd, ra, rb);                            \
+ }
+ 
+ #define GEN_VXFORM3(name, opc2, opc3)                                   \
+@@ -1075,10 +1166,10 @@
+ GEN_VXFORM_ENV(vsum4shs, 4, 25);
+ GEN_VXFORM_ENV(vsum2sws, 4, 26);
+ GEN_VXFORM_ENV(vsumsws, 4, 30);
+-GEN_VXFORM_ENV(vaddfp, 5, 0);
+-GEN_VXFORM_ENV(vsubfp, 5, 1);
+-GEN_VXFORM_ENV(vmaxfp, 5, 16);
+-GEN_VXFORM_ENV(vminfp, 5, 17);
++GEN_VXFORM_ENV_FV(vaddfp, 5, 0);
++GEN_VXFORM_ENV_FV(vsubfp, 5, 1);
++GEN_VXFORM_ENV_FV(vmaxfp, 5, 16);
++GEN_VXFORM_ENV_FV(vminfp, 5, 17);
+ GEN_VXFORM_HETRO(vextublx, 6, 24)
+ GEN_VXFORM_HETRO(vextuhlx, 6, 25)
+ GEN_VXFORM_HETRO(vextuwlx, 6, 26)
+@@ -1106,6 +1197,11 @@
+ 
+ #define GEN_VXRFORM(name, opc2, opc3)                                \
+     GEN_VXRFORM1(name, name, #name, opc2, opc3)                      \
++    GEN_VXRFORM1(name##_dot, name##_, #name ".", opc2, (opc3 | (0x1 << 4)))
++
++/* the FP compares: NO_RWG helper for the form that does not write CR6 */
++#define GEN_VXRFORM_FV(name, opc2, opc3)                             \
++    GEN_VXFORM_ENV_FV(name, opc2, opc3)                              \
+     GEN_VXRFORM1(name##_dot, name##_, #name ".", opc2, (opc3 | (0x1 << 4)))
+ 
+ /*
+@@ -1356,10 +1452,10 @@
+ TRANS(VCMPSQ, do_vcmpq, true)
+ TRANS(VCMPUQ, do_vcmpq, false)
+ 
+-GEN_VXRFORM(vcmpeqfp, 3, 3)
+-GEN_VXRFORM(vcmpgefp, 3, 7)
+-GEN_VXRFORM(vcmpgtfp, 3, 11)
+-GEN_VXRFORM(vcmpbfp, 3, 15)
++GEN_VXRFORM_FV(vcmpeqfp, 3, 3)
++GEN_VXRFORM_FV(vcmpgefp, 3, 7)
++GEN_VXRFORM_FV(vcmpgtfp, 3, 11)
++GEN_VXRFORM_FV(vcmpbfp, 3, 15)
+ 
+ static void gen_vsplti(DisasContext *ctx, int vece)
+ {
+@@ -1408,6 +1504,20 @@
+         gen_helper_##name(tcg_env, rd, rb);                             \
+     }
+ 
++#define GEN_VXFORM_NOA_ENV_FV(name, opc2, opc3)                         \
++static void glue(gen_, name)(DisasContext *ctx)                         \
++    {                                                                   \
++        TCGv_ptr rb, rd;                                                \
++                                                                        \
++        if (unlikely(!ctx->altivec_enabled)) {                          \
++            gen_exception(ctx, POWERPC_EXCP_VPU);                       \
++            return;                                                     \
++        }                                                               \
++        rb = gen_avr_ptr(rB(ctx->opcode));                              \
++        rd = gen_avr_ptr(rD(ctx->opcode));                              \
++        FV_CALL(ctx, name, tcg_env, rd, rb);                            \
++    }
++
+ #define GEN_VXFORM_NOA_2(name, opc2, opc3, opc4)                        \
+ static void glue(gen_, name)(DisasContext *ctx)                         \
+     {                                                                   \
+@@ -1440,8 +1550,8 @@
+ GEN_VXFORM_NOA(vupklsw, 7, 27);
+ GEN_VXFORM_NOA(vupkhpx, 7, 13);
+ GEN_VXFORM_NOA(vupklpx, 7, 15);
+-GEN_VXFORM_NOA_ENV(vrefp, 5, 4);
+-GEN_VXFORM_NOA_ENV(vrsqrtefp, 5, 5);
++GEN_VXFORM_NOA_ENV_FV(vrefp, 5, 4);
++GEN_VXFORM_NOA_ENV_FV(vrsqrtefp, 5, 5);
+ GEN_VXFORM_NOA_ENV(vexptefp, 5, 6);
+ GEN_VXFORM_NOA_ENV(vlogefp, 5, 7);
+ GEN_VXFORM_NOA_ENV(vrfim, 5, 11);
+@@ -1553,6 +1663,22 @@
+         rb = gen_avr_ptr(rB(ctx->opcode));                              \
+         rd = gen_avr_ptr(rD(ctx->opcode));                              \
+         gen_helper_##name(tcg_env, rd, rb, uimm);                       \
++    }
++
++#define GEN_VXFORM_UIMM_ENV_FV(name, opc2, opc3)                        \
++static void glue(gen_, name)(DisasContext *ctx)                         \
++    {                                                                   \
++        TCGv_ptr rb, rd;                                                \
++        TCGv_i32 uimm;                                                  \
++                                                                        \
++        if (unlikely(!ctx->altivec_enabled)) {                          \
++            gen_exception(ctx, POWERPC_EXCP_VPU);                       \
++            return;                                                     \
++        }                                                               \
++        uimm = tcg_constant_i32(UIMM5(ctx->opcode));                    \
++        rb = gen_avr_ptr(rB(ctx->opcode));                              \
++        rd = gen_avr_ptr(rD(ctx->opcode));                              \
++        FV_CALL(ctx, name, tcg_env, rd, rb, uimm);                      \
+     }
+ 
+ #define GEN_VXFORM_UIMM_SPLAT(name, opc2, opc3, splat_max)              \
+@@ -1582,10 +1708,10 @@
+ GEN_VXFORM_UIMM_SPLAT(vextractuh, 6, 9, 14);
+ GEN_VXFORM_UIMM_SPLAT(vextractuw, 6, 10, 12);
+ GEN_VXFORM_UIMM_SPLAT(vextractd, 6, 11, 8);
+-GEN_VXFORM_UIMM_ENV(vcfux, 5, 12);
+-GEN_VXFORM_UIMM_ENV(vcfsx, 5, 13);
+-GEN_VXFORM_UIMM_ENV(vctuxs, 5, 14);
+-GEN_VXFORM_UIMM_ENV(vctsxs, 5, 15);
++GEN_VXFORM_UIMM_ENV_FV(vcfux, 5, 12);
++GEN_VXFORM_UIMM_ENV_FV(vcfsx, 5, 13);
++GEN_VXFORM_UIMM_ENV_FV(vctuxs, 5, 14);
++GEN_VXFORM_UIMM_ENV_FV(vctsxs, 5, 15);
+ GEN_VXFORM_DUAL(vspltb, PPC_ALTIVEC, PPC_NONE,
+                 vextractub, PPC_NONE, PPC2_ISA300);
+ GEN_VXFORM_DUAL(vsplth, PPC_ALTIVEC, PPC_NONE,
+@@ -2276,9 +2402,9 @@
+         rc = gen_avr_ptr(rC(ctx->opcode));                              \
+         rd = gen_avr_ptr(rD(ctx->opcode));                              \
+         if (Rc(ctx->opcode)) {                                          \
+-            gen_helper_##name1(tcg_env, rd, ra, rb, rc);                \
++            FV_CALL(ctx, name1, tcg_env, rd, ra, rb, rc);               \
+         } else {                                                        \
+-            gen_helper_##name0(tcg_env, rd, ra, rb, rc);                \
++            FV_CALL(ctx, name0, tcg_env, rd, ra, rb, rc);               \
+         }                                                               \
+     }
+ 
+@@ -2304,7 +2430,13 @@
+ TRANS_FLAGS2(ALTIVEC_207, VSUBEUQM, do_va_helper, gen_helper_VSUBEUQM)
+ TRANS_FLAGS2(ALTIVEC_207, VSUBECUQ, do_va_helper, gen_helper_VSUBECUQ)
+ 
+-TRANS_FLAGS(ALTIVEC, VPERM, do_va_helper, gen_helper_VPERM)
++static bool trans_VPERM(DisasContext *ctx, arg_VA *a)
++{
++    REQUIRE_INSNS_FLAGS(ctx, ALTIVEC);
++    /* RetroBoot fast-fpu SIMD: SSSE3 byte shuffle when the host has it */
++    return do_va_helper(ctx, a, (ctx->fast_fpu & PPC_FAST_FPU_SIMD) ?
++                                gen_helper_fast_VPERM : gen_helper_VPERM);
++}
+ TRANS_FLAGS2(ISA300, VPERMR, do_va_helper, gen_helper_VPERMR)
+ 
+ static void gen_vmladduhm_vec(unsigned vece, TCGv_vec t, TCGv_vec a, TCGv_vec b,
+diff --git a/target/ppc/vmx_fast.c.inc b/target/ppc/vmx_fast.c.inc
+--- a/target/ppc/vmx_fast.c.inc
++++ b/target/ppc/vmx_fast.c.inc
+@@ -192,5 +192,246 @@
+         return false;
+     }
+     *j = (int64_t)t;
++    return true;
++}
++
++/*
++ * PPC_FAST_FPU_SIMD (env->fast_vmx_simd): the same lanes four at a time
++ * with SSE2, which every x86-64 host has.  Each function computes exactly
++ * what the per-lane functions above compute, for all four lanes, and
++ * returns false (storing nothing) unless every lane passes the checks of
++ * its per-lane function; the caller then runs the per-lane loop, which
++ * gives the same results for those lanes and softfloat for the others.
++ * The host's MXCSR is round-to-nearest with FTZ and DAZ off, as for the
++ * scalar code.
++ */
++#if defined(__x86_64__) || (defined(__i386__) && defined(__SSE2__))
++#include <emmintrin.h>
++#include <tmmintrin.h>
++#include <cpuid.h>
++#define FV_SIMD 1
++
++static inline __m128i fv4_load(const ppc_avr_t *v)
++{
++    return _mm_loadu_si128((const __m128i *)v);
++}
++
++/* all-ones in each 32-bit lane holding a normal number or a zero (fv_nz) */
++static inline __m128i fv4_nz(__m128i x)
++{
++    __m128i a = _mm_and_si128(x, _mm_set1_epi32(0x7fffffff));
++
++    __m128i lo = _mm_cmpgt_epi32(a, _mm_set1_epi32(0x007fffff));
++    __m128i hi = _mm_cmplt_epi32(a, _mm_set1_epi32(0x7f800000));
++
++    return _mm_or_si128(_mm_cmpeq_epi32(a, _mm_setzero_si128()),
++                        _mm_and_si128(lo, hi));
++}
++
++/* zero, or normal above FLT_MIN and finite (fv_res) */
++static inline __m128i fv4_res(__m128i y)
++{
++    __m128i a = _mm_and_si128(y, _mm_set1_epi32(0x7fffffff));
++
++    __m128i lo = _mm_cmpgt_epi32(a, _mm_set1_epi32(0x00800000));
++    __m128i hi = _mm_cmplt_epi32(a, _mm_set1_epi32(0x7f800000));
++
++    return _mm_or_si128(_mm_cmpeq_epi32(a, _mm_setzero_si128()),
++                        _mm_and_si128(lo, hi));
++}
++
++static inline bool fv4_all(__m128i ok)
++{
++    return _mm_movemask_epi8(ok) == 0xffff;
++}
++
++/* 32-bit lane masks from the 64-bit masks of lanes 0-1 and 2-3 */
++static inline __m128i fv4_pack(__m128d lo, __m128d hi)
++{
++    return _mm_castps_si128(_mm_shuffle_ps(_mm_castpd_ps(lo), _mm_castpd_ps(hi),
++                                           _MM_SHUFFLE(2, 0, 2, 0)));
++}
++
++/* vaddfp, vsubfp: fv_add, fv_sub */
++static inline bool fv4_add(ppc_avr_t *r, const ppc_avr_t *a,
++                           const ppc_avr_t *b, bool sub)
++{
++    __m128i ia = fv4_load(a), ib = fv4_load(b);
++    __m128 fa = _mm_castsi128_ps(ia), fb = _mm_castsi128_ps(ib);
++    __m128i y = _mm_castps_si128(sub ? _mm_sub_ps(fa, fb) : _mm_add_ps(fa, fb));
++    __m128i ok = _mm_and_si128(_mm_and_si128(fv4_nz(ia), fv4_nz(ib)),
++                               fv4_res(y));
++
++    if (!fv4_all(ok)) {
++        return false;
++    }
++    _mm_storeu_si128((__m128i *)r, y);
+     return true;
+ }
++
++/* two lanes of fv_madd in double: s, and the lanes that must give up */
++static inline __m128 fv2_madd(__m128 fa, __m128 fc, __m128 fb, bool nmsub,
++                              __m128d *bad, __m128d *snz)
++{
++    __m128d zero = _mm_setzero_pd();
++    __m128d p = _mm_mul_pd(_mm_cvtps_pd(fa), _mm_cvtps_pd(fc));   /* exact */
++    __m128d db = _mm_cvtps_pd(fb);
++    __m128d s, bb, err, mid;
++    __m128i si;
++
++    if (nmsub) {
++        db = _mm_xor_pd(db, _mm_set1_pd(-0.0));
++    }
++    s = _mm_add_pd(p, db);
++    bb = _mm_sub_pd(s, p);
++    err = _mm_add_pd(_mm_sub_pd(p, _mm_sub_pd(s, bb)), _mm_sub_pd(db, bb));
++    /* s a single-precision midpoint: the low 29 bits are 1000...0 */
++    si = _mm_and_si128(_mm_castpd_si128(s), _mm_set1_epi32(0x1fffffff));
++    si = _mm_cmpeq_epi32(si, _mm_set1_epi32(0x10000000));
++    mid = _mm_castsi128_pd(_mm_shuffle_epi32(si, _MM_SHUFFLE(2, 2, 0, 0)));
++    *bad = _mm_and_pd(_mm_cmpneq_pd(err, zero),
++                      _mm_or_pd(_mm_cmpeq_pd(s, zero), mid));
++    *snz = _mm_cmpneq_pd(s, zero);
++    return _mm_cvtpd_ps(s);
++}
++
++/* vmaddfp, vnmsubfp: fv_madd */
++static inline bool fv4_madd(ppc_avr_t *r, const ppc_avr_t *a,
++                            const ppc_avr_t *c, const ppc_avr_t *b, bool nmsub)
++{
++    __m128i ia = fv4_load(a), ic = fv4_load(c), ib = fv4_load(b);
++    __m128 fa = _mm_castsi128_ps(ia), fc = _mm_castsi128_ps(ic);
++    __m128 fb = _mm_castsi128_ps(ib);
++    __m128d bad0, bad1, snz0, snz1;
++    __m128 y0, y1;
++    __m128i y, ok, yzero;
++
++    y0 = fv2_madd(fa, fc, fb, nmsub, &bad0, &snz0);
++    y1 = fv2_madd(_mm_movehl_ps(fa, fa), _mm_movehl_ps(fc, fc),
++                  _mm_movehl_ps(fb, fb), nmsub, &bad1, &snz1);
++    y = _mm_castps_si128(_mm_movelh_ps(y0, y1));
++    yzero = _mm_cmpeq_epi32(_mm_and_si128(y, _mm_set1_epi32(0x7fffffff)),
++                            _mm_setzero_si128());
++    ok = _mm_and_si128(_mm_and_si128(fv4_nz(ia), fv4_nz(ic)), fv4_nz(ib));
++    ok = _mm_and_si128(ok, fv4_res(y));
++    ok = _mm_andnot_si128(fv4_pack(bad0, bad1), ok);
++    ok = _mm_andnot_si128(_mm_and_si128(yzero, fv4_pack(snz0, snz1)), ok);
++    if (!fv4_all(ok)) {
++        return false;
++    }
++    if (nmsub) {
++        y = _mm_xor_si128(y, _mm_set1_epi32(0x80000000));
++    }
++    _mm_storeu_si128((__m128i *)r, y);
++    return true;
++}
++
++/* vmaxfp, vminfp: fv_max, fv_min (equal operands: max(+0,-0) = +0) */
++static inline bool fv4_maxmin(ppc_avr_t *r, const ppc_avr_t *a,
++                              const ppc_avr_t *b, bool max)
++{
++    __m128i ia = fv4_load(a), ib = fv4_load(b);
++    __m128 fa = _mm_castsi128_ps(ia), fb = _mm_castsi128_ps(ib);
++    __m128i gt = _mm_castps_si128(_mm_cmpgt_ps(fa, fb));
++    __m128i lt = _mm_castps_si128(_mm_cmplt_ps(fa, fb));
++    __m128i eq = max ? _mm_and_si128(ia, ib) : _mm_or_si128(ia, ib);
++    __m128i y;
++
++    if (!fv4_all(_mm_and_si128(fv4_nz(ia), fv4_nz(ib)))) {
++        return false;
++    }
++    if (max) {
++        y = _mm_or_si128(_mm_and_si128(gt, ia), _mm_and_si128(lt, ib));
++    } else {
++        y = _mm_or_si128(_mm_and_si128(lt, ia), _mm_and_si128(gt, ib));
++    }
++    y = _mm_or_si128(y, _mm_andnot_si128(_mm_or_si128(gt, lt), eq));
++    _mm_storeu_si128((__m128i *)r, y);
++    return true;
++}
++
++/* vrefp, vrsqrtefp: fv_re, fv_rsqrte (1/x and 1/sqrt(x), exact roundings) */
++static inline bool fv4_re(ppc_avr_t *r, const ppc_avr_t *b, bool rsqrt)
++{
++    __m128i ib = fv4_load(b);
++    __m128i a = _mm_and_si128(ib, _mm_set1_epi32(0x7fffffff));
++    __m128i ok = _mm_and_si128(_mm_cmpgt_epi32(a, _mm_set1_epi32(0x007fffff)),
++                               _mm_cmplt_epi32(a, _mm_set1_epi32(0x7f800000)));
++    __m128 fb = _mm_castsi128_ps(ib);
++    __m128i y;
++
++    if (rsqrt) {
++        ok = _mm_and_si128(ok, _mm_cmpeq_epi32(a, ib));     /* positive */
++        fb = _mm_sqrt_ps(fb);
++    }
++    if (!fv4_all(ok)) {
++        return false;
++    }
++    y = _mm_castps_si128(_mm_div_ps(_mm_set1_ps(1.0f), fb));
++    if (!fv4_all(fv4_res(y))) {
++        return false;
++    }
++    _mm_storeu_si128((__m128i *)r, y);
++    return true;
++}
++
++/*
++ * vcmpeqfp, vcmpgefp, vcmpgtfp (fv_cmp): all-ones or zero per lane; *all
++ * and *none as the helper accumulates them for CR6.
++ */
++static inline bool fv4_cmp(ppc_avr_t *r, const ppc_avr_t *a,
++                           const ppc_avr_t *b, int kind,
++                           uint32_t *all, uint32_t *none)
++{
++    __m128i ia = fv4_load(a), ib = fv4_load(b);
++    __m128 fa = _mm_castsi128_ps(ia), fb = _mm_castsi128_ps(ib);
++    __m128i y;
++    int m;
++
++    if (!fv4_all(_mm_and_si128(fv4_nz(ia), fv4_nz(ib)))) {
++        return false;
++    }
++    y = _mm_castps_si128(kind == 0 ? _mm_cmpeq_ps(fa, fb) :
++                         kind == 1 ? _mm_cmpge_ps(fa, fb) :
++                                     _mm_cmpgt_ps(fa, fb));
++    _mm_storeu_si128((__m128i *)r, y);
++    m = _mm_movemask_ps(_mm_castsi128_ps(y));
++    *all = m == 0xf ? (uint32_t)-1 : 0;
++    *none = m != 0 ? (uint32_t)-1 : 0;
++    return true;
++}
++
++/*
++ * vperm with SSSE3's byte shuffle (little-endian host: VsrB(i) is u8[15 - i]).
++ * Result byte u8[p] is byte (c.u8[p] & 0x1f) of a:b in big-endian
++ * numbering, i.e. a.u8[15 - k] or b.u8[15 - k] with k = c.u8[p] & 15.
++ */
++static bool fv_have_ssse3(void)
++{
++    static int have = -1;
++
++    if (unlikely(have < 0)) {
++        unsigned a, b, c, d;
++
++        have = __get_cpuid(1, &a, &b, &c, &d) && (c & bit_SSSE3);
++    }
++    return have;
++}
++
++static void __attribute__((target("ssse3")))
++fv_vperm_ssse3(ppc_avr_t *r, const ppc_avr_t *a, const ppc_avr_t *b,
++               const ppc_avr_t *c)
++{
++    __m128i va = fv4_load(a), vb = fv4_load(b), vc = fv4_load(c);
++    __m128i idx = _mm_andnot_si128(vc, _mm_set1_epi8(0x0f));
++    __m128i sel = _mm_cmpeq_epi8(_mm_and_si128(vc, _mm_set1_epi8(0x10)),
++                                 _mm_set1_epi8(0x10));
++    __m128i ra = _mm_shuffle_epi8(va, idx), rb = _mm_shuffle_epi8(vb, idx);
++
++    _mm_storeu_si128((__m128i *)r,
++                     _mm_or_si128(_mm_and_si128(sel, rb),
++                                  _mm_andnot_si128(sel, ra)));
++}
++#else
++#define FV_SIMD 0
++#endif
