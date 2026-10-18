@@ -113,8 +113,12 @@ def main():
     ap.add_argument("--keep-disk", action="store_true")
     ap.add_argument("extra", nargs="*", help="more QEMU arguments (after --)")
     a = ap.parse_args()
-    out = os.path.abspath(a.out)
-    os.makedirs(out, exist_ok=False)
+    for name in ("qemu", "bios", "disk", "ndrvloader"):
+        setattr(a, name, os.path.abspath(getattr(a, name)))
+    # relative socket paths: macOS limits AF_UNIX paths to 104 bytes
+    os.makedirs(a.out, exist_ok=False)
+    os.chdir(os.path.dirname(os.path.abspath(a.out)))
+    out = os.path.basename(os.path.abspath(a.out))
     disk = os.path.join(out, "disk.img")
     subprocess.run(["cp", "-c", a.disk, disk], check=True)
     result = {"qemu": a.qemu, "cpu": a.cpu, "extra": a.extra}
@@ -123,7 +127,7 @@ def main():
         depth=32, ram=512, name="Deluxe v6", icount=False,
         display_option=["retroboot-display"], ndrvloader=a.ndrvloader,
         tools_cd=None, env=[], extra=a.extra)
-    argv = G.build_argv(args)
+    argv = [x.replace(os.path.abspath(out), out) for x in G.build_argv(args)]
     argv[argv.index("-cpu") + 1] = a.cpu
     with open(os.path.join(out, "argv.json"), "w") as f:
         json.dump(argv, f, indent=1)
