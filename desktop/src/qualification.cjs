@@ -12,9 +12,11 @@ async function waitForFinder(engine,home){
    await engine.command('screendump',{filename:file});const data=await fs.readFile(file);
    const header=data.subarray(0,200).toString('ascii').match(/^P6\s+(\d+)\s+(\d+)\s+255\s/);
    if(!header)throw new Error('Unexpected guest framebuffer format.');
-   const width=Number(header[1]),rows=Math.min(20,Number(header[2]));let dark=0,bright=0;
-   for(let i=header[0].length,end=i+width*rows*3;i<end;i+=3){const rgb=[data[i],data[i+1],data[i+2]];if(Math.max(...rgb)<50)dark++;if(Math.min(...rgb)>170)bright++;}
-   if(dark>=Math.min(800,Math.max(200,width*rows/25))&&bright>=Math.max(2000,width*rows/2))stable++;else stable=0;
+   const width=Number(header[1]);let dark=0,bright=0,total=0;
+   // Sample menu titles only: the empty startup menu's border, Apple and clock
+   // must not count as Finder. This region includes File/Edit/View/Special.
+   for(let y=3;y<18;y++)for(let x=35;x<Math.min(350,width-100);x++){const i=header[0].length+(y*width+x)*3,rgb=[data[i],data[i+1],data[i+2]];total++;if(Math.max(...rgb)<50)dark++;if(Math.min(...rgb)>170)bright++;}
+   if(dark>=180&&bright>=total/2)stable++;else stable=0;
    if(stable>=2){await delay(10000);return;}
    await delay(3000);
   }

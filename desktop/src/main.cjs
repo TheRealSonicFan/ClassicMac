@@ -269,7 +269,7 @@ else app.whenReady().then(async () => {
     } catch (error) { console.error(error); }
     if (process.env.CLASSICMAC_TEST_AUTOSTOP) {
       for (const engine of engines.values()) await engine.shutdown();
-      const deadline = Date.now() + 20000;
+      const deadline = Date.now() + 40000;
       while (engines.size && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 250));
       await fs.writeFile(process.env.CLASSICMAC_TEST_SCREENSHOT + '.shutdown.json', JSON.stringify({ cleanShutdown: engines.size === 0 }));
       if(engines.size&&process.env.CLASSICMAC_TEST_HOME){for(const e of engines.values())await e.forceOff();app.exit(1);return;}

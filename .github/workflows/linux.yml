@@ -77,4 +77,5 @@ jobs:
           path: |
             output/desktop/smoke/desktop.png*
             output/desktop/smoke/desktop.log
+            output/desktop/smoke/isolated-home/guest.ppm
           retention-days: 30
