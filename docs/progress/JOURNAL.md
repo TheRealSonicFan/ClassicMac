@@ -348,3 +348,20 @@
   (36 busy loops); it finished on its own.
 - No pushes, publication or catalog changes; user machines untouched.
 
+## October 18 — startup-race fixes merged; 4.0 to main
+
+- Merged `claude/4.0-via-timers` (VIA timer-2 calibration fixes, `d199dcd`)
+  and the stacked Cuda sync / IDE soft-reset fixes (`392cf73`, branch
+  `claude/charming-blackburn-59de84`) into `claude/4.0` (`a6d171c`;
+  `build-qemu.sh` conflicts resolved by keeping both display and timer
+  sections). All build gates pass, including the new VIA, Cuda and IDE
+  gates; both Macs boot to the Finder through the app's Platinum window.
+- The fix sessions' soaks: 12/12 responsive Finders each for Deluxe ATI,
+  9.2.1 VGA and Deluxe ATI under 36 busy host processes.
+- Screen snapshots were blank because the display slept (display link
+  paused); guest screens now draw their latest frame when visible again.
+- Preview 3 bundle signed; notarization waits for an unlocked session
+  (notary keychain profile unreadable while locked).
+- At the user's request `claude/4.0` was pushed and merged into `main`
+  through a PR; local `main` fast-forwarded. No release published.
+

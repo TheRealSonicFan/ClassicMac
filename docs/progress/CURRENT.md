@@ -1,11 +1,21 @@
-# ClassicMac 4.0 Preview 2 — local test build
+# ClassicMac 4.0 Preview 3 — on main, test build pending notarization
 
 **Objective:** ClassicMac 4.0: RetroBoot's emulated ATI Radeon instead of
 GXMetal, the Mac OS Library, and an Apple Platinum interface shared with
 RetroBoot (Mac now; iPad, PC and Linux later).
 
 **Where it is:** branch `claude/4.0` in `worktrees/4.0-engine` (integration
-of `claude/4.0-engine`, `claude/4.0-platinum` and `claude/4.0-display`). Not pushed, no PR, nothing
+of `claude/4.0-engine`, `claude/4.0-platinum`, `claude/4.0-display`,
+`claude/4.0-via-timers` and the Cuda/IDE startup-race fixes), merged into
+`main` on GitHub at the user's request (October 18). No GitHub release; the
+public 3.2.1 release and catalog are unchanged.
+
+**Preview 3:** `output/dist-4.0-p3/ClassicMac.app` is built and Developer ID
+signed with every startup-race fix; notarization failed only because the
+`classicmac-notary` keychain profile is unreadable while the Mac is locked.
+Rerun with the session unlocked:
+`DIST_DIR=$PWD/output/dist-4.0-p3 DIST_NAME=ClassicMac-4.0.0-Preview-3 DMG_VOLUME_NAME="ClassicMac 4.0 Preview" scripts/make-dmg.sh`
+then `verify-release.sh` (4.0.0 4.0.0). Not pushed, no PR, nothing
 published, catalog unchanged. `main` is still 3.2.1 (`3e24594`).
 
 **Test build:** `worktrees/4.0-engine/output/dist-4.0-p2/ClassicMac-4.0.0-Preview-2.dmg`

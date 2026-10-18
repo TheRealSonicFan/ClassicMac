@@ -1,5 +1,20 @@
 # Changelog
 
+## 4.0.0 Preview 3 — 2026-10-18 (local test build)
+
+### Fixed
+
+- Startup hangs RetroBoot found on slower or busy hosts, now safe to pair
+  with the faster CPU: coherent VIA timers with the timer-2 calibration hold
+  (Mac OS ROM timer calibration), the Cuda sync handshake hold and shift
+  interrupt on access, and MacIO IDE soft reset completed on access. Twelve
+  cold boots each of Deluxe v6 (ATI, including 36 busy host processes on 18
+  cores) and Mac OS 9.2.1 (Standard) reached a responsive Finder with no
+  hangs. See `docs/engine-4.0-via-timers.md` and
+  `docs/engine-4.0-startup-races.md`.
+- A guest screen draws its latest frame as soon as its window is visible
+  again (the display link pauses while hidden or asleep).
+
 ## 4.0.0 Preview 2 — 2026-10-17 (local test build, unpublished)
 
 ### Added
