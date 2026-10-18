@@ -61,7 +61,7 @@ $('force').onclick = () => action(() => api.forceOff(selected));
 $('disc').onclick = () => action(() => api.disc(selected));
 $('reveal').onclick = () => action(() => api.reveal(selected));
 $('fullscreen').onclick = () => action(() => document.fullscreenElement ? document.exitFullscreen() : $('display').requestFullscreen());
-$('about').onclick = () => message('ClassicMac 4.0 — Windows edition\n\nClassic Macintosh emulation with QEMU and the Platinum appearance.\n\nMac icons © The Iconfactory, included with permission. Fonts and appearance shared with RetroBoot.\n\nThis first Windows implementation supports Quadra 800 and Power Mac G4 machines. Copland, host folder sharing and built-in Library downloads are still being ported.');
+$('about').onclick = () => message('ClassicMac 4.0 — Desktop edition\n\nClassic Macintosh emulation with QEMU and the Platinum appearance.\n\nMac icons © The Iconfactory, included with permission. Fonts and appearance shared with RetroBoot.\n\nThis first Windows implementation supports Quadra 800 and Power Mac G4 machines. Copland, host folder sharing and built-in Library downloads are still being ported.');
 $('library').onclick = () => message('The Windows Library downloader is still being ported. You can open any Quadra 800 or Power Mac G4 .classic folder copied from ClassicMac for Mac, or create a Mac with your own installation disc.');
 function edit(create) {
   creating = create; const form = $('editor').querySelector('form'); form.reset();

@@ -21,23 +21,23 @@ Install Node.js, MSYS2 UCRT64 and the packages listed in
 `.github/workflows/windows.yml`. From the project root in UCRT64:
 
 ```sh
-windows/scripts/build-engine.sh
+desktop/scripts/build-engine.sh
 ```
 
 Place the qualified `ClassicMacTools.iso` at
-`output/windows/runtime/ClassicMacTools.iso` (the workflow obtains it from
+`output/desktop/runtime/ClassicMacTools.iso` (the workflow obtains it from
 the pinned, checksum-verified Preview 3 ZIP). The QEMU build writes the rest
 of this runtime directory, including firmware, ROM and notices.
 
 ```sh
-cd windows
+cd desktop
 npm ci
 npm test
 npm start
 npm run package:win
 ```
 
-Set `CLASSICMAC_RUNTIME` to the absolute `output/windows/runtime` path for a
+Set `CLASSICMAC_RUNTIME` to the absolute `output/desktop/runtime` path for a
 development launch. A packaged app finds `resources/runtime` automatically.
 Unzip the resulting distribution and run `ClassicMac.exe`; keep the files
 beside it. This initial build is unsigned. Do not publish it as a qualified

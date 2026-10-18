@@ -38,8 +38,8 @@ const run = promisify(execFile);
   const log = createWriteStream(path.join(output, 'desktop.log')); child.stdout.pipe(log); child.stderr.pipe(log);
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      run('taskkill', ['/pid', String(child.pid), '/t', '/f']).catch(() => {});
-      reject(new Error('Packaged Windows desktop smoke test timed out.'));
+      if (process.platform === 'win32') run('taskkill', ['/pid', String(child.pid), '/t', '/f']).catch(() => {}); else child.kill('SIGTERM');
+      reject(new Error('Packaged desktop desktop smoke test timed out.'));
     }, 150000);
     child.once('error', error => { clearTimeout(timer); reject(error); });
     child.once('exit', code => { clearTimeout(timer); if (code !== 0) reject(new Error(`Desktop exited with ${code}`)); else resolve(); });
@@ -47,5 +47,5 @@ const run = promisify(execFile);
   const display = JSON.parse(await fs.readFile(screenshot + '.json', 'utf8'));
   const shutdown = JSON.parse(await fs.readFile(screenshot + '.shutdown.json', 'utf8'));
   if (!display.connected || !display.canvas || !shutdown.cleanShutdown) throw new Error('Guest display or clean shutdown failed.');
-  console.log('Packaged Windows app: guest boot/display and clean shutdown passed. Inspect desktop.png for Finder.');
+  console.log('Packaged desktop app: guest boot/display and clean shutdown passed. Inspect desktop.png for Finder.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

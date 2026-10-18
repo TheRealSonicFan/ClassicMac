@@ -6,7 +6,7 @@ import struct
 import zlib
 
 root = Path(__file__).resolve().parents[2]
-out = root / 'windows/ui'
+out = root / 'desktop/ui'
 spec = importlib.util.spec_from_file_location('platinum', root / 'platinum/tools/build_platinum_swift.py')
 fonts = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fonts)

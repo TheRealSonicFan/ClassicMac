@@ -16,9 +16,9 @@ jobs:
         id: engine-cache
         with:
           path: |
-            output/windows/runtime
-            output/windows/ClassicMac-Windows-QEMU-source.tar.gz
-          key: windows-engine-${{ hashFiles('**/*.patch', 'qfb/*.c', 'qfb/*.h', 'qfb/*.rom', 'screamer/*', 'ppcvid/qemu_vga.ndrv', 'shared/*', 'scripts/build-qemu.sh', 'windows/ati_gl_windows.inc', 'windows/scripts/build-engine.sh', 'windows/scripts/stage-runtime.py', 'windows/scripts/prepare-windows-gl.py', '.github/workflows/windows.yml') }}
+            output/desktop/runtime
+            output/desktop/ClassicMac-Windows-QEMU-source.tar.gz
+          key: windows-engine-${{ hashFiles('**/*.patch', 'qfb/*.c', 'qfb/*.h', 'qfb/*.rom', 'screamer/*', 'ppcvid/qemu_vga.ndrv', 'shared/*', 'scripts/build-qemu.sh', 'desktop/ati_gl_windows.inc', 'desktop/scripts/build-engine.sh', 'desktop/scripts/stage-runtime.py', 'desktop/scripts/prepare-windows-gl.py', '.github/workflows/windows.yml') }}
       - uses: msys2/setup-msys2@v2
         if: steps.engine-cache.outputs.cache-hit != 'true'
         with:
@@ -38,45 +38,45 @@ jobs:
         if: steps.engine-cache.outputs.cache-hit != 'true'
         shell: msys2 {0}
         run: |
-          windows/scripts/build-engine.sh
-          python3 ati/tests/test_qemu_ati.py --gl-optional output/windows/runtime/bin/qemu-system-ppc.exe output/windows/runtime/qemu/pc-bios
-          tar --exclude=.git --exclude=build --exclude=build-windows -czf output/windows/ClassicMac-Windows-QEMU-source.tar.gz -C vendor qemu
+          desktop/scripts/build-engine.sh
+          python3 ati/tests/test_qemu_ati.py --gl-optional output/desktop/runtime/bin/qemu-system-ppc.exe output/desktop/runtime/qemu/pc-bios
+          tar --exclude=.git --exclude=build --exclude=build-windows -czf output/desktop/ClassicMac-Windows-QEMU-source.tar.gz -C vendor qemu
       - name: Include the qualified Tools CD
         if: steps.engine-cache.outputs.cache-hit != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          gh release download v4.0.0-preview.3 --repo amcchord/ClassicMac --pattern 'ClassicMac-4.0.0-Preview-3.zip' --dir output/windows/tools
-          $archive = 'output/windows/tools/ClassicMac-4.0.0-Preview-3.zip'
+          gh release download v4.0.0-preview.3 --repo amcchord/ClassicMac --pattern 'ClassicMac-4.0.0-Preview-3.zip' --dir output/desktop/tools
+          $archive = 'output/desktop/tools/ClassicMac-4.0.0-Preview-3.zip'
           if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '3552de300fdb809dd974f696b6e82e7b0248f94086770f46b66650477c2e8ba6') { throw 'Tools source archive checksum mismatch' }
-          Expand-Archive $archive output/windows/tools/extracted
-          Copy-Item 'output/windows/tools/extracted/ClassicMac.app/Contents/Resources/ClassicMacTools.iso' 'output/windows/runtime/ClassicMacTools.iso'
+          Expand-Archive $archive output/desktop/tools/extracted
+          Copy-Item 'output/desktop/tools/extracted/ClassicMac.app/Contents/Resources/ClassicMacTools.iso' 'output/desktop/runtime/ClassicMacTools.iso'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ClassicMac-Windows-runtime
-          path: output/windows/runtime
+          path: output/desktop/runtime
           retention-days: 14
       - uses: actions/cache/save@v4
         if: steps.engine-cache.outputs.cache-hit != 'true' && success()
         with:
           path: |
-            output/windows/runtime
-            output/windows/ClassicMac-Windows-QEMU-source.tar.gz
+            output/desktop/runtime
+            output/desktop/ClassicMac-Windows-QEMU-source.tar.gz
           key: ${{ steps.engine-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         with:
           name: ClassicMac-Windows-QEMU-source
-          path: output/windows/ClassicMac-Windows-QEMU-source.tar.gz
+          path: output/desktop/ClassicMac-Windows-QEMU-source.tar.gz
           retention-days: 14
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: windows/package-lock.json
+          cache-dependency-path: desktop/package-lock.json
       - name: Build Windows desktop package
-        working-directory: windows
+        working-directory: desktop
         run: |
           npm ci
           npm test
@@ -84,17 +84,17 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ClassicMac-Windows-app
-          path: output/windows/packages/*.zip
+          path: output/desktop/packages/*.zip
           retention-days: 14
       - name: Test the packaged desktop with a disposable OS9 machine
-        run: node windows/tests/smoke-desktop.cjs output/windows/packages/win-unpacked/ClassicMac.exe output/windows/smoke
+        run: node desktop/tests/smoke-desktop.cjs output/desktop/packages/win-unpacked/ClassicMac.exe output/desktop/smoke
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ClassicMac-Windows-smoke
           path: |
-            output/windows/smoke/desktop.png
-            output/windows/smoke/desktop.png.json
-            output/windows/smoke/desktop.png.shutdown.json
-            output/windows/smoke/desktop.log
+            output/desktop/smoke/desktop.png
+            output/desktop/smoke/desktop.png.json
+            output/desktop/smoke/desktop.png.shutdown.json
+            output/desktop/smoke/desktop.log
           retention-days: 14
