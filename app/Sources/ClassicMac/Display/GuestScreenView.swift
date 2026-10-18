@@ -31,13 +31,27 @@ final class GuestScreenNSView: NSView {
     private var relative = false
     private var guestCursor: NSCursor?
     private var cursorVisible = true
+    private static let checkerboard: NSColor = {
+        let image = NSImage(size: NSSize(width: 2, height: 2), flipped: false) { _ in
+            NSColor.white.setFill()
+            NSRect(x: 0, y: 0, width: 2, height: 2).fill()
+            NSColor.black.setFill()
+            NSRect(x: 0, y: 0, width: 1, height: 1).fill()
+            NSRect(x: 1, y: 1, width: 1, height: 1).fill()
+            return true
+        }
+        return NSColor(patternImage: image)
+    }()
+
     private static let invisibleCursor = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)
 
     init(session: GuestDisplaySession) {
         self.session = session
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.black.cgColor
+        // Around a screen smaller than the window: the classic gray dither,
+        // never black.
+        layer?.backgroundColor = Self.checkerboard.cgColor
         imageLayer.contentsGravity = .resize
         imageLayer.magnificationFilter = .nearest
         imageLayer.minificationFilter = .trilinear
