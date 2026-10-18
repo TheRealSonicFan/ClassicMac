@@ -9,7 +9,7 @@ python3 "$ROOT_DIR/windows/scripts/prepare-windows-gl.py" "$QEMU_DIR"
 mkdir -p "$QEMU_DIR/build-windows"
 cd "$QEMU_DIR/build-windows"
 ../configure --target-list=m68k-softmmu,ppc-softmmu --python=python3 \
-  --enable-tcg --enable-slirp --enable-vnc --audio-drv-list=dsound \
+  --enable-tcg --enable-slirp --enable-vnc --enable-gcrypt --audio-drv-list=dsound \
   --disable-gtk --disable-sdl --disable-cocoa --disable-curses --disable-docs \
   --disable-guest-agent --disable-werror --disable-debug-info \
   --extra-cflags='-O2 -ffp-contract=off' --extra-ldflags='-lgdi32 -luser32'

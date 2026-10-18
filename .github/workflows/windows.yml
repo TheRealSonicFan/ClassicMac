@@ -32,6 +32,7 @@ jobs:
             mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-glib2
             mingw-w64-ucrt-x86_64-pixman mingw-w64-ucrt-x86_64-libpng
             mingw-w64-ucrt-x86_64-libslirp mingw-w64-ucrt-x86_64-dtc
+            mingw-w64-ucrt-x86_64-libgcrypt
             mingw-w64-ucrt-x86_64-zstd
       - name: Build patched Windows engines
         if: steps.engine-cache.outputs.cache-hit != 'true'
