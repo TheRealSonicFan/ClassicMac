@@ -9,7 +9,7 @@ comparisons): boot an APFS clone of the template disk on the ATI card at
 the clone is disposable and is deleted unless --keep-disk.
 
     deluxe_q3_timedemo.py --qemu BIN --bios PC_BIOS --disk TEMPLATE/disk.img \\
-        --out DIR [--cpu 7400] [--ndrvloader shared/ndrvloader]
+        --out DIR [--cpu 7400] [--ndrvloader shared/ndrvloader] [-- QEMU ARGS]
 
 Writes DIR/result.json and screenshots; prints the result as JSON.
 """
@@ -111,17 +111,18 @@ def main():
     ap.add_argument("--boot-timeout", type=float, default=180)
     ap.add_argument("--demo-timeout", type=float, default=300)
     ap.add_argument("--keep-disk", action="store_true")
+    ap.add_argument("extra", nargs="*", help="more QEMU arguments (after --)")
     a = ap.parse_args()
     out = os.path.abspath(a.out)
     os.makedirs(out, exist_ok=False)
     disk = os.path.join(out, "disk.img")
     subprocess.run(["cp", "-c", a.disk, disk], check=True)
-    result = {"qemu": a.qemu, "cpu": a.cpu}
+    result = {"qemu": a.qemu, "cpu": a.cpu, "extra": a.extra}
     args = argparse.Namespace(
         out=out, qemu=a.qemu, bios=a.bios, disk=disk, card="ati", size="1024x768",
         depth=32, ram=512, name="Deluxe v6", icount=False,
         display_option=["retroboot-display"], ndrvloader=a.ndrvloader,
-        tools_cd=None, env=[], extra=[])
+        tools_cd=None, env=[], extra=a.extra)
     argv = G.build_argv(args)
     argv[argv.index("-cpu") + 1] = a.cpu
     with open(os.path.join(out, "argv.json"), "w") as f:
