@@ -1,0 +1,52 @@
+[
+  {
+    "url": "http://toastytech.com/guis/macos81boot.png",
+    "sha256": "c7c169e8a69028c76051df19e075407b244d36f2835057638bed9817ee1ec965",
+    "file": "macos81boot.png"
+  },
+  {
+    "url": "http://toastytech.com/guis/macos81about.png",
+    "sha256": "293b9a9cb3df96288c243a7568ab9a43d2b3746cfe23d897d715c45140995882",
+    "file": "macos81about.png"
+  },
+  {
+    "url": "http://toastytech.com/guis/macos81appear.png",
+    "sha256": "9ebce69d71f13933820f8f1d0cf0d48b50ed924fea2aa07ea373064200a4b42e",
+    "file": "macos81appear.png"
+  },
+  {
+    "url": "http://toastytech.com/guis/macos81asp.png",
+    "sha256": "affa15ef1a54b13d06f99c4d75e2d0901c4d8e13bb7be32c904c117ead449f64",
+    "file": "macos81asp.png"
+  },
+  {
+    "url": "http://toastytech.com/guis/macos81browsers.png",
+    "sha256": "dc38122ab564c96d16e76c4858e3c0b9cef8178676e109208bb6484587b44ebd",
+    "file": "macos81browsers.png"
+  },
+  {
+    "url": "http://toastytech.com/guis/macos81infocenter.png",
+    "sha256": "763ff043f79e4a089f65c3b1d3b0cdf84afc976e8fb447851b746c35ad79f459",
+    "file": "macos81infocenter.png"
+  },
+  {
+    "url": "http://toastytech.com/guis/macos81email.png",
+    "sha256": "7a9283ab904a92ae09326614d668251b768caf9f86407efb5e8b04242a8a8e96",
+    "file": "macos81email.png"
+  },
+  {
+    "url": "http://toastytech.com/guis/macos81folders.png",
+    "sha256": "1798028cc066a2a6e5fe0eacc96bfbcd733bfaf01abe4cce4a6960eb011b24f3",
+    "file": "macos81folders.png"
+  },
+  {
+    "url": "http://toastytech.com/guis/macos81folders2.png",
+    "sha256": "209341c1577c54194bd409368c18b3fc5891d7e522f655a88ad42a5302e665b0",
+    "file": "macos81folders2.png"
+  },
+  {
+    "url": "http://toastytech.com/guis/macos81assist.png",
+    "sha256": "177ee229e61eb1eb42bff7044ecf57a5071d4238c72f913865d8158812fc1ce8",
+    "file": "macos81assist.png"
+  }
+]
