@@ -1,72 +1,77 @@
-# ClassicMac for Windows
+# Windows and Linux desktop
 
-The Windows desktop front end uses the same `.classic` machine folders,
-bundled Iconfactory artwork, Platinum bitmap fonts, custom QEMU devices,
-PowerPC timing fixes, firmware and noVNC display client as the Mac app.
-It runs QEMU as a child process and controls it over a private stdin/stdout
-QMP channel. VNC is password protected and listens only on loopback.
+ClassicMac 4.1 uses native x64 QEMU engines and a shared Electron desktop on
+Windows 11 and Ubuntu 24.04+/Debian 13. Machine folders, Iconfactory artwork,
+bitmap fonts, firmware, timing fixes and custom devices are shared with the
+Mac edition. QMP uses private process pipes; the password-protected display
+listens only on loopback. The renderer is sandboxed with context isolation.
 
-This is the initial Windows implementation, separate from the macOS 4.0
-stable release. Power Mac G4 and Quadra 800 are supported by the code.
-Copland, integrated catalog downloads, host text paste and host folder
-sharing remain to be ported. The Library button explains the current import
-path. Settings changes require a stopped machine. Guest audio uses
-DirectSound; the ATI backend creates a WGL OpenGL 4.1 context on the renderer
-thread, with 3D off if the host driver cannot supply it. Full Windows guest
-boot/input/audio/game qualification is still required before a Windows release.
+Unzip the Windows download and run `ClassicMac.exe`, keeping its companion
+files. Windows binaries are unsigned. On Linux install the DEB with
+`sudo apt install ./ClassicMac-4.1.0-linux-amd64.deb`, or extract the tar.gz and
+run `classicmac`. The tar distribution requires a host with working Chromium
+sandboxing; the DEB installs the sandbox helper with its standard ownership.
+Linux builds require glibc 2.39 or newer and host desktop/audio libraries.
 
-## Run from source
+## Platform features
 
-Install Node.js, MSYS2 UCRT64 and the packages listed in
-`.github/workflows/windows.yml`. From the project root in UCRT64:
+Both editions provide Power Mac G4 and Quadra 800 machines, creation/import,
+Library downloads with resume and SHA-256 verification, settings, CD/floppy
+images, power controls and Mac US/MacRoman Paste Text. Import an existing
+`.classic` folder only after shutting it down on its original computer.
+Replace unavailable host-specific media paths in Get Info before starting.
+
+Linux supports classicvirtio 9p host folder sharing. Windows QEMU does not
+provide that backend, so folder sharing is unavailable there. Copland's
+Power Mac 7500 engine remains macOS-only. ATI 3D uses WGL OpenGL 4.1 on
+Windows and EGL/GLES 3 on Linux; hosts without a suitable graphics driver can
+use 3D off. Virtual-machine testing does not qualify physical GPU drivers,
+audio output or accelerated game compatibility. See the
+[qualification report](../docs/desktop-release-validation.md) for measured results.
+The shared CSS interface has not passed the native Mac Platinum pixel gate.
+
+Use guest Shut Down or the toolbar before quitting. A nonresponsive guest
+remains running until Force Off is explicitly confirmed.
+
+## Build and test
+
+Install Node 24, then the native dependencies in the matching workflow.
+Use MSYS2 UCRT64 on Windows and a supported Linux host on Linux:
 
 ```sh
+# Windows, from MSYS2 UCRT64
 desktop/scripts/build-engine.sh
+# Linux
+desktop/scripts/build-linux.sh
 ```
 
-Place the qualified `ClassicMacTools.iso` at
-`output/desktop/runtime/ClassicMacTools.iso` (the workflow obtains it from
-the pinned, checksum-verified Preview 3 ZIP). The QEMU build writes the rest
-of this runtime directory, including firmware, ROM and notices.
+Place the qualified `ClassicMacTools.iso` in `output/desktop/runtime/`.
+The workflows extract it from the checksum-pinned stable 4.0.0 ZIP.
 
 ```sh
 cd desktop
 npm ci
 npm test
 npm start
-npm run package:win
+npm run package:win    # on Windows
+npm run package:linux  # on Linux
 ```
 
-Set `CLASSICMAC_RUNTIME` to the absolute `output/desktop/runtime` path for a
-development launch. A packaged app finds `resources/runtime` automatically.
-Unzip the resulting distribution and run `ClassicMac.exe`; keep the files
-beside it. This initial build is unsigned. Do not publish it as a qualified
-Windows release until actual Windows guest tests and signing are complete.
+For development, set `CLASSICMAC_RUNTIME` to the absolute runtime directory.
+Packages automatically use `resources/runtime`. Native workflows retain the
+matching patched QEMU source. Linux staging bundles non-system ELF libraries
+and their copyright notices; glibc, desktop, audio and GPU drivers stay on
+the host. Corresponding sources accompany the published release.
 
-**Open Mac…** opens an existing `.classic` folder. Copy a machine after
-shutting it down on the Mac; Windows uses its disk in place. **New Mac…**
-creates a sparse raw disk. Choose your installation CD with **Media…** and
-start the Mac. Missing Mac-specific CD paths must be ejected or replaced in
-Get Info before startup. Existing machines are never automatically converted.
+`npm test` covers launch profiles, settings, path/symlink boundaries, bounded
+archive extraction, download resumption and paste planning/cancellation.
+`tests/smoke-desktop.cjs` boots a disposable checksum-pinned OS9 fixture and
+checks display, pause/resume, restart/reconnect and normal shutdown.
+`tests/proxmox-desktop.cjs` additionally checks real Library installation,
+MacRoman input in the native guest probe and Linux shared-file round trips.
+It requires an explicit disposable output directory and the Retro68-built
+`tests/guest` probe; it does not use an existing user machine.
 
-Use **Shut Down** in the guest or toolbar before quitting. A nonresponsive
-Mac stays running until **Force Off** is explicitly confirmed. Unsaved work
-can be lost with Force Off.
-
-## Development verification
-
-`npm test` checks launch profiles, installer safeguards, comma escaping,
-loopback/authenticated displays, settings bounds, explicit feature limits
-and prevention of package-path/symlink escapes. The Windows workflow builds
-both engines natively, probes devices/ATI realization, packages the desktop
-app, and retains runtime, matching QEMU source and ZIP artifacts.
-
-For a macOS development smoke test only, `CLASSICMAC_MAC_APP` can point to a
-qualified Mac app and `CLASSICMAC_RUNTIME` to its `Contents/Resources`.
-This exercises the same JavaScript launch/QMP/noVNC stack with native Mac
-engines; it does not qualify the Windows engines or WGL backend.
-
-The renderer uses a sandbox and context isolation, and all IPC handlers
-validate the sender against the single local application window, following
-[Electron’s security guidance](https://www.electronjs.org/docs/latest/tutorial/security/).
+IPC checks the sender against the sole local app window, following
+[Electron's security guidance](https://www.electronjs.org/docs/latest/tutorial/security/).
 No remote website receives filesystem or process APIs.

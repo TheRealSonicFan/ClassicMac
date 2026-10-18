@@ -22,8 +22,8 @@ QEMU emulator as a whole is licensed under the GNU General Public License,
 version 2. Individual source and firmware files may carry compatible licenses,
 as described by QEMU's `LICENSE` file and their source headers.
 
-The exact corresponding source is reproducible from the ClassicMac 4.0.0
-source at <https://github.com/amcchord/ClassicMac/tree/v4.0.0>. The repository's
+The exact corresponding source is reproducible from the ClassicMac 4.1.0
+source at <https://github.com/amcchord/ClassicMac/tree/v4.1.0>. The repository's
 `scripts/build-qemu.sh` retrieves the pinned upstream QEMU 11.0.2 source and
 applies every ClassicMac modification stored in the repository.
 
@@ -108,3 +108,21 @@ and `platinum/icons/LICENSE-icons.txt`. System 12 printable ASCII uses the
 M5Tab-Macintosh screenshot-traced pixel recreation; the original Apple font
 program is not included. Iconfactory artwork has its own
 terms as described above.
+
+## Windows and Linux desktop distributions
+
+The shared desktop front end uses Electron (MIT), Chromium and Node.js.
+Their license notices and Electron's third-party license inventory accompany
+its runtime. QEMU corresponding-source archives accompany each platform's
+release. The Windows runtime stages its MSYS2 dependency license notices;
+the Linux runtime includes distribution copyright notices for its copied
+shared libraries. Linux glibc, graphics/audio drivers and EGL/GLES libraries
+are supplied by the host distribution. Linux builds target Ubuntu 24.04's
+glibc baseline; the Linux ATI backend uses EGL and OpenGL ES 3.
+
+Upstream Electron: <https://github.com/electron/electron>
+Upstream Node.js: <https://github.com/nodejs/node>
+Distribution library sources are available from the matching Ubuntu/MSYS2
+source-package repositories, identified by the bundled notices. Contact the
+ClassicMac maintainer for the corresponding library sources under the terms
+of those licenses. The application contains no additional guest OS disk.
