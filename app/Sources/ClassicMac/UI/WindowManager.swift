@@ -139,6 +139,13 @@ final class WindowManager {
         }
     }
 
+    func presentIconPacks() {
+        showMain()
+        presentDialog(title: "Iconfactory Icons", size: IconPacksDialog.size) { handle in
+            IconPacksDialog(handle: handle)
+        }
+    }
+
     func presentNewMac() {
         showMain()
         presentDialog(title: "New Mac", size: NewMacDialog.size) { handle in

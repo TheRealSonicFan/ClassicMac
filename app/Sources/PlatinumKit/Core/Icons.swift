@@ -8,6 +8,31 @@ public enum PlatinumIcons {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var cache: [String: CGImage] = [:]
     nonisolated(unsafe) private static var extra: [String: [String]] = [:]
+    nonisolated(unsafe) private static var overrides: [String: CGImage] = [:]
+
+    /// Replaces icons with images supplied at run time (for example from an
+    /// icon collection the user owns), keyed name@size. Pass nil to remove.
+    @MainActor
+    public static func setOverride(_ image: CGImage?, name: String, size: Int) {
+        lock.lock()
+        overrides["\(name)@\(size)"] = image
+        lock.unlock()
+        PlatinumIconTheme.shared.revision += 1
+    }
+
+    @MainActor
+    public static func removeAllOverrides() {
+        lock.lock()
+        overrides.removeAll()
+        lock.unlock()
+        PlatinumIconTheme.shared.revision += 1
+    }
+
+    public static func hasOverride(_ name: String, size: Int) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return overrides["\(name)@\(size)"] != nil
+    }
 
     /// Adds icons (name@size -> rows) drawn with the shared palette.
     public static func register(_ icons: [String: [String]]) {
@@ -21,6 +46,7 @@ public enum PlatinumIcons {
         let key = "\(name)@\(size)"
         lock.lock()
         defer { lock.unlock() }
+        if let override = overrides[key] { return override }
         if let cached = cache[key] { return cached }
         guard let rows = extra[key] ?? PlatinumAssets.icons[key],
               let image = render(rows) else { return nil }
@@ -61,6 +87,13 @@ public enum PlatinumIcons {
     }
 }
 
+/// Publishes icon changes so icons redraw when an override arrives.
+@MainActor
+public final class PlatinumIconTheme: ObservableObject {
+    public static let shared = PlatinumIconTheme()
+    @Published public var revision = 0
+}
+
 /// A Platinum icon at one Mac pixel per point (or an integer multiple).
 public struct PlatinumIcon: View {
     let name: String
@@ -68,6 +101,7 @@ public struct PlatinumIcon: View {
     let scale: Int
     let dimmed: Bool
     let selected: Bool
+    @ObservedObject private var theme = PlatinumIconTheme.shared
 
     /// - Parameters:
     ///   - selected: draws the icon darkened, as the Finder shows a selected icon.
@@ -80,6 +114,7 @@ public struct PlatinumIcon: View {
     }
 
     public var body: some View {
+        let _ = theme.revision
         Group {
             if let image = PlatinumIcons.image(name, size: size) {
                 Image(decorative: image, scale: 1)

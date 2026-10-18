@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         PlatinumFonts.registerIfNeeded()
+        IconPacks.shared.load()
         NSApp.mainMenu = MainMenu.build()
         PasteTextController.shared.startListening()
         MediaController.shared.startListening()
@@ -63,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     @objc func showAbout(_ sender: Any?) { WindowManager.shared.showAbout() }
+    @objc func showIconPacks(_ sender: Any?) { WindowManager.shared.presentIconPacks() }
     @objc func newMac(_ sender: Any?) { WindowManager.shared.presentNewMac() }
     @objc func openMac(_ sender: Any?) { store.presentOpenPanel(); WindowManager.shared.showMain() }
     @objc func showLibrary(_ sender: Any?) { WindowManager.shared.showLibrary() }
@@ -135,7 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return vm != nil && !blocked
         case #selector(removeMac(_:)):
             return vm != nil && !running && !blocked
-        case #selector(newMac(_:)), #selector(openMac(_:)):
+        case #selector(newMac(_:)), #selector(openMac(_:)), #selector(showIconPacks(_:)):
             return !blocked
         case #selector(collapseWindow(_:)):
             if let window = NSApp.keyWindow as? PlatinumWindow, window.boxes.collapse {
@@ -158,6 +160,8 @@ enum MainMenu {
 
         let app = submenu(bar, "ClassicMac")
         app.addItem(item("About ClassicMac", #selector(AppDelegate.showAbout(_:))))
+        app.addItem(.separator())
+        app.addItem(item("Iconfactory Icons…", #selector(AppDelegate.showIconPacks(_:))))
         app.addItem(.separator())
         let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
         services.submenu = NSMenu(title: "Services")

@@ -32,6 +32,9 @@ struct AboutView: View {
                 credit("Firmware", "OpenBIOS; Copland on DingusPPC")
                 credit("Sharing", "classicvirtio by Elliot Nunn")
                 credit("Appearance", "Platinum fonts, icons and controls shared with RetroBoot")
+                if IconPacks.shared.isUsingIconfactory {
+                    credit("Mac icons", "The Iconfactory (your personal copy)")
+                }
             }
             Spacer(minLength: 0)
             Text("© 2026 Austin McChord. Mac OS and Macintosh are trademarks of Apple Inc. See Third-Party Notices for licenses.")

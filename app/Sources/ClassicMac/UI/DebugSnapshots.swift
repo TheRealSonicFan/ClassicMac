@@ -25,6 +25,11 @@ enum DebugSnapshots {
                     snapshot(into: out, prefix: String(step.dropFirst(5)))
                     continue
                 }
+                if step == "addicons" {
+                    let sources = (env["CLASSICMAC_UI_ICON_SOURCES"] ?? "").split(separator: "|").map { URL(fileURLWithPath: String($0)) }
+                    do { try await IconPacks.shared.add(sources) } catch { print("addicons:", error.localizedDescription) }
+                    continue
+                }
                 if step == "stop" {
                     await stopSelected()
                     continue
@@ -69,6 +74,7 @@ enum DebugSnapshots {
         case "library": manager.showLibrary()
         case "about": manager.showAbout()
         case "newmac": manager.presentNewMac()
+        case "icons": manager.presentIconPacks()
         case "settings": if let id = store.selectedID { manager.presentSettings(for: id) }
         case "media": if let id = store.selectedID { MediaController.shared.present(for: id) }
         case "shutdown": if let id = store.selectedID { QEMUManager.shared.requestStop(id) }
