@@ -40,7 +40,3 @@ artifacts/
 output/
 scratch/
 tmp/
-
-# GXMetal native-test and cross-compiled intermediate products
-gxmetal/build/
-gxmetal/guest/bin/

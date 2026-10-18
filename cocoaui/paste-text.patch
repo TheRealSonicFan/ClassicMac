@@ -1,6 +1,6 @@
 --- a/ui/cocoa.m
 +++ b/ui/cocoa.m
-@@ -134,6 +134,7 @@
+@@ -134,6 +134,7 @@ static bool cocoa_gfx_check_format(DisplayChangeListener *dcl,
  static NSMenuItem *floppy_insert_menu_item;
  static NSMenuItem *floppy_eject_menu_item;
  static NSMenuItem *input_helpers_menu_item;
@@ -8,7 +8,7 @@
  static NSString *classicmac_disc_drive;
  static NSString *classicmac_floppy_drive;
  static bool classicmac_floppy_eject_pending;
-@@ -1634,6 +1635,7 @@
+@@ -1630,6 +1631,7 @@ - (void)resumeQEMU:(id)sender;
  - (void)displayPause;
  - (void)removePause;
  - (void)forceQuitFrontmostGuestApp:(id)sender;
@@ -16,12 +16,10 @@
  - (void)restartQEMU:(id)sender;
  - (void)powerDownQEMU:(id)sender;
  - (void)ejectDeviceMedia:(id)sender;
-@@ -2042,6 +2044,26 @@
-         qkbd_state_key_event(kbd, Q_KEY_CODE_ALT, false);
-         qkbd_state_key_event(kbd, Q_KEY_CODE_META_L, false);
+@@ -2040,6 +2042,26 @@ - (void)forceQuitFrontmostGuestApp:(id)sender
      });
-+}
-+
+ }
+ 
 +/* Opens ClassicMac's review dialog; this never sends clipboard input itself.
 + * Keep this menu-only here so the guest retains every Command-V shortcut. */
 +- (void)pasteTextIntoGuest:(id)sender
@@ -40,10 +38,12 @@
 +    [[NSDistributedNotificationCenter defaultCenter]
 +        postNotificationName:@"com.classicmac.paste-text"
 +                      object:identifier userInfo:nil deliverImmediately:YES];
- }
- 
++}
++
  /* Restarts QEMU */
-@@ -2206,6 +2228,9 @@
+ - (void)restartQEMU:(id)sender
+ {
+@@ -2202,6 +2224,9 @@ - (void)toggleToolsCD:(id)sender
  
  - (void)refreshMediaMenuItems
  {
@@ -53,7 +53,7 @@
      __block bool toolsInserted = false;
      __block bool discInserted = false;
      __block bool floppyInserted = false;
-@@ -2360,6 +2385,12 @@
+@@ -2356,6 +2381,12 @@ static void create_initial_menus(void)
      [menu addItem: menuItem];
      [menuItem setEnabled: NO];
      [menu addItem: [NSMenuItem separatorItem]];

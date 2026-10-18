@@ -8,15 +8,15 @@
 #   scripts/disable-os9-disk-check.sh /path/to/writable-os9.img
 #
 # Optional environment:
-#   GXMETAL_APP=/path/to/ClassicMac.app
-#   GXMETAL_QEMU=/path/to/qemu-system-ppc
+#   CLASSICMAC_APP=/path/to/ClassicMac.app
+#   CLASSICMAC_QEMU=/path/to/qemu-system-ppc
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DISK_IMAGE="${1:-}"
-APP="${GXMETAL_APP:-$ROOT_DIR/dist/ClassicMac.app}"
-QEMU="${GXMETAL_QEMU:-$APP/Contents/Helpers/Power Mac G4.app/Contents/MacOS/qemu-system-ppc}"
+APP="${CLASSICMAC_APP:-$ROOT_DIR/dist/ClassicMac.app}"
+QEMU="${CLASSICMAC_QEMU:-$APP/Contents/Helpers/Power Mac G4.app/Contents/MacOS/qemu-system-ppc}"
 NDRVLOADER="$APP/Contents/Resources/ndrvloader"
 FIRMWARE="$APP/Contents/Resources/qemu/pc-bios"
 
@@ -70,7 +70,7 @@ done
 DISK_IMAGE="$(cd "$(dirname "$DISK_IMAGE")" && pwd)/$(basename "$DISK_IMAGE")"
 # QEMU's Unix socket path limit is shorter than macOS's default per-user
 # temporary directory. Keep this workspace deliberately short.
-SCRATCH="$(mktemp -d /tmp/gxmetal-disk-check.XXXXXX)"
+SCRATCH="$(mktemp -d /tmp/classicmac-disk-check.XXXXXX)"
 
 start_qemu() {
   local boot_id="$1"
@@ -92,7 +92,6 @@ start_qemu() {
     -global VGA.packed-lowbpp=on \
     -global VGA.untracked-vram=on \
     -global VGA.hardware-cursor=on \
-    -global VGA.gxmetal=off \
     -global macio-ide.dma-completion-delay-ns=1000000 \
     -prom-env output-device=ttya \
     -g 640x480x15 \
@@ -118,7 +117,7 @@ start_qemu() {
 }
 
 vnc() {
-  python3 "$ROOT_DIR/scripts/gxmetal-vnc.py" --unix-socket "$VNC" "$@"
+  python3 "$ROOT_DIR/scripts/classicmac-vnc.py" --unix-socket "$VNC" "$@"
 }
 
 wait_for_finder() {
@@ -139,14 +138,14 @@ if ! wait_for_finder 35 >"$SCRATCH/finder-first.log" 2>&1; then
   # fast-path timeout above and the completion-dialog sample. Race both states
   # on one RFB connection so a clean/fast image cannot spend four minutes
   # waiting for a dialog that has already disappeared.
-  python3 - "$ROOT_DIR/scripts/gxmetal-vnc.py" "$VNC" <<'PY'
+  python3 - "$ROOT_DIR/scripts/classicmac-vnc.py" "$VNC" <<'PY'
 import importlib.util
 import socket
 import sys
 import time
 
 module_path, vnc_path = sys.argv[1:]
-spec = importlib.util.spec_from_file_location("gxmetal_vnc", module_path)
+spec = importlib.util.spec_from_file_location("classicmac_vnc", module_path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -189,7 +188,7 @@ log "Opening General Controls and collapsing the Control Strip"
 # Keep a single RFB connection for this ordered UI sequence. QEMU translates
 # the Power Mac's pointer movement relative to the connection's last position,
 # so reconnecting between each click makes classic Mac OS coordinates drift.
-python3 - "$ROOT_DIR/scripts/gxmetal-vnc.py" "$VNC" \
+python3 - "$ROOT_DIR/scripts/classicmac-vnc.py" "$VNC" \
   "$SCRATCH/general-controls-disabled.png" <<'PY'
 import importlib.util
 import socket
@@ -197,7 +196,7 @@ import sys
 import time
 
 module_path, vnc_path, screenshot_path = sys.argv[1:]
-spec = importlib.util.spec_from_file_location("gxmetal_vnc", module_path)
+spec = importlib.util.spec_from_file_location("classicmac_vnc", module_path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

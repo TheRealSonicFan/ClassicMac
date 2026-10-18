@@ -98,17 +98,13 @@ if [ "$SKIP_REPO_FRESHNESS" != "1" ] && \
   cmp -s "$ROOT_DIR/ppcvid/qemu_vga.ndrv" "$PPC_NDRV" || \
     die "Bundled Power Mac NDRV differs from the freshly built driver"
 fi
-if [ -f "$ROOT_DIR/ppcvid/qemu_vga.ndrv.gxmetal-protocol.sha256" ]; then
-  CURRENT_PROTOCOL_SHA="$(shasum -a 256 \
-    "$ROOT_DIR/gxmetal/protocol/gxmetal_protocol.h" | awk '{ print $1 }')"
-  NDRV_PROTOCOL_SHA="$(sed -n '1p' \
-    "$ROOT_DIR/ppcvid/qemu_vga.ndrv.gxmetal-protocol.sha256")"
-  [ "$NDRV_PROTOCOL_SHA" = "$CURRENT_PROTOCOL_SHA" ] || \
-    die "Power Mac NDRV was built for a different GXMetal protocol"
-fi
 
 VERSION="$(plutil -extract CFBundleShortVersionString raw "$PLIST")"
 BUILD="$(plutil -extract CFBundleVersion raw "$PLIST")"
+VERSION_MAJOR="${VERSION%%.*}"
+case "$VERSION_MAJOR" in
+  ''|*[!0-9]*) die "Unexpected version $VERSION" ;;
+esac
 HELPER_VERSION="$(plutil -extract CFBundleShortVersionString raw \
   "$PPC_HELPER/Contents/Info.plist")"
 HELPER_BUILD="$(plutil -extract CFBundleVersion raw \
@@ -142,14 +138,22 @@ if [ "$VERIFY_NOTARIZATION" -eq 1 ]; then
   spctl --assess --type execute --verbose=2 "$APP"
 fi
 
-log "Verifying the bundled GXMetal-capable Power Mac executable"
+log "Verifying the bundled Power Mac executable"
 file "$PPC_QEMU" | grep -q 'arm64' || die "Power Mac QEMU is not arm64"
 file "$QUADRA_QEMU" | grep -q 'arm64' || die "Quadra QEMU is not arm64"
 DEVICE_HELP="$("$PPC_QEMU" -device VGA,help 2>&1)"
-for property in gxmetal untracked-vram packed-lowbpp hardware-cursor host-resize; do
+for property in untracked-vram packed-lowbpp hardware-cursor host-resize classicmac-boot-handoff; do
   printf '%s\n' "$DEVICE_HELP" | grep -q "$property" || \
     die "Bundled Power Mac QEMU lacks VGA.$property"
 done
+if [ "$VERSION_MAJOR" -ge 4 ]; then
+  if printf '%s\n' "$DEVICE_HELP" | grep "gxmetal" >/dev/null; then
+    die "Bundled Power Mac QEMU still has the removed GXMetal transport"
+  fi
+  if LC_ALL=C grep -a -F "GXMetal" "$TOOLS_CD" >/dev/null; then
+    die "Bundled Tools CD still carries the removed GXMetal folder"
+  fi
+fi
 for qemu in "$PPC_QEMU" "$QUADRA_QEMU"; do
   DISPLAY_HELP="$("$qemu" -display help 2>&1 || true)"
   printf '%s\n' "$DISPLAY_HELP" | grep -qx 'cocoa' || \
@@ -166,16 +170,18 @@ for qemu in "$PPC_QEMU" "$QUADRA_QEMU"; do
     grep -Fq "$option" <<< "$QEMU_STRINGS" || \
       die "Bundled $(basename "$qemu") lacks Cocoa option $option"
   done
-  if [[ "$VERSION" == 3.* ]]; then
+  if [ "$VERSION_MAJOR" -ge 3 ]; then
     for marker in classicmac-media com.classicmac.paste-text com.classicmac.media; do
       grep -Fq "$marker" <<< "$QEMU_STRINGS" || \
         die "Bundled $(basename "$qemu") lacks ClassicMac 3 media/text bridge $marker"
     done
   fi
 done
-if [[ "$VERSION" == 3.* ]]; then
-  strings "$PPC_QEMU" | grep -F 'gxmetal-status' >/dev/null || \
-    die "Bundled Power Mac QEMU lacks live GXMetal status"
+if [ "$VERSION_MAJOR" -ge 3 ]; then
+  if [ "$VERSION_MAJOR" -eq 3 ]; then
+    strings "$PPC_QEMU" | grep -F 'gxmetal-status' >/dev/null || \
+      die "Bundled Power Mac QEMU lacks live GXMetal status"
+  fi
   for action in /actions/paste-text /actions/media; do
     grep -Fq "$action" "$APP/Contents/Resources/Browser/viewer.js" || \
       die "Bundled browser controls lack $action"

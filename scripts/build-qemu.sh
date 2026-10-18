@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 #
-# build-qemu.sh - Build qemu-system-m68k (+ qemu-img) for Apple Silicon with both
-# the enhanced nubus-qfb paravirtualized framebuffer (arbitrary resolutions +
-# Thousands colour) and the nubus-virtio-mmio transport used for host folder
-# sharing.
+# build-qemu.sh - Build qemu-system-m68k, qemu-system-ppc and qemu-img for
+# Apple Silicon: the Quadra's enhanced nubus-qfb paravirtualized framebuffer
+# (arbitrary resolutions + Thousands colour) and nubus-virtio-mmio transport,
+# and the Power Mac G4's std-VGA extensions.
 #
-# Approach: clone mainline QEMU (which has nubus-virtio-mmio) at a pinned tag and
-# port the nubus-qfb framebuffer onto it from files kept in qfb/.
+# Approach: clone mainline QEMU at a pinned tag and apply every ClassicMac
+# modification kept in this repository (device files and patches).
 #
 # This script is idempotent: re-running it resets the tree to pristine, re-applies
-# the qfb port, and performs an incremental rebuild.
+# every patch, and performs an incremental rebuild. CLASSICMAC_PREPARE_ONLY=1
+# stops after the sources are prepared (no configure or build).
 
 set -euo pipefail
 
@@ -26,10 +27,10 @@ QEMU_REPO="${QEMU_REPO:-https://gitlab.com/qemu-project/qemu.git}"
 QEMU_TAG="${QEMU_TAG:-v11.0.2}"
 QFB_DIR="$ROOT_DIR/qfb"
 POWERMAC_DIR="$ROOT_DIR/powermac"
-GXMETAL_DIR="$ROOT_DIR/gxmetal"
 
-# Tracked files modified by the qfb and screamer integration patches (reset
-# before re-applying).
+# Tracked files modified by the ClassicMac patches (reset before re-applying).
+# Files only earlier releases patched (GXMetal's ui/input.c, bochs-vbe.h) stay
+# listed so an existing vendor tree is reset correctly.
 PATCHED_FILES=(
   hw/display/macfb.c
   include/hw/display/macfb.h
@@ -91,6 +92,24 @@ PATCHED_FILES=(
   target/ppc/translate.c
   tcg/tcg-op.c
 )
+# Untracked files created by patches (git apply refuses to create them again)
+# or copied by earlier releases; removed before the patches are applied.
+UNTRACKED_PATCH_FILES=(
+  hw/display/gxmetal_protocol.h
+  hw/display/gxmetal_decode.h
+  hw/display/gxmetal_decode.c
+  hw/display/gxmetal_dirty.h
+  hw/display/gxmetal_dirty.c
+  hw/display/gxmetal_queue.h
+  hw/display/gxmetal_queue.c
+  hw/display/gxmetal_metal.h
+  hw/display/gxmetal_metal.m
+  hw/display/gxmetal_metal_stub.c
+  hw/display/gxmetal_renderer.h
+  hw/display/gxmetal_renderer.c
+  hw/display/gxmetal_qemu.h
+  hw/display/gxmetal_qemu.c
+)
 SCREAMER_DIR="$ROOT_DIR/screamer"
 PPCVID_DIR="$ROOT_DIR/ppcvid"
 AUDIO_DIR="$ROOT_DIR/audio"
@@ -143,6 +162,9 @@ mkdir -p "$VENDOR_DIR"
 if [ -d "$QEMU_DIR/.git" ]; then
   log "QEMU already present; resetting tracked files to pristine $QEMU_TAG"
   git -C "$QEMU_DIR" checkout -- "${PATCHED_FILES[@]}" 2>/dev/null || true
+  for untracked in "${UNTRACKED_PATCH_FILES[@]}"; do
+    rm -f "$QEMU_DIR/$untracked"
+  done
 else
   log "Cloning $QEMU_REPO ($QEMU_TAG)"
   git clone --depth 1 --branch "$QEMU_TAG" "$QEMU_REPO" "$QEMU_DIR"
@@ -159,25 +181,15 @@ if [ -n "${QFB_BUILD_ROM:-}" ]; then
   "$ROOT_DIR/scripts/build-qfb-rom.sh"
 fi
 
-# The PowerPC video NDRV publishes GXMetal's PCI BAR layout to Mac OS and must
-# therefore be rebuilt whenever the shared protocol header changes. A checked
-# stamp keeps ordinary QEMU builds fast while preventing a stale committed
-# NDRV from silently disabling RAVE after a protocol/layout bump.
-GXMETAL_PROTOCOL_SHA="$(shasum -a 256 \
-  "$GXMETAL_DIR/protocol/gxmetal_protocol.h" | awk '{ print $1 }')"
-PPCVID_PROTOCOL_STAMP="$PPCVID_DIR/qemu_vga.ndrv.gxmetal-protocol.sha256"
-PPCVID_PROTOCOL_SHA="$(sed -n '1p' "$PPCVID_PROTOCOL_STAMP" 2>/dev/null || true)"
-if [ -n "${PPCVID_BUILD_NDRV:-}" ] || \
-   [ ! -f "$PPCVID_DIR/qemu_vga.ndrv" ] || \
-   [ "$PPCVID_PROTOCOL_SHA" != "$GXMETAL_PROTOCOL_SHA" ]; then
-  log "Rebuilding ppcvid/qemu_vga.ndrv for the current GXMetal protocol"
+# The PowerPC video NDRV (ppcvid/qemu_vga.ndrv) is committed prebuilt; its
+# source build needs Retro68 and Apple's Universal Interfaces. Set
+# PPCVID_BUILD_NDRV=1 to rebuild it from ppcvid/driver.
+if [ -n "${PPCVID_BUILD_NDRV:-}" ]; then
+  log "PPCVID_BUILD_NDRV set: rebuilding ppcvid/qemu_vga.ndrv"
   "$ROOT_DIR/scripts/build-ppcvid-ndrv.sh"
 fi
 [ -f "$PPCVID_DIR/qemu_vga.ndrv" ] || \
-  die "ppcvid/qemu_vga.ndrv was not produced"
-[ "$(sed -n '1p' "$PPCVID_PROTOCOL_STAMP" 2>/dev/null || true)" = \
-  "$GXMETAL_PROTOCOL_SHA" ] || \
-  die "ppcvid/qemu_vga.ndrv protocol stamp is stale"
+  die "ppcvid/qemu_vga.ndrv is missing"
 
 # Rebuild the classicvirtio declaration ROM and PowerPC NDRV loader when
 # requested. This uses the same Retro68 toolchain.
@@ -243,13 +255,7 @@ git -C "$QEMU_DIR" apply "$ROOT_DIR/cocoaui/floppy-menu.patch" || die "Failed to
 # Faster 32-bit Power Mac scanout: let Cocoa consume a big-endian framebuffer
 # directly, and poll display updates at roughly the guest's 60 Hz VBL cadence.
 git -C "$QEMU_DIR" apply "$ROOT_DIR/cocoaui/display-performance.patch" || die "Failed to apply Cocoa display performance patch"
-# GXMetal InputSprocket activation switches Cocoa from the seamless absolute
-# tablet to captured relative motion at runtime, then restores the tablet when
-# the game releases input. This keeps first-person games from fighting a host
-# cursor that cannot follow the guest's recentering.
-git -C "$QEMU_DIR" apply "$ROOT_DIR/cocoaui/game-input-handoff.patch" || die "Failed to apply game input handoff patch"
-# Compact, live GXMetal status and explicit host-to-guest text entry.
-git -C "$QEMU_DIR" apply "$ROOT_DIR/cocoaui/gxmetal-status-menu.patch" || die "Failed to apply GXMetal status menu patch"
+# Explicit host-to-guest text entry and the shared media drawer.
 git -C "$QEMU_DIR" apply "$ROOT_DIR/cocoaui/paste-text.patch" || die "Failed to apply paste text menu patch"
 git -C "$QEMU_DIR" apply "$ROOT_DIR/cocoaui/media-drawer.patch" || die "Failed to apply shared media drawer menu patch"
 # Allow a VirtIO block device to start empty, exchange raw media while running,
@@ -367,25 +373,6 @@ git -C "$QEMU_DIR" apply "$PPCVID_DIR/vga-hardware-cursor.patch" || die "Failed 
 # Pixman layouts directly.
 git -C "$QEMU_DIR" apply "$PPCVID_DIR/vga-fast-scanout.patch" || die "Failed to apply vga fast-scanout patch"
 
-# GXMetal's RAVE transport extends std-VGA with a validated command queue in a
-# separate shared PCI BAR. Metal is selected on supported macOS hosts, with the
-# portable reference rasterizer retained as a deterministic fallback.
-log "Installing GXMetal command transport"
-cp "$GXMETAL_DIR/protocol/gxmetal_protocol.h" "$QEMU_DIR/hw/display/gxmetal_protocol.h"
-cp "$GXMETAL_DIR/host/gxmetal_decode.h" "$QEMU_DIR/hw/display/gxmetal_decode.h"
-cp "$GXMETAL_DIR/host/gxmetal_decode.c" "$QEMU_DIR/hw/display/gxmetal_decode.c"
-cp "$GXMETAL_DIR/host/gxmetal_dirty.h" "$QEMU_DIR/hw/display/gxmetal_dirty.h"
-cp "$GXMETAL_DIR/host/gxmetal_dirty.c" "$QEMU_DIR/hw/display/gxmetal_dirty.c"
-cp "$GXMETAL_DIR/host/gxmetal_queue.h" "$QEMU_DIR/hw/display/gxmetal_queue.h"
-cp "$GXMETAL_DIR/host/gxmetal_queue.c" "$QEMU_DIR/hw/display/gxmetal_queue.c"
-cp "$GXMETAL_DIR/host/gxmetal_metal.h" "$QEMU_DIR/hw/display/gxmetal_metal.h"
-cp "$GXMETAL_DIR/host/gxmetal_metal.m" "$QEMU_DIR/hw/display/gxmetal_metal.m"
-cp "$GXMETAL_DIR/host/gxmetal_metal_stub.c" "$QEMU_DIR/hw/display/gxmetal_metal_stub.c"
-cp "$GXMETAL_DIR/host/gxmetal_renderer.h" "$QEMU_DIR/hw/display/gxmetal_renderer.h"
-cp "$GXMETAL_DIR/host/gxmetal_renderer.c" "$QEMU_DIR/hw/display/gxmetal_renderer.c"
-cp "$GXMETAL_DIR/qemu/gxmetal_qemu.h" "$QEMU_DIR/hw/display/gxmetal_qemu.h"
-cp "$GXMETAL_DIR/qemu/gxmetal_qemu.c" "$QEMU_DIR/hw/display/gxmetal_qemu.c"
-git -C "$QEMU_DIR" apply "$GXMETAL_DIR/qemu-integration.patch" || die "Failed to apply GXMetal integration patch"
 # Recognize Finder's menu bar directly in guest VRAM so startup acceleration
 # ends automatically even in headless/VNC sessions and at arbitrary supported
 # resolutions. The app keeps a conservative HMP fallback for custom themes.
@@ -397,6 +384,11 @@ if [ -f "$PPCVID_DIR/qemu_vga.ndrv" ]; then
   cp "$PPCVID_DIR/qemu_vga.ndrv" "$QEMU_DIR/pc-bios/qemu_vga.ndrv"
 else
   log "ppcvid/qemu_vga.ndrv not present; keeping the stock driver (no PPC live resize)"
+fi
+
+if [ -n "${CLASSICMAC_PREPARE_ONLY:-}" ]; then
+  log "CLASSICMAC_PREPARE_ONLY set: sources prepared in $QEMU_DIR"
+  exit 0
 fi
 
 # ---------------------------------------------------------------------------
@@ -514,18 +506,10 @@ else
   printf '    OK  PowerPC timebase and decrementer share QEMU virtual time\n'
 fi
 if "$QEMU_PPC_BIN" -device VGA,help 2>&1 | grep -q "gxmetal"; then
-  printf '    OK  GXMetal command transport (ppc)\n'
+  die "VGA still has the removed GXMetal transport"
 else
-  die "VGA gxmetal property missing from the ppc build"
+  printf '    OK  no GXMetal transport (ppc)\n'
 fi
-if nm "$QEMU_PPC_BIN" 2>/dev/null | grep "_gxmetal_metal_dispatch" >/dev/null &&
-   otool -L "$QEMU_PPC_BIN" | grep "/Metal.framework/" >/dev/null; then
-  printf '    OK  GXMetal native Metal renderer (ppc)\n'
-else
-  die "GXMetal Metal renderer missing from the ppc build"
-fi
-"$PYTHON_BIN" "$GXMETAL_DIR/tests/test_qemu_transport.py" "$QEMU_PPC_BIN" || \
-  die "GXMetal QEMU realization tests failed"
 if "$QEMU_PPC_BIN" -device macio-ide,help 2>&1 | grep -q "dma-completion-delay-ns"; then
   printf '    OK  MacIO IDE DMA completion delay (ppc)\n'
 else

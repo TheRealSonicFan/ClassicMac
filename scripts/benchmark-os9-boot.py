@@ -190,7 +190,6 @@ def qemu_command(
         "-global", "VGA.packed-lowbpp=on",
         "-global", "VGA.untracked-vram=on",
         "-global", "VGA.hardware-cursor=on",
-        "-global", "VGA.gxmetal=on",
         "-global", f"macio-ide.dma-completion-delay-ns={dma_delay_ns}",
         "-prom-env", "output-device=ttya",
         "-g", "1024x768x15",
@@ -499,7 +498,7 @@ def main() -> int:
                 width, height, before_input = capture_frame(monitor, frame_path)
                 input_result = subprocess.run(
                     [
-                        str(root / "scripts/gxmetal-vnc.py"),
+                        str(root / "scripts/classicmac-vnc.py"),
                         "--unix-socket", str(scratch / "vnc.sock"),
                         "--click", "12,10",
                         "--delay", "0.5",

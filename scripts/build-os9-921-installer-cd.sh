@@ -18,8 +18,6 @@ USB_EXTRACTOR="$ROOT_DIR/guestcd/extract-usb-overdrive.py"
 PATCH_GENERATOR="$ROOT_DIR/guestcd/os9-installer/generate-installer-patch.py"
 INSTALLER_TYPES="$ROOT_DIR/guestcd/os9-installer/InstallerTypes.r"
 ADDITIONS_README="$ROOT_DIR/guestcd/os9-installer/Read Me.txt"
-GXMETAL_BIN_DIR="$ROOT_DIR/gxmetal/guest/bin"
-GXMETAL_README="$ROOT_DIR/gxmetal/guest/README.txt"
 INSTALLER_HFS=":Software Installers:System Software:Mac OS 9.2.1:Install System Software"
 PAYLOAD_HFS=":Software Installers:System Software:Mac OS 9.2.1:ClassicMac Additions"
 VOLUME_NAME="Mac OS 9.2.1"
@@ -155,9 +153,6 @@ fi
 humount >/dev/null
 MOUNTED=0
 
-log "Building GXMetal"
-"$ROOT_DIR/scripts/build-gxmetal.sh"
-
 log "Fetching the four addition archives"
 STUFFIT_ARCHIVE="$(archive_for 'StuffIt Expander 5.5.sea')"
 DROPSTUFF_ARCHIVE="$(archive_for 'DropStuff 5.5 Installer')"
@@ -169,18 +164,6 @@ EXTENSIONS="$STAGE/System Extensions"
 CONTROL_PANELS="$STAGE/Control Panels"
 APPLE_EXTRAS="$STAGE/Apple Extras"
 mkdir -p "$EXTENSIONS" "$CONTROL_PANELS" "$APPLE_EXTRAS"
-
-log "Staging GXMetal"
-decode_macbinary "$GXMETAL_BIN_DIR/GXMetal.bin" "$EXTENSIONS/GXMetal"
-decode_macbinary "$GXMETAL_BIN_DIR/GXMetalInput.bin" "$EXTENSIONS/GXMetal Input"
-decode_macbinary "$GXMETAL_BIN_DIR/GXMetalStartup.bin" "$EXTENSIONS/GXMetal Startup"
-mkdir -p "$APPLE_EXTRAS/GXMetal"
-decode_macbinary "$GXMETAL_BIN_DIR/GXMetalInstaller.bin" "$APPLE_EXTRAS/GXMetal/Install GXMetal"
-decode_macbinary "$GXMETAL_BIN_DIR/GXMetalTest.bin" "$APPLE_EXTRAS/GXMetal/GXMetal Test"
-decode_macbinary "$GXMETAL_BIN_DIR/GXMetalAGLProbe.bin" "$APPLE_EXTRAS/GXMetal/GXMetal AGL Probe"
-decode_macbinary "$GXMETAL_BIN_DIR/GXMetalEngineSelectionProbe.bin" "$APPLE_EXTRAS/GXMetal/GXMetal RAVE Selection"
-copy_metadata "$GXMETAL_README" "$APPLE_EXTRAS/GXMetal/Read Me"
-mark_simpletext "$APPLE_EXTRAS/GXMetal/Read Me"
 
 log "Expanding USB Overdrive 1.4"
 USB_OUTER="$WORK_DIR/usb-outer"

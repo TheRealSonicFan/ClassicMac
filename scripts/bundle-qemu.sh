@@ -280,19 +280,13 @@ copy_brew_license pcre2 COPYING pcre2.txt
 # doesn't require network access.
 TOOLS_CD_SRC="$ROOT_DIR/dist/ClassicMacTools.iso"
 if [ -f "$TOOLS_CD_SRC" ]; then
-  for guest_artifact in \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetal.bin" \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetalInput.bin" \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetalStartup.bin" \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetalInstaller.bin" \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetalTest.bin"; do
-    if [ -f "$guest_artifact" ] && [ "$guest_artifact" -nt "$TOOLS_CD_SRC" ]; then
-      die "ClassicMacTools.iso is older than $(basename "$guest_artifact"). Run scripts/build-guest-cd.sh before bundling."
-    fi
-  done
+  # A 3.x Tools CD still carries the removed GXMetal folder.
+  if LC_ALL=C grep -a -F "GXMetal" "$TOOLS_CD_SRC" >/dev/null; then
+    die "$(basename "$TOOLS_CD_SRC") still contains GXMetal. Run scripts/build-guest-cd.sh before bundling."
+  fi
   cp "$TOOLS_CD_SRC" "$RES_DIR/ClassicMacTools.iso"
 else
-  log "WARNING: dist/ClassicMacTools.iso not found; app will lack the Tools CD (run scripts/build-guest-cd.sh)"
+  log "WARNING: $TOOLS_CD_SRC not found; app will lack the Tools CD (run scripts/build-guest-cd.sh)"
 fi
 
 # ---------------------------------------------------------------------------
