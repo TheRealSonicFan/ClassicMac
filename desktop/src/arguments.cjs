@@ -6,7 +6,7 @@ const option = value => String(value).replaceAll(',', ',,');
 function argumentsFor(machine, resources, endpoint, platform = process.platform) {
   const c = validate(machine.config);
   if (c.machineFamily === 'powerMac7500') throw new Error('Copland is not available in the first Windows build. Use the macOS version for this machine.');
-  if (c.sharedFolderPath) throw new Error('Host folder sharing is not available on Windows yet. Turn it off in Get Info first.');
+  if (c.sharedFolderPath && platform === 'win32') throw new Error('Host folder sharing requires Linux or macOS. Turn it off in Get Info for Windows.');
   const ppc = c.machineFamily === 'powerMacG4';
   const cdBoot = !!(c.bootFromCD && c.cdImagePath);
   const ati = ppc && !cdBoot && c.graphicsCard === 'atiRadeon';
@@ -56,6 +56,13 @@ function argumentsFor(machine, resources, endpoint, platform = process.platform)
     else a.push('-g', `${c.width}x${c.height}x${c.depth}`);
     if (c.tabletInput) a.push('-device', 'virtio-tablet-device');
     if (cdBoot) a.push('-boot', 'd');
+  }
+  if (c.sharedFolderPath) {
+    const tag = c.sharedVolumeName || 'Shared Files';
+    if (typeof tag !== 'string' || tag.length > 31 || /[\x00-\x1f]/.test(tag)) throw new Error('Invalid shared volume name.');
+    a.push('-fsdev', `local,id=share0,security_model=none,path=${option(c.sharedFolderPath)}`,
+      '-device', `${ppc ? 'virtio-9p-pci' : 'virtio-9p-device'},fsdev=share0,mount_tag=${option(tag)}`);
+    if (ppc && !c.tabletInput && !c.toolsCDInserted) a.push('-device', `loader,addr=0x4000000,file=${option(path.join(resources, 'ndrvloader'))}`, '-prom-env', 'boot-command=init-program go');
   }
   a.push('-nic', c.networking ? `user,model=${ppc ? 'sungem' : 'dp83932'}` : 'none');
   return a;

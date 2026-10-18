@@ -8,6 +8,9 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { readMachine, validate, writeJSON, freshConfig, machineFile } = require('./machines.cjs');
 const { Engine } = require('./engine.cjs');
+const catalog = require('./catalog.cjs');
+const {paste,plan:pastePlan} = require('./paste.cjs');
+let catalogRows=[], downloadJob, pasteJob;
 const run = promisify(execFile);
 
 const runtime = process.env.CLASSICMAC_RUNTIME || path.join(process.resourcesPath, 'runtime');
@@ -120,11 +123,12 @@ function installHandlers() {
   handle('save', async (id, fields) => {
     const m = lookup(id);
     if (engines.has(id)) throw new Error('Shut this Mac down before changing its settings.');
-    const allowed = ['name', 'ramMB', 'width', 'height', 'depth', 'graphicsCard', 'sound', 'networking', 'useG4CPU', 'tabletInput', 'classicInputHelpers', 'toolsCDInserted', 'bootFromCD'];
+    const allowed = ['name', 'ramMB', 'width', 'height', 'depth', 'graphicsCard', 'sound', 'networking', 'useG4CPU', 'useEnhancedFramebuffer', 'tabletInput', 'classicInputHelpers', 'toolsCDInserted', 'bootFromCD'];
     const next = { ...m.config };
     for (const key of allowed) if (Object.hasOwn(fields, key)) next[key] = fields[key];
-    // Windows cannot expose a host folder over QEMU's Unix-only 9p backend.
+    // Only the Unix hosts provide QEMU's native 9p backend.
     if (fields.disableSharing === true) delete next.sharedFolderPath;
+    if (fields.ejectFloppy === true) delete next.floppyImagePath;
     if (fields.ejectCD === true) { delete next.cdImagePath; next.bootFromCD = false; }
     m.config = validate(next); await writeJSON(path.join(m.folder, 'config.json'), m.config); await notify();
   });
@@ -135,6 +139,12 @@ function installHandlers() {
     if (result.canceled) return;
     m.config.cdImagePath = result.filePaths[0]; m.config.bootFromCD = true;
     await writeJSON(path.join(m.folder, 'config.json'), m.config); await notify();
+  });
+  handle('floppy', async id => {
+    const m=lookup(id);if(m.config.machineFamily!=='quadra800')throw new Error('Floppy images require a Quadra.');
+    if(engines.has(id))throw new Error('Shut this Mac down before changing its floppy.');
+    const result=await dialog.showOpenDialog(window,{title:'Choose a Floppy Image',properties:['openFile'],filters:[{name:'Floppy images',extensions:['img','dsk','ima','raw']}]});
+    if(result.canceled)return;m.config.floppyImagePath=result.filePaths[0];await writeJSON(path.join(m.folder,'config.json'),m.config);await notify();
   });
   handle('start', start);
   for (const action of ['pause', 'resume', 'shutdown']) handle(action, async id => {
@@ -151,7 +161,35 @@ function installHandlers() {
     if (result.response === 1) await engine.forceOff();
   });
   handle('reveal', id => shell.showItemInFolder(lookup(id).folder));
-  handle('libraryHelp', () => shell.openExternal('https://github.com/amcchord/ClassicMac#new-in-classicmac-40'));
+  handle('catalog', async () => { catalogRows=await catalog.loadCatalog(); return catalogRows.map(m=>({...m,available:(m.machineFamily||'powerMacG4')==='powerMacG4'})); });
+  handle('download', async (id,name) => {
+    if(downloadJob)throw new Error('Finish or pause the current download first.');
+    const entry=catalogRows.find(m=>m.id===id);if(!entry)throw new Error('Reload the Library and choose an edition.');
+    const result=await dialog.showOpenDialog(window,{title:'Save Downloaded Mac In',defaultPath:app.getPath('documents'),properties:['openDirectory','createDirectory']});
+    if(result.canceled)return null;
+    const controller=new AbortController();downloadJob=controller;
+    try{
+      const folder=await catalog.install(entry,result.filePaths[0],name,path.join(app.getPath('userData'),'Downloads'),{signal:controller.signal,
+        progress:value=>window?.webContents.send('download-progress',value)});
+      const m=await register(folder);await notify();return m.config.id;
+    }finally{if(downloadJob===controller)downloadJob=null;}
+  });
+  handle('pauseDownload',()=>downloadJob?.abort());
+  handle('paste',async(id,text,slow=false)=>{
+    const engine=engines.get(id);if(!engine||engine.paused)throw new Error('Start or resume the Mac before pasting.');
+    if(pasteJob)throw new Error('Finish or cancel the current paste first.');
+    pastePlan(text);const controller=new AbortController();pasteJob=controller;
+    try{await paste(engine,text,{slow:slow===true,signal:controller.signal,progress:(completed,total)=>window?.webContents.send('paste-progress',{completed,total})});}
+    finally{if(pasteJob===controller)pasteJob=null;}
+  });
+  handle('cancelPaste',()=>pasteJob?.abort());
+  handle('chooseShare',async id=>{
+    if(process.platform==='win32')throw new Error('Host folder sharing requires Linux or macOS.');
+    const m=lookup(id);if(engines.has(id))throw new Error('Shut down this Mac before changing sharing.');
+    const result=await dialog.showOpenDialog(window,{title:'Share a Folder with This Mac',properties:['openDirectory']});if(result.canceled)return;
+    m.config.sharedFolderPath=result.filePaths[0];m.config.sharedVolumeName='Shared Files';await writeJSON(path.join(m.folder,'config.json'),m.config);await notify();
+  });
+  handle('platform',()=>({name:process.platform,version:app.getVersion()}));
 }
 
 async function serve() {
@@ -194,8 +232,9 @@ else app.whenReady().then(async () => {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event, url) => { if (url !== `${origin}/${token}/index.html`) event.preventDefault(); });
   window.webContents.on('will-attach-webview', event => event.preventDefault());
+  window.on('blur',()=>pasteJob?.abort());
   window.on('close', event => {
-    if (engines.size && !quitting) {
+    if ((engines.size || downloadJob) && !quitting) {
       event.preventDefault();
       dialog.showMessageBox(window, { type: 'info', message: 'Shut down your running Macs before quitting ClassicMac.', detail: 'Choose Shut Down from the Special menu in Mac OS, or use the Shut Down button. Use Force Off only if a Mac does not respond.' });
     }
@@ -231,4 +270,4 @@ else app.whenReady().then(async () => {
   }, Number(process.env.CLASSICMAC_TEST_WAIT || 2000));
 }).catch(error => { console.error(error); app.exit(1); });
 app.on('window-all-closed', () => { if (!engines.size) app.quit(); });
-app.on('quit', () => { quitting = true; server?.close(); });
+app.on('quit', () => { quitting = true; downloadJob?.abort(); pasteJob?.abort(); server?.close(); });

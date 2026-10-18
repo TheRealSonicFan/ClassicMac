@@ -38,12 +38,14 @@ function render() {
   $('name').textContent = m?.name ?? 'Your classic Macs, on your PC.';
   $('status').textContent = m?.paused ? 'Paused' : m?.running ? 'Running now' : 'Ready';
   $('details').replaceChildren();
-  if (m) for (const [name, value] of [['Model', model[m.machineFamily]], ['Memory', `${m.ramMB} MB`], ['Hard disk', `${m.diskSizeGB ?? '—'} GB`], ['Screen', `${m.width} × ${m.height}`], ['Graphics', m.graphicsCard === 'atiRadeon' ? 'ATI Radeon' : 'Standard'], ['Sharing', m.sharedFolderPath ? 'Turn off sharing in Get Info for Windows' : 'Off']]) {
+  if (m) for (const [name, value] of [['Model', model[m.machineFamily]], ['Memory', `${m.ramMB} MB`], ['Hard disk', `${m.diskSizeGB ?? '—'} GB`], ['Screen', `${m.width} × ${m.height}`], ['Graphics', m.graphicsCard === 'atiRadeon' ? 'ATI Radeon' : 'Standard'], ['Sharing', m.sharedFolderPath ? 'On' : 'Off']]) {
     const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = name + ':'; dd.textContent = value; $('details').append(dt, dd);
   }
-  for (const id of ['start', 'settings', 'disc', 'reveal']) $(id).disabled = !m || (id !== 'reveal' && m.machineFamily === 'powerMac7500');
-  for (const id of ['pause', 'restart', 'stop', 'force', 'fullscreen']) $(id).disabled = !m?.running;
+  for (const id of ['start', 'settings', 'disc', 'reveal', 'share']) $(id).disabled = !m || (id !== 'reveal' && m.machineFamily === 'powerMac7500');
+  for (const id of ['pause', 'restart', 'stop', 'force', 'fullscreen', 'paste']) $(id).disabled = !m?.running;
   $('settings').disabled ||= !!m?.running; $('disc').disabled ||= !!m?.running;
+  $('floppy').disabled=!m||m.machineFamily!=='quadra800'||m.running;
+  $('share').disabled=!m||m.running;
   $('start').textContent = m?.paused ? 'Resume Mac' : m?.running ? 'Show Mac' : 'Start Mac';
   $('pause').textContent = m?.paused ? 'Resume' : 'Pause';
   const nextDisplay = m?.running ? `${m.id}:${m.display?.url}` : null;
@@ -59,10 +61,38 @@ $('stop').onclick = () => action(() => api.shutdown(selected));
 $('restart').onclick = () => action(() => api.restart(selected));
 $('force').onclick = () => action(() => api.forceOff(selected));
 $('disc').onclick = () => action(() => api.disc(selected));
+$('floppy').onclick=()=>action(()=>api.floppy(selected));
 $('reveal').onclick = () => action(() => api.reveal(selected));
 $('fullscreen').onclick = () => action(() => document.fullscreenElement ? document.exitFullscreen() : $('display').requestFullscreen());
-$('about').onclick = () => message('ClassicMac 4.0 — Desktop edition\n\nClassic Macintosh emulation with QEMU and the Platinum appearance.\n\nMac icons © The Iconfactory, included with permission. Fonts and appearance shared with RetroBoot.\n\nThis first Windows implementation supports Quadra 800 and Power Mac G4 machines. Copland, host folder sharing and built-in Library downloads are still being ported.');
-$('library').onclick = () => message('The Windows Library downloader is still being ported. You can open any Quadra 800 or Power Mac G4 .classic folder copied from ClassicMac for Mac, or create a Mac with your own installation disc.');
+let downloading=false,pasting=false;
+const platform=await api.platform();
+$('share').hidden=platform.name==='win32';
+$('share').onclick=()=>action(()=>api.chooseShare(selected));
+$('about').onclick=()=>message(`ClassicMac ${platform.version} — ${platform.name==='win32'?'Windows':'Linux'}\n\nClassic Macintosh emulation with QEMU and the Platinum appearance.\n\nMac icons © The Iconfactory, included with permission. Fonts and appearance shared with RetroBoot.\n\nCopland remains available in the macOS edition. Host folder sharing requires Linux or macOS.`);
+$('library').onclick=()=>action(async()=>{
+ $('catalog').showModal();$('editions').textContent='Loading Library…';
+ const rows=await api.catalog();$('editions').replaceChildren();
+ for(const entry of rows){
+  const section=document.createElement('section'),title=document.createElement('strong'),summary=document.createElement('p'),button=document.createElement('button');
+  title.textContent=entry.name;summary.textContent=entry.summary;button.textContent=entry.available?'Download…':'Requires macOS Copland engine';button.disabled=!entry.available;
+  button.onclick=()=>action(async()=>{
+   if(downloading)throw new Error('Pause or finish the current download first.');downloading=true;
+   try{const id=await api.download(entry.id,entry.name);if(id){selected=id;machines=await api.state();render();$('download-status').textContent='Installed. Choose Start Mac to begin.';}}
+   finally{downloading=false;}
+  });
+  section.append(title,summary,button);$('editions').append(section);
+ }
+});
+$('pause-download').onclick=()=>api.pauseDownload();
+$('close-catalog').onclick=()=>{if(downloading)message('Pause or finish the download before closing.');else $('catalog').close();};
+$('catalog').addEventListener('cancel',event=>{if(downloading)event.preventDefault();});
+api.onDownloadProgress(p=>{$('download-status').textContent=`${p.phase}… ${Math.floor(p.completed/p.total*100)}%`;$('download-progress').value=p.completed/p.total;});
+$('paste').onclick=()=>{$('paste-status').textContent='';$('paste-dialog').showModal();};
+$('send-paste').onclick=()=>action(async()=>{if(pasting)return;pasting=true;$('send-paste').disabled=true;try{await api.paste(selected,$('paste-text').value,$('slow-paste').checked);$('paste-status').textContent='Finished.';}finally{pasting=false;$('send-paste').disabled=false;}});
+$('cancel-paste').onclick=()=>{api.cancelPaste();if(!pasting)$('paste-dialog').close();};
+$('paste-dialog').addEventListener('cancel',()=>api.cancelPaste());
+api.onPasteProgress(p=>{$('paste-status').textContent=`Typed ${p.completed} of ${p.total} characters.`;});
+
 function edit(create) {
   creating = create; const form = $('editor').querySelector('form'); form.reset();
   $('editor').className = create ? 'creating' : 'editing'; $('editor-title').textContent = create ? 'New Mac' : 'Get Info';

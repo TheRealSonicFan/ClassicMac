@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         id: engine
         with:
           path: |
@@ -27,7 +27,6 @@ jobs:
         if: steps.engine.outputs.cache-hit != 'true'
         run: |
           desktop/scripts/build-linux.sh
-          python3 ati/tests/test_qemu_ati.py --gl-optional output/desktop/runtime/bin/qemu-system-ppc output/desktop/runtime/qemu/pc-bios
           tar --exclude=.git --exclude=build --exclude=build-linux -czf output/desktop/ClassicMac-Linux-QEMU-source.tar.gz -C vendor qemu
       - name: Include qualified Tools CD
         if: steps.engine.outputs.cache-hit != 'true'
@@ -37,6 +36,15 @@ jobs:
           gh release download v4.0.0 -p ClassicMac-4.0.0.zip -D output/desktop/tools
           echo 'fb40c282cacc474b99a71ab23d8031f06a85e1dcf2b47c532552a640a1c1a37c  output/desktop/tools/ClassicMac-4.0.0.zip' | sha256sum -c
           unzip -p output/desktop/tools/ClassicMac-4.0.0.zip ClassicMac.app/Contents/Resources/ClassicMacTools.iso > output/desktop/runtime/ClassicMacTools.iso
+      - uses: actions/cache/save@v4
+        if: steps.engine.outputs.cache-hit != 'true'
+        with:
+          path: |
+            output/desktop/runtime
+            output/desktop/ClassicMac-Linux-QEMU-source.tar.gz
+          key: ${{ steps.engine.outputs.cache-primary-key }}
+      - name: Check Linux display devices
+        run: python3 ati/tests/test_qemu_ati.py --gl-api gles --gl-optional output/desktop/runtime/bin/qemu-system-ppc output/desktop/runtime/qemu/pc-bios
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -56,6 +64,10 @@ jobs:
             output/desktop/packages/*.deb
             output/desktop/ClassicMac-Linux-QEMU-source.tar.gz
           retention-days: 30
+      - name: Install test sandbox ownership
+        run: |
+          sudo chown root:root output/desktop/packages/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 output/desktop/packages/linux-unpacked/chrome-sandbox
       - name: Smoke test packaged Linux application
         run: xvfb-run -a node desktop/tests/smoke-desktop.cjs output/desktop/packages/linux-unpacked/classicmac output/desktop/smoke
       - uses: actions/upload-artifact@v4

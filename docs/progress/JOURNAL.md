@@ -438,3 +438,21 @@
 - Release API credentials existed only in a protected temporary file, removed
   after notarization. Task-mounted source DMGs ejected. User machines and
   unrelated gxmetal files untouched. Worktrees/evidence preserved.
+
+## October 18 — 4.1.0 cross-platform work authorized
+
+- User asked to use AustinLand/Proxmox for feature parity testing, add Linux,
+  update GitHub screenshots and publish all results as a new release.
+- Reused the contained Windows worktree/PR #24. Renamed the reusable frontend
+  to desktop/, added native Linux QEMU/Electron tar.gz/deb packaging, and
+  started native Linux/Windows CI. Linux compiled both engines and realized
+  EGL/GLES 3.2 with Mesa; a Mac-specific renderer-string assertion needs a
+  Linux API expectation. Windows full build runs.
+- Added the Library downloader (range validation, SHA256, bounded flat-tar
+  extraction and safe import), US/MacRoman paste, Linux 9p sharing and missing
+  media/settings controls. 12 focused tests pass; real-VM tests still pending.
+- Created dedicated Proxmox test VMs 170 (Debian13) and 171 (Win11) on SazProx
+  via AustinLand. Windows creation returned 500 for a start warning despite
+  the VM running; inspected before retrying, completed post-setup through
+  the existing AustinLand helper, avoiding a duplicate VM. Secrets are never
+  logged or committed. Unrelated VMs/templates and user machines untouched.

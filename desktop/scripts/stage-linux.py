@@ -33,7 +33,7 @@ for path in lib_dir.iterdir():
   original=subprocess.check_output(['ldconfig','-p'],text=True)
   match=re.search(r'\s'+re.escape(path.name)+r' .* => (/\S+)',original)
   if match:
-   package=subprocess.check_output(['dpkg-query','-S',match[1]],text=True).split(': ')[0]
+   package=subprocess.check_output(['dpkg-query','-S',str(Path(match[1]).resolve())],text=True).split(': ')[0]
    notice=Path('/usr/share/doc')/package.split(':')[0]/'copyright'
    if notice.exists():shutil.copyfile(notice,licenses/(package.replace(':','-')+'-copyright'))
  except subprocess.CalledProcessError:pass

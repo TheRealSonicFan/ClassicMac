@@ -31,7 +31,7 @@ test('Quadra has PRAM, SCSI, ordered NuBus transport and framebuffer', () => {
 });
 test('Unported features fail clearly instead of silently changing machines', () => {
   assert.throws(() => argumentsFor(make(freshConfig('Copland', 'powerMac7500')), '/r', ports), /Copland/);
-  assert.throws(() => argumentsFor(make({ ...freshConfig('Shared'), sharedFolderPath: '/host' }), '/r', ports), /sharing/);
+  assert.throws(() => argumentsFor(make({ ...freshConfig('Shared'), sharedFolderPath: '/host' }), '/r', ports, 'win32'), /sharing/);
 });
 test('Malformed or escaping machine settings are rejected', () => {
   for (const name of ['../disk.img', 'C:\\disk.img', '/disk.img', '..', 'disk\0.img']) {
@@ -49,4 +49,10 @@ test('Imported disk symlinks cannot escape a machine package', async t => {
   try { await fs.symlink(path.join(temp, 'outside.img'), path.join(folder, 'disk.img')); }
   catch (error) { if (error.code === 'EPERM') return t.skip('Windows account cannot create symlinks'); throw error; }
   await assert.rejects(readMachine(folder), /inside/);
+});
+
+test('Linux sharing uses the native 9p device and driver loader', () => {
+ const a = argumentsFor(make({...freshConfig('Linux'),sharedFolderPath:'/host,files',tabletInput:false}),'/r',ports,'linux');
+ assert(a.some(x=>x.includes('local,id=share0,security_model=none,path=/host,,files')));
+ assert(a.some(x=>x.includes('virtio-9p-pci'))); assert(a.some(x=>x.includes('loader,addr=')));
 });
