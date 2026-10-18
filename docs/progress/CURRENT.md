@@ -1,19 +1,26 @@
-# ClassicMac 4.0.0 release, fidelity audit and Windows
+# ClassicMac release and Windows — October 18, 2026
 
-The user authorized the included Iconfactory artwork, stable publication and
-Windows work on October 18, then requested a pixel-accuracy audit.
+**Shipped:** [v4.0.0](https://github.com/amcchord/ClassicMac/releases/tag/v4.0.0)
+is GitHub stable Latest, source `cee04d0`. Included Iconfactory artwork and
+reference-backed Platinum fixes are merged. App and DMG are notarized and
+stapled; a fresh public DMG passes checksum/Gatekeeper/package verification.
+Final ATI and Standard Finder boots and normal shutdown pass on disposable
+copies. 122 integration Swift tests pass with two fixture-dependent skips.
+The catalog and user machine library were not changed.
 
-Artwork/release PR #23 merged as 7960abd. Both ATI Deluxe and Standard OS9
-Finder boots pass on disposable copies. Existing API release credentials work;
-no keychain unlock is needed. Stable publication is still pending the final
-UI build and notarization. The catalog and user machines are unchanged.
+**Fidelity:** 32 reference control states/patterns at 1×/2× and 95 printable
+system glyphs pass zero-tolerance comparisons. The full app is not yet
+pixel-perfect: see `docs/platinum-fidelity-audit.md` for remaining SwiftUI text,
+font, menu, scrollbar and window-state coverage. The reference lab and all
+source hashes are committed. No keychain unlock is needed.
 
-`worktrees/platinum-pixel-audit` corrects reference-backed control/font errors
-and adds 32 control/pattern fixtures at 1×/2× plus 95 system glyphs. Full-app
-pixel perfection is not claimed; remaining gaps are in
-`docs/platinum-fidelity-audit.md`. Next: merge the audit, rebuild/sign/notarize
-4.0.0, publish stable Latest, verify fresh public artifacts.
+**Windows:** draft PR #24 (`codex/windows-app`, build source `3b2d435`), native
+CI run 39143255474 passes. The packaged app boots OS9 to Finder, pauses,
+resumes, restarts/reconnects and shuts down cleanly. Unsigned prototype ZIP
+and screenshots are retained in root `output/windows/2026-10-18/`. Full parity,
+Windows hardware ATI/audio/game tests and signing remain; no Windows release
+was published. See `docs/windows-port-validation.md`.
 
-Windows draft PR #24 has a native QEMU/Electron package and isolated smoke
-workflow. The first Windows boot exposed a missing VNC DES backend; the
-explicit libgcrypt build is running. Preserve all worktrees and root gxmetal.
+Next: extend native Platinum fixtures to the documented gaps, and continue
+Windows feature parity/hardware qualification before Windows publication.
+Preserve worktrees and the unrelated untracked root gxmetal directory.
