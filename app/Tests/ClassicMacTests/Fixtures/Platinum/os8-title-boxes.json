@@ -1,0 +1,35 @@
+[
+  {
+    "control": "close",
+    "source": "http://toastytech.com/guis/macos81assist.png",
+    "rect": [
+      227,
+      128,
+      13,
+      13
+    ],
+    "normalization": "nearest 17-level grayscale, mean RGB; source is color-quantized"
+  },
+  {
+    "control": "zoom",
+    "source": "http://toastytech.com/guis/macos81browsers.png",
+    "rect": [
+      316,
+      69,
+      13,
+      13
+    ],
+    "normalization": "nearest 17-level grayscale, mean RGB; source is color-quantized"
+  },
+  {
+    "control": "collapse",
+    "source": "http://toastytech.com/guis/macos81assist.png",
+    "rect": [
+      618,
+      128,
+      13,
+      13
+    ],
+    "normalization": "nearest 17-level grayscale, mean RGB; source is color-quantized"
+  }
+]

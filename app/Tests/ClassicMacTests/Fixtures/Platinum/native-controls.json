@@ -1,0 +1,302 @@
+{
+  "system": "Mac OS 9.2.1",
+  "appearance": "Apple platinum, default Lavender",
+  "depth": 32,
+  "sourceSHA256": "0f25d1f5786e182da575c271b1b631f2514f943ac2c65fba8089a06048cd9c38",
+  "contentOrigin": [
+    50,
+    70
+  ],
+  "fixtures": [
+    {
+      "file": "button-normal.png",
+      "rect": [
+        80,
+        140,
+        80,
+        20
+      ],
+      "sha256": "7ca2faf73d4568a728e36889e43dcb073a73afa9e63705b253d5f9731216a412"
+    },
+    {
+      "file": "button-pressed.png",
+      "rect": [
+        230,
+        140,
+        80,
+        20
+      ],
+      "sha256": "207d14612725cf4363247e4bb01551765da5b494b488002eea00dcbb6c10fb2b"
+    },
+    {
+      "file": "button-disabled.png",
+      "rect": [
+        380,
+        140,
+        80,
+        20
+      ],
+      "sha256": "61baa19f84be9717200e1fdf58db050b5bf4a9f8c27c1330e136ada8999db935"
+    },
+    {
+      "file": "default-normal.png",
+      "rect": [
+        77,
+        182,
+        86,
+        26
+      ],
+      "sha256": "2e6395741951a8f49fce1d1d712a0e5e8174ec58058582c1c90775a9cb3f1fdd"
+    },
+    {
+      "file": "default-pressed.png",
+      "rect": [
+        227,
+        182,
+        86,
+        26
+      ],
+      "sha256": "80793c8e0d52aece3711ab4f37cef9d3296f00430546fe92238f5cba5a1a409c"
+    },
+    {
+      "file": "default-disabled.png",
+      "rect": [
+        377,
+        182,
+        86,
+        26
+      ],
+      "sha256": "6adbecac86f9f2629d0e35ef2a3aa223a6e90aa0289327ab7cd8ee48d05a455f"
+    },
+    {
+      "file": "checkbox-off-normal.png",
+      "rect": [
+        82,
+        235,
+        14,
+        12
+      ],
+      "sha256": "e81013f68086c90bb4ca873585a16c75ec15728df7604058c67cac468bb65995"
+    },
+    {
+      "file": "checkbox-off-pressed.png",
+      "rect": [
+        232,
+        235,
+        14,
+        12
+      ],
+      "sha256": "4c81d2062956722adbeb641cd51afb94ceed2fe5a32f1db2291bb42b28c7c121"
+    },
+    {
+      "file": "checkbox-off-disabled.png",
+      "rect": [
+        382,
+        235,
+        14,
+        12
+      ],
+      "sha256": "bb44ae9762e69c051118e62d48821492648ce48967b4aefacb635b2032c1c90e"
+    },
+    {
+      "file": "checkbox-on-normal.png",
+      "rect": [
+        82,
+        265,
+        14,
+        12
+      ],
+      "sha256": "13c49f3e6399f926c8a9613136a8b094475a49e6a5ebb37e54738c7cd2248edf"
+    },
+    {
+      "file": "checkbox-on-pressed.png",
+      "rect": [
+        232,
+        265,
+        14,
+        12
+      ],
+      "sha256": "428b00e43a76fc28492e71a46b7ec35f1cbace3f2718e90a1dfc614cc1ec1a2c"
+    },
+    {
+      "file": "checkbox-on-disabled.png",
+      "rect": [
+        382,
+        265,
+        14,
+        12
+      ],
+      "sha256": "eabb66cd99712c745f21879536884dce240904c6d0abb3928e31357c17a939e5"
+    },
+    {
+      "file": "radio-off-normal.png",
+      "rect": [
+        82,
+        335,
+        12,
+        12
+      ],
+      "sha256": "10749eeb387015459542279d500e72ca86f7d94ce9c729023a86730e2fd6911b"
+    },
+    {
+      "file": "radio-off-pressed.png",
+      "rect": [
+        232,
+        335,
+        12,
+        12
+      ],
+      "sha256": "02ddedd62f904c2f0330c59dbe9eac990c9ead4d0b5d04c6c401db002d66c7f2"
+    },
+    {
+      "file": "radio-off-disabled.png",
+      "rect": [
+        382,
+        335,
+        12,
+        12
+      ],
+      "sha256": "70f580384a0a8594140a1c1c22168cb83176d690dc952f0167904fde2141ba7d"
+    },
+    {
+      "file": "radio-on-normal.png",
+      "rect": [
+        82,
+        365,
+        12,
+        12
+      ],
+      "sha256": "981f61ff2ecfd33d820bdede00482264a51a63eb47600f1d774dfdae34bc07d2"
+    },
+    {
+      "file": "radio-on-pressed.png",
+      "rect": [
+        232,
+        365,
+        12,
+        12
+      ],
+      "sha256": "de8b6bbc8dea103dcb18273ba9239e4e727d3e1536a7d9568492f44b9f395d47"
+    },
+    {
+      "file": "radio-on-disabled.png",
+      "rect": [
+        382,
+        365,
+        12,
+        12
+      ],
+      "sha256": "a1de9211b6775c67fd993ce658b43ea6082267946399cb5878ff16a0a3b4f0b6"
+    },
+    {
+      "file": "popup-normal.png",
+      "rect": [
+        80,
+        405,
+        100,
+        20
+      ],
+      "sha256": "03306f1ddec9f09ff32027cee7914bddc36d95041d8b505298bc8cb200547b03"
+    },
+    {
+      "file": "popup-pressed.png",
+      "rect": [
+        230,
+        405,
+        100,
+        20
+      ],
+      "sha256": "0ab5cd181bb1300cacc12103680fb8e6e96f24334b4e667c7c30e11564a632d7"
+    },
+    {
+      "file": "popup-disabled.png",
+      "rect": [
+        380,
+        405,
+        100,
+        20
+      ],
+      "sha256": "dde10f11bcbcdaf5a96e4753d87c8d70c0fab6a6e4b8be6556266b48a09702c7"
+    },
+    {
+      "file": "checkbox-mixed-normal.png",
+      "rect": [
+        82,
+        295,
+        14,
+        12
+      ],
+      "sha256": "947f8f83403318eb39fcf761823e5ac4401dec4cd6abb205d435134d9f6c900a"
+    },
+    {
+      "file": "checkbox-mixed-pressed.png",
+      "rect": [
+        232,
+        295,
+        14,
+        12
+      ],
+      "sha256": "2fc8f1ba414918fdd775d4443acad3a1f0507b00282ac9d5eeeb4c87303925cb"
+    },
+    {
+      "file": "checkbox-mixed-disabled.png",
+      "rect": [
+        382,
+        295,
+        14,
+        12
+      ],
+      "sha256": "38183c4b24e260e8ae921a12808274b9cf7f021ab8244bcbf438d3a4dd7ccc0b"
+    },
+    {
+      "file": "group.png",
+      "rect": [
+        550,
+        140,
+        250,
+        100
+      ],
+      "sha256": "3a9900aa4a02bfb35c0756e01ac92448c02413624f479dd2ee8cb0067529ee35"
+    },
+    {
+      "file": "progress-0.png",
+      "rect": [
+        550,
+        390,
+        250,
+        14
+      ],
+      "sha256": "95fae2b915c6c288b7d2768844731419f5f7914eb91684fb55d810b74d5711ce"
+    },
+    {
+      "file": "progress-1.png",
+      "rect": [
+        550,
+        430,
+        250,
+        14
+      ],
+      "sha256": "0dab220c721c46a73d2b285adc3b270736871e016e6fe01ec3465c9da59a4c60"
+    },
+    {
+      "file": "focus.png",
+      "rect": [
+        547,
+        287,
+        256,
+        56
+      ],
+      "sha256": "aee85c674bc8f609f39113f7745e0b2c7041f3167c51ecce334f8b083af53b0d"
+    },
+    {
+      "file": "sunken.png",
+      "rect": [
+        78,
+        458,
+        104,
+        26
+      ],
+      "sha256": "785779d70b4ee3dd08f2e93bc0e79e26391f0fc28157ae9b956e3eaf32368008"
+    }
+  ]
+}

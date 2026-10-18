@@ -58,15 +58,23 @@ public struct PixelPainter {
     }
 
     /// One line of text with its baseline at y.
-    public func text(_ string: String, font: PlatinumFont, x: Int, baseline: Int, color: RGB, scale: Int = 1) {
+    public func text(_ string: String, font: PlatinumFont, x: Int, baseline: Int, color: RGB, scale: Int = 1, maxWidth: Int? = nil) {
         guard !string.isEmpty else { return }
         let attributed = NSAttributedString(string: string, attributes: [
             NSAttributedString.Key(kCTFontAttributeName as String): font.ctFont(scale: scale),
             NSAttributedString.Key(kCTForegroundColorAttributeName as String): color.cgColor
         ])
-        let line = CTLineCreateWithAttributedString(attributed)
+        let fullLine = CTLineCreateWithAttributedString(attributed)
+        let line: CTLine
+        if let maxWidth, CTLineGetTypographicBounds(fullLine, nil, nil, nil) > Double(maxWidth) {
+            let token = CTLineCreateWithAttributedString(NSAttributedString(string: "…", attributes: attributed.attributes(at: 0, effectiveRange: nil)))
+            line = CTLineCreateTruncatedLine(fullLine, Double(maxWidth), .middle, token) ?? fullLine
+        } else { line = fullLine }
         cg.saveGState()
-        cg.setShouldAntialias(true)
+        cg.setShouldAntialias(false)
+        cg.setShouldSmoothFonts(false)
+        cg.setShouldSubpixelPositionFonts(false)
+        cg.setShouldSubpixelQuantizeFonts(false)
         cg.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
         cg.textPosition = CGPoint(x: x, y: baseline)
         CTLineDraw(line, cg)

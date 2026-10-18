@@ -104,5 +104,7 @@ Artist and collections: <https://freeware.iconfactory.com>
 
 PlatinumKit includes MIT-licensed fonts, icons and control tables shared
 with RetroBoot. Their notices are in `platinum/fonts/LICENSE-fonts.txt`
-and `platinum/icons/LICENSE-icons.txt`. Iconfactory artwork has its own
+and `platinum/icons/LICENSE-icons.txt`. System 12 printable ASCII uses the
+M5Tab-Macintosh screenshot-traced pixel recreation; the original Apple font
+program is not included. Iconfactory artwork has its own
 terms as described above.

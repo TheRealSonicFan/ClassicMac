@@ -8,27 +8,29 @@ import CoreGraphics
 // on screen in the user's M5Tab-Macintosh project (MIT, see platinum/README.md).
 public enum Platinum {
     // MARK: Grays
+    // Public names retain the original port’s identifiers. Values are the
+    // raw framebuffer levels, before host color-profile transformations.
 
     public static let black = RGB(0x000000)
     public static let white = RGB(0xFFFFFF)
-    public static let gray3A = RGB(0x3A3A3A)
-    public static let gray63 = RGB(0x636363)
-    public static let gray73 = RGB(0x737373)
-    public static let gray94 = RGB(0x949494)
-    public static let grayA5 = RGB(0xA5A5A5)
-    public static let grayB5 = RGB(0xB5B5B5)
-    public static let grayC5 = RGB(0xC5C5C5)
-    public static let grayCE = RGB(0xCECECE)
-    public static let grayDE = RGB(0xDEDEDE)
-    public static let grayE6 = RGB(0xE6E6E6)
-    public static let grayF7 = RGB(0xF7F7F7)
+    public static let gray3A = RGB(0x222222)
+    public static let gray63 = RGB(0x444444)
+    public static let gray73 = RGB(0x555555)
+    public static let gray94 = RGB(0x777777)
+    public static let grayA5 = RGB(0x888888)
+    public static let grayB5 = RGB(0x999999)
+    public static let grayC5 = RGB(0xAAAAAA)
+    public static let grayCE = RGB(0xBBBBBB)
+    public static let grayDE = RGB(0xCCCCCC)
+    public static let grayE6 = RGB(0xDDDDDD)
+    public static let grayF7 = RGB(0xEEEEEE)
 
     // MARK: Lavender (the default Appearance variation)
 
-    public static let lavenderLight = RGB(0xDEDBFF)
-    public static let lavender = RGB(0xB5B2FF)
-    public static let lavenderShadow = RGB(0x8486DE)
-    public static let lavenderDark = RGB(0x5255B5)
+    public static let lavenderLight = RGB(0xCCCCFF)
+    public static let lavender = RGB(0x9999FF)
+    public static let lavenderShadow = RGB(0x6666CC)
+    public static let lavenderDark = RGB(0x333399)
 
     // MARK: Roles
 
@@ -39,14 +41,14 @@ public enum Platinum {
     /// List and text selection.
     public static let highlight = RGB(0xCCCCFF)
     /// A highlighted menu item.
-    public static let menuHighlight = RGB(0x6363CE)
+    public static let menuHighlight = RGB(0x6666CC)
     /// Secondary detail text.
     public static let dimText = gray73
     /// Disabled text and glyphs.
-    public static let disabledText = gray94
+    public static let disabledText = grayA5
     /// Keyboard focus ring (inner and outer lines).
-    public static let focusInner = RGB(0x6365CE)
-    public static let focusOuter = RGB(0x9C9AEF)
+    public static let focusInner = RGB(0x6666CC)
+    public static let focusOuter = RGB(0x6666CC)
     /// Error text.
     public static let errorText = RGB(0xCC0000)
     /// The Mac OS 8 desktop blue, used behind previews.
@@ -66,7 +68,7 @@ public enum Platinum {
     public static let fieldHeight: CGFloat = 22
     public static let listRowHeight: CGFloat = 18
     public static let scrollbarWidth: CGFloat = 16
-    public static let titleBarHeight: CGFloat = 19
+    public static let titleBarHeight: CGFloat = 20
     public static let progressHeight: CGFloat = 12
     /// Dialog content inset from the window frame.
     public static let dialogMargin: CGFloat = 12
@@ -103,7 +105,7 @@ public struct RGB: Hashable, Sendable {
     /// The disabled (grayed) version of a lavender color, as rbui draws it.
     public var dimmed: RGB {
         let r = Int((value >> 16) & 0xFF), g = Int((value >> 8) & 0xFF), b = Int(value & 0xFF)
-        let v = ((r * 30 + g * 59 + b * 11) / 100 + 0xE6) / 2
+        let v = ((r * 30 + g * 59 + b * 11) / 100 + 0xDD) / 2
         return RGB(UInt32(v << 16 | v << 8 | v))
     }
 }
