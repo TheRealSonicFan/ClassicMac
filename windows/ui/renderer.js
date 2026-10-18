@@ -3,12 +3,13 @@ const api = window.classicmac;
 const $ = id => document.getElementById(id);
 const model = { powerMacG4: 'Power Mac G4', quadra800: 'Quadra 800', powerMac7500: 'Power Mac 7500' };
 const icon = { powerMacG4: 'powermac_g4', quadra800: 'quadra_800', powerMac7500: 'powermac_7500' };
-let machines = [], selected, rfb, displayID, displayKey, connectTimer, creating = false;
+let machines = [], selected, rfb, displayID, displayKey, connectTimer, creating = false, connectionGeneration = 0;
 const current = () => machines.find(m => m.id === selected);
 function message(text) { $('message-text').textContent = text; if (!$('message').open) $('message').showModal(); }
 async function action(fn) { try { await fn(); } catch (error) { message(error.message); } }
 $('message-ok').onclick = () => $('message').close();
 function connect(m) {
+  const generation = ++connectionGeneration;
   clearTimeout(connectTimer);
   if (rfb) { rfb.disconnect(); rfb = null; }
   displayID = m?.running ? m.id : null;
@@ -18,8 +19,8 @@ function connect(m) {
   rfb = new RFB($('display'), m.display.url, { credentials: { password: m.display.password }, shared: true });
   rfb.scaleViewport = true; rfb.resizeSession = false; rfb.qualityLevel = 8; rfb.compressionLevel = 2;
   rfb.classicInputHelpers = m.classicInputHelpers;
-  rfb.addEventListener('connect', () => { if (displayID === id) { $('curtain').hidden = true; rfb.focus(); } });
-  rfb.addEventListener('disconnect', () => { if (displayID === id && current()?.running) connectTimer = setTimeout(() => connect(current()), 1000); });
+  rfb.addEventListener('connect', () => { if (generation === connectionGeneration && displayID === id) { $('curtain').hidden = true; rfb.focus(); } });
+  rfb.addEventListener('disconnect', () => { if (generation === connectionGeneration && displayID === id && current()?.running) connectTimer = setTimeout(() => connect(current()), 1000); });
   rfb.addEventListener('securityfailure', event => message(event.detail.reason || 'The Mac’s display could not be authenticated.'));
 }
 function render() {

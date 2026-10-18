@@ -13,7 +13,7 @@ function argumentsFor(machine, resources, endpoint, platform = process.platform)
   const firmware = path.join(resources, 'qemu', 'pc-bios');
   const disk = option(path.join(machine.folder, c.diskImageName));
   const audio = c.sound ? (platform === 'win32' ? 'dsound' : platform === 'darwin' ? 'coreaudio' : 'pa') : 'none';
-  const a = ['-L', firmware, '-name', c.name, '-m', String(c.ramMB), '-audiodev', `${audio},id=snd0`,
+  const a = ['-L', firmware, '-name', option(c.name), '-m', String(c.ramMB), '-audiodev', `${audio},id=snd0`,
     '-display', `vnc=127.0.0.1:${endpoint.vncPort - 5900},websocket=127.0.0.1:${endpoint.webSocketPort},password=on,share=force-shared`,
     '-qmp', 'stdio', '-monitor', 'none', '-serial', 'none', '-action', 'reboot=shutdown'];
   if (ppc) {
