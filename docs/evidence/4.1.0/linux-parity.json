@@ -1,0 +1,15 @@
+{
+  "platform": "linux",
+  "version": "4.1.0",
+  "checks": [
+    "create/import/config round trip",
+    "boot/display connection",
+    "pause/resume",
+    "restart/new engine/reconnect",
+    "native guest paste chords",
+    "guest 9p host-read and guest-write",
+    "normal guest shutdown"
+  ],
+  "started": "2026-10-18T19:29:19.813Z",
+  "completed": "2026-10-18T19:30:59.908Z"
+}

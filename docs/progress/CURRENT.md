@@ -1,26 +1,24 @@
-# ClassicMac release and Windows — October 18, 2026
+# ClassicMac 4.1.0 — final release qualification
 
-**Shipped:** [v4.0.0](https://github.com/amcchord/ClassicMac/releases/tag/v4.0.0)
-is GitHub stable Latest, source `cee04d0`. Included Iconfactory artwork and
-reference-backed Platinum fixes are merged. App and DMG are notarized and
-stapled; a fresh public DMG passes checksum/Gatekeeper/package verification.
-Final ATI and Standard Finder boots and normal shutdown pass on disposable
-copies. 122 integration Swift tests pass with two fixture-dependent skips.
-The catalog and user machine library were not changed.
+User authorized AustinLand/Proxmox feature parity tests, Linux, refreshed
+GitHub screenshots and a combined stable release. Work is contained in
+`worktrees/windows-app`, branch `codex/windows-app`, PR #24. Root integration
+checkout remains main; its unrelated untracked gxmetal directory is untouched.
 
-**Fidelity:** 32 reference control states/patterns at 1×/2× and 95 printable
-system glyphs pass zero-tolerance comparisons. The full app is not yet
-pixel-perfect: see `docs/platinum-fidelity-audit.md` for remaining SwiftUI text,
-font, menu, scrollbar and window-state coverage. The reference lab and all
-source hashes are committed. No keychain unlock is needed.
+Dedicated SazProx VMs 170 (Debian 13) and 171 (Windows 11) pass final OS9
+Finder/pause/clean-restart/reconnect/native MacRoman input/shutdown tests.
+Both pass real Library pause/resume/hash/import and Quadra OS8.1 CD boot.
+Linux passes an actual host-read/guest-write 9p round trip. Reports/screenshots
+are in docs/evidence/4.1.0 and docs/screenshots/desktop. Native GPU/audio/game
+qualification remains outside the measured VM scope. Windows is unsigned;
+Copland is Mac-only and Windows 9p sharing is unavailable.
 
-**Windows:** draft PR #24 (`codex/windows-app`, build source `3b2d435`), native
-CI run 39143255474 passes. The packaged app boots OS9 to Finder, pauses,
-resumes, restarts/reconnects and shuts down cleanly. Unsigned prototype ZIP
-and screenshots are retained in root `output/windows/2026-10-18/`. Full parity,
-Windows hardware ATI/audio/game tests and signing remain; no Windows release
-was published. See `docs/windows-port-validation.md`.
+Mac 4.1 app/DMG are signed, notarized, stapled and pass release verification,
+ATI realization and native display reconnect gates. Native app code is
+unchanged from integrated 4.0. Strict packaged CI waits for Finder menu titles;
+Windows run 39158984879 and Linux run 39158930105 are finishing. Twelve Node
+tests pass. Consolidated integration tests/publication have not happened yet.
 
-Next: extend native Platinum fixtures to the documented gaps, and continue
-Windows feature parity/hardware qualification before Windows publication.
-Preserve worktrees and the unrelated untracked root gxmetal directory.
+Next: finish CI, integrate PR #24, run consolidated checks, publish stable
+v4.1.0 with all platform downloads and sources, verify public assets, remove
+test auto-login and stop the dedicated VMs. Keep prior releases for rollback.

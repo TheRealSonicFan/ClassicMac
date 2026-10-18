@@ -438,3 +438,42 @@
 - Release API credentials existed only in a protected temporary file, removed
   after notarization. Task-mounted source DMGs ejected. User machines and
   unrelated gxmetal files untouched. Worktrees/evidence preserved.
+
+## October 18 — 4.1.0 cross-platform work authorized
+
+- User asked to use AustinLand/Proxmox for feature parity testing, add Linux,
+  update GitHub screenshots and publish all results as a new release.
+- Reused the contained Windows worktree/PR #24. Renamed the reusable frontend
+  to desktop/, added native Linux QEMU/Electron tar.gz/deb packaging, and
+  started native Linux/Windows CI. Linux compiled both engines and realized
+  EGL/GLES 3.2 with Mesa; a Mac-specific renderer-string assertion needs a
+  Linux API expectation. Windows full build runs.
+- Added the Library downloader (range validation, SHA256, bounded flat-tar
+  extraction and safe import), US/MacRoman paste, Linux 9p sharing and missing
+  media/settings controls. 12 focused tests pass; real-VM tests still pending.
+- Created dedicated Proxmox test VMs 170 (Debian13) and 171 (Win11) on SazProx
+  via AustinLand. Windows creation returned 500 for a start warning despite
+  the VM running; inspected before retrying, completed post-setup through
+  the existing AustinLand helper, avoiding a duplicate VM. Secrets are never
+  logged or committed. Unrelated VMs/templates and user machines untouched.
+
+## October 18 — 4.1 real-host qualification and restart correction
+
+- Dedicated AustinLand/Proxmox Debian13 and Windows11 hosts imported the real
+  current 32GB Library archive with interrupted/resumed download, exact size,
+  SHA256 and bounded extraction. Final native OS9 input probe shows ASCII and
+  accented MacRoman text; Linux reads a host file and writes a verified reply.
+  Both hosts boot Quadra/MacOS8.1 CD and complete normal shutdown.
+- Real tests found QEMU's System32/en-US keyboard-map collision, early QMP
+  commands during restart, and hard resets leaving HFS dirty. Fixed runtime
+  CWD and readiness; desktop Restart now completes guest shutdown before
+  relaunch. Final runs require actual menu-title pixels and finish without
+  dismissing a disk-check dialog. Strict CI caught an empty startup menu being
+  misclassified; its detector now excludes borders, Apple icon and clock.
+- Mac 4.1 metadata/notices build signed/notarized; app notary
+  19512f97-9c95-425a-8f82-8e24ea2d6bda and DMG notary
+  70419b9f-a438-4773-b705-42dd68036c67 accepted. Package, Gatekeeper, ATI and
+  native display reconnect gates pass. Refreshed direct Mac screenshots.
+- Final packaged CI and integration/publication pending. No new stable tag
+  published in this entry. VM secrets remain in protected ignored output;
+  no unrelated VM, template or user machine changed.

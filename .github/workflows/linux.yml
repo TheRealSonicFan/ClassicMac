@@ -1,0 +1,81 @@
+name: Linux desktop
+on:
+  push:
+    branches: [codex/windows-app, codex/linux-release]
+  workflow_dispatch:
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        id: engine
+        with:
+          path: |
+            output/desktop/runtime
+            output/desktop/ClassicMac-Linux-QEMU-source.tar.gz
+          key: linux-engine-${{ hashFiles('**/*.patch','qfb/*','screamer/*','shared/*','ppcvid/qemu_vga.ndrv','scripts/build-qemu.sh','desktop/scripts/build-linux.sh','desktop/scripts/stage-linux.py') }}
+      - name: Install build and desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ninja-build pkg-config python3-venv python3-pip libglib2.0-dev libpixman-1-dev libslirp-dev libgcrypt20-dev libfdt-dev libpng-dev libzstd-dev libattr1-dev libcap-ng-dev libpulse-dev libasound2-dev libegl1-mesa-dev libgles2-mesa-dev patchelf xvfb libgtk-3-0t64 libnss3 libgbm1 libasound2t64 libatk-bridge2.0-0t64
+      - name: Build Linux engines
+        if: steps.engine.outputs.cache-hit != 'true'
+        run: |
+          desktop/scripts/build-linux.sh
+          tar --exclude=.git --exclude=build --exclude=build-linux -czf output/desktop/ClassicMac-Linux-QEMU-source.tar.gz -C vendor qemu
+      - name: Include qualified Tools CD
+        if: steps.engine.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v4.0.0 -p ClassicMac-4.0.0.zip -D output/desktop/tools
+          echo 'fb40c282cacc474b99a71ab23d8031f06a85e1dcf2b47c532552a640a1c1a37c  output/desktop/tools/ClassicMac-4.0.0.zip' | sha256sum -c
+          unzip -p output/desktop/tools/ClassicMac-4.0.0.zip ClassicMac.app/Contents/Resources/ClassicMacTools.iso > output/desktop/runtime/ClassicMacTools.iso
+      - uses: actions/cache/save@v4
+        if: steps.engine.outputs.cache-hit != 'true'
+        with:
+          path: |
+            output/desktop/runtime
+            output/desktop/ClassicMac-Linux-QEMU-source.tar.gz
+          key: ${{ steps.engine.outputs.cache-primary-key }}
+      - name: Check Linux display devices
+        run: python3 ati/tests/test_qemu_ati.py --gl-api gles --gl-optional output/desktop/runtime/bin/qemu-system-ppc output/desktop/runtime/qemu/pc-bios
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Package Linux desktop
+        working-directory: desktop
+        run: |
+          npm ci
+          npm test
+          npm run package:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClassicMac-Linux-app
+          path: |
+            output/desktop/packages/*.tar.gz
+            output/desktop/packages/*.deb
+            output/desktop/ClassicMac-Linux-QEMU-source.tar.gz
+          retention-days: 30
+      - name: Install test sandbox ownership
+        run: |
+          sudo chown root:root output/desktop/packages/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 output/desktop/packages/linux-unpacked/chrome-sandbox
+      - name: Smoke test packaged Linux application
+        run: xvfb-run -a node desktop/tests/smoke-desktop.cjs output/desktop/packages/linux-unpacked/classicmac output/desktop/smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ClassicMac-Linux-smoke
+          path: |
+            output/desktop/smoke/desktop.png*
+            output/desktop/smoke/desktop.log
+            output/desktop/smoke/isolated-home/guest.ppm
+          retention-days: 30

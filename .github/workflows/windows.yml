@@ -1,0 +1,100 @@
+name: Windows desktop
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+on:
+  push:
+    branches: [codex/windows-app]
+  workflow_dispatch:
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        id: engine-cache
+        with:
+          path: |
+            output/desktop/runtime
+            output/desktop/ClassicMac-Windows-QEMU-source.tar.gz
+          key: windows-engine-${{ hashFiles('**/*.patch', 'qfb/*.c', 'qfb/*.h', 'qfb/*.rom', 'screamer/*', 'ppcvid/qemu_vga.ndrv', 'shared/*', 'scripts/build-qemu.sh', 'desktop/ati_gl_windows.inc', 'desktop/scripts/build-engine.sh', 'desktop/scripts/stage-runtime.py', 'desktop/scripts/prepare-windows-gl.py', '.github/workflows/windows.yml') }}
+      - uses: msys2/setup-msys2@v2
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git make diffutils mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-python-pip
+            mingw-w64-ucrt-x86_64-python-distlib mingw-w64-ucrt-x86_64-python-packaging
+            mingw-w64-ucrt-x86_64-meson mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-glib2
+            mingw-w64-ucrt-x86_64-pixman mingw-w64-ucrt-x86_64-libpng
+            mingw-w64-ucrt-x86_64-libslirp mingw-w64-ucrt-x86_64-dtc
+            mingw-w64-ucrt-x86_64-libgcrypt
+            mingw-w64-ucrt-x86_64-zstd
+      - name: Build patched Windows engines
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: |
+          desktop/scripts/build-engine.sh
+          python3 ati/tests/test_qemu_ati.py --gl-optional output/desktop/runtime/bin/qemu-system-ppc.exe output/desktop/runtime/qemu/pc-bios
+          tar --exclude=.git --exclude=build --exclude=build-windows -czf output/desktop/ClassicMac-Windows-QEMU-source.tar.gz -C vendor qemu
+      - name: Include the qualified Tools CD
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release download v4.0.0-preview.3 --repo amcchord/ClassicMac --pattern 'ClassicMac-4.0.0-Preview-3.zip' --dir output/desktop/tools
+          $archive = 'output/desktop/tools/ClassicMac-4.0.0-Preview-3.zip'
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '3552de300fdb809dd974f696b6e82e7b0248f94086770f46b66650477c2e8ba6') { throw 'Tools source archive checksum mismatch' }
+          Expand-Archive $archive output/desktop/tools/extracted
+          Copy-Item 'output/desktop/tools/extracted/ClassicMac.app/Contents/Resources/ClassicMacTools.iso' 'output/desktop/runtime/ClassicMacTools.iso'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ClassicMac-Windows-runtime
+          path: output/desktop/runtime
+          retention-days: 14
+      - uses: actions/cache/save@v4
+        if: steps.engine-cache.outputs.cache-hit != 'true' && success()
+        with:
+          path: |
+            output/desktop/runtime
+            output/desktop/ClassicMac-Windows-QEMU-source.tar.gz
+          key: ${{ steps.engine-cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClassicMac-Windows-QEMU-source
+          path: output/desktop/ClassicMac-Windows-QEMU-source.tar.gz
+          retention-days: 14
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Build Windows desktop package
+        working-directory: desktop
+        run: |
+          npm ci
+          npm test
+          npm run package:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClassicMac-Windows-app
+          path: output/desktop/packages/*.zip
+          retention-days: 14
+      - name: Test the packaged desktop with a disposable OS9 machine
+        run: node desktop/tests/smoke-desktop.cjs output/desktop/packages/win-unpacked/ClassicMac.exe output/desktop/smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ClassicMac-Windows-smoke
+          path: |
+            output/desktop/smoke/desktop.png
+            output/desktop/smoke/desktop.png.json
+            output/desktop/smoke/desktop.png.shutdown.json
+            output/desktop/smoke/desktop.log
+          retention-days: 14

@@ -89,6 +89,7 @@ def ati_status(qemu, bios, env=None):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--gl-api", choices=["desktop", "gles"], default="desktop")
     ap.add_argument("--gl-optional", action="store_true")
     ap.add_argument("qemu")
     ap.add_argument("bios")
@@ -107,7 +108,7 @@ def main():
     print(f"    ati-vga x-gl-renderer: {renderer or '(none)'}")
     if gl_on or not a.gl_optional:
         check(gl_on, "ATI 3D engine on host GL (x-accel-stats gl=on)")
-        check("GL 4." in renderer, "x-gl-renderer names an OpenGL 4 renderer")
+        check((("GL 4." in renderer) if a.gl_api == "desktop" else ("OpenGL ES 3." in renderer)), f"x-gl-renderer names the expected {a.gl_api} renderer")
         check("ati: 3D engine on host GL" in log, "QEMU logs the host GL renderer")
     else:
         print("    WARN  no host GL on this builder (--gl-optional)")

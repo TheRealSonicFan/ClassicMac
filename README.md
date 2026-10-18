@@ -5,13 +5,13 @@
 <h1 align="center">ClassicMac</h1>
 
 <p align="center">
-  <strong>The whole classic Mac OS era, running natively fast on Apple Silicon.</strong><br>
-  A self-contained macOS app that emulates a Motorola 68040 Quadra 800 and a PowerPC Power Mac G4<br>
-  on a custom build of QEMU — no setup, no terminal, nothing to install inside the guest.
+  <strong>The classic Mac OS era on macOS, Windows and Linux.</strong><br>
+  A self-contained desktop app that emulates a Motorola 68040 Quadra 800 and a PowerPC Power Mac G4<br>
+  on a custom build of QEMU, with the Apple Platinum appearance.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black" alt="Platform">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-black" alt="Platform">
   <img src="https://img.shields.io/badge/guests-System%207.1%20–%20Mac%20OS%209.2.2-blueviolet" alt="Guest OS range">
   <img src="https://img.shields.io/badge/QEMU-11.0.2%20(custom)-orange" alt="QEMU">
   <img src="https://img.shields.io/badge/UI-Apple%20Platinum-lightgrey" alt="Apple Platinum interface">
@@ -21,12 +21,45 @@
 ---
 
 <p align="center">
-  <img src="docs/screenshots/platinum/running-ati.png" width="720" alt="ClassicMac 4.0 in the Apple Platinum appearance, with Mac OS 9.2.2 Deluxe running on the emulated ATI Radeon">
+  <img src="docs/screenshots/platinum/running-ati.png" width="720" alt="ClassicMac 4.1 in the Apple Platinum appearance, with Mac OS 9.2.2 Deluxe running on the emulated ATI Radeon">
 </p>
 
 <p align="center">
   <img src="docs/screenshots/quadra800-macos81.png" width="410" alt="Mac OS 8.1 on the emulated Quadra 800">
   <img src="docs/screenshots/powermacg4-macos92.png" width="410" alt="Mac OS 9.2 on the emulated Power Mac G4">
+</p>
+
+## New in ClassicMac 4.1
+
+- **Windows and Linux desktop editions.** Native x64 QEMU runtimes and a shared
+  Platinum desktop front end, with `.classic` machine creation/import,
+  settings, CD/floppy images, power controls and an authenticated local display.
+- **The Library on every desktop.** Ready-to-run Mac OS 9 editions download
+  with pause/resume, exact size/SHA-256 checks and bounded archive extraction.
+- **Paste Text on every desktop.** Review plain text before typing it with the
+  Mac US keyboard layout; unsupported characters are rejected before typing.
+- **Linux folder sharing.** A selected host folder mounts through classicvirtio
+  9p. Windows does not provide this QEMU backend; Copland remains Mac-only.
+- **Reference-tested Platinum controls.** The Mac appearance corrects system
+  font widths, raw grays, pressed/disabled controls, popup arrows and title-box
+  artwork. [The audit](docs/platinum-fidelity-audit.md) documents the 32 control
+  references and 95 system glyphs, and the remaining whole-app fidelity gaps.
+
+| Download | Host | Install |
+| --- | --- | --- |
+| macOS DMG | Apple Silicon, macOS 15+ | Drag ClassicMac to Applications |
+| Windows ZIP | Windows 11, x64 | Extract and run `ClassicMac.exe`, keeping its companion files |
+| Linux DEB | Ubuntu 24.04+/Debian 13, x64 | Install the package with your package manager |
+| Linux tar.gz | Same Linux baseline | Extract and run `classicmac`; the host must support Chromium sandboxing |
+
+The [latest release](https://github.com/amcchord/ClassicMac/releases/latest)
+contains the applications, checksums and corresponding engine sources. The
+macOS app is Developer ID signed and notarized. Windows binaries are unsigned.
+See the [desktop build and platform support guide](desktop/README.md).
+
+<p align="center">
+  <img src="docs/screenshots/desktop/windows.png" width="410" alt="ClassicMac on Windows 11">
+  <img src="docs/screenshots/desktop/linux.png" width="410" alt="ClassicMac on Linux">
 </p>
 
 ## New in ClassicMac 4.0
@@ -37,8 +70,8 @@
   default-button ring that flashes when you press Return, beeping caution
   alerts, Platinum pop-up menus that open with the current item under the
   pointer, lavender lists and scroll bars, and the barber-pole progress bar.
-  One Mac pixel is one point, so on a Retina display nothing is ever
-  resampled. The look, fonts and icons are shared with RetroBoot through the
+  Control artwork uses one point per Mac pixel and is tested at 1× and
+  2×. Some SwiftUI text and other states still need fidelity work. The look, fonts and icons are shared with RetroBoot through the
   new `PlatinumKit` module, which also builds for iPad.
 - **Your Mac in a Platinum window.** Each running Mac's screen now appears
   in a ClassicMac Platinum window instead of QEMU's: sharp whole-number

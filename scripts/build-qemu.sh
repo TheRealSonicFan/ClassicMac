@@ -166,6 +166,12 @@ die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 # ---------------------------------------------------------------------------
 # 1. Toolchain + dependencies via Homebrew
 # ---------------------------------------------------------------------------
+# Source preparation is shared with the native Windows builder and needs
+# only Git and Python. Full macOS builds keep the existing Homebrew setup.
+if [ -n "${CLASSICMAC_PREPARE_ONLY:-}" ]; then
+  PYTHON_BIN="${PYTHON_BIN:-python3}"
+  command -v "$PYTHON_BIN" >/dev/null || die "Python 3 is required."
+else
 command -v brew >/dev/null 2>&1 || die "Homebrew is required. Install it from https://brew.sh"
 
 BREW_PREFIX="$(brew --prefix)"
@@ -199,6 +205,8 @@ if [ ! -d "$PYDEPS_DIR/distlib" ]; then
 fi
 export PYTHONPATH="$PYDEPS_DIR:${PYTHONPATH:-}"
 
+fi
+
 # ---------------------------------------------------------------------------
 # 2. Clone mainline QEMU at the pinned tag
 # ---------------------------------------------------------------------------
@@ -211,7 +219,7 @@ if [ -d "$QEMU_DIR/.git" ]; then
   done
 else
   log "Cloning $QEMU_REPO ($QEMU_TAG)"
-  git clone --depth 1 --branch "$QEMU_TAG" "$QEMU_REPO" "$QEMU_DIR"
+  git -c core.autocrlf=false clone --depth 1 --branch "$QEMU_TAG" "$QEMU_REPO" "$QEMU_DIR"
 fi
 
 # ---------------------------------------------------------------------------
