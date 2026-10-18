@@ -1,5 +1,11 @@
 import SwiftUI
 
+/// Development switches read from the environment.
+public enum PlatinumDebug {
+    /// PLATINUM_FORCE_ACTIVE=1 draws every window active (for screenshots).
+    public static let forceActive = ProcessInfo.processInfo.environment["PLATINUM_FORCE_ACTIVE"] != nil
+}
+
 /// Observable state of a Platinum window, owned by its host (an AppKit
 /// `PlatinumWindow` on the Mac).
 @MainActor
@@ -64,7 +70,8 @@ public struct PlatinumWindowChrome<Content: View>: View {
     public var body: some View {
         GeometryReader { geo in
             let w = Int(geo.size.width), h = Int(geo.size.height)
-            let active = activeState == .key || activeState == .active || kind == .modal
+            let active = activeState == .key || activeState == .active || kind == .modal ||
+                PlatinumDebug.forceActive
             let titled = kind != .modal
             let maxTitle = max(0, w - 1 - 60 - (boxes.zoom ? 24 : 0))
             let fullTitle = titled ? Int(PlatinumFonts.width(state.title, font: .system)) : 0
