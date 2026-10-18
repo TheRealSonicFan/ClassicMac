@@ -24,6 +24,10 @@
 #   OPENBIOS_BUILDER_IMAGE  builder image (default: pinned digest)
 #   OPENBIOS_OUTPUT         output path (default: screamer/openbios-ppc)
 #   OPENBIOS_MAKE_JOBS      make -j value (default 2)
+#   OPENBIOS_EXTRA_PATCHES  space-separated extra patch files applied after
+#                           the two above (e.g. RetroBoot's
+#                           openbios-sound-objects-terminator.patch); not
+#                           part of the shipped firmware unless chosen
 
 set -euo pipefail
 
@@ -63,6 +67,11 @@ cleanup() {
 trap cleanup EXIT
 
 command -v docker >/dev/null 2>&1 || die "Docker is required to build OpenBIOS"
+if [ -n "${OPENBIOS_EXTRA_PATCHES:-}" ]; then
+  for patch in $OPENBIOS_EXTRA_PATCHES; do
+    PATCH_FILES+=("$(cd "$(dirname "$patch")" && pwd)/$(basename "$patch")")
+  done
+fi
 for patch in "${PATCH_FILES[@]}"; do
   [ -f "$patch" ] || die "OpenBIOS patch missing: $patch"
 done
