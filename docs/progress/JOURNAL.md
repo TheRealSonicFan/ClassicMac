@@ -391,3 +391,22 @@
   reaches Finder and displays included icons. Evidence `output/4.0.0`.
 - Stable notarization/publication pending existing notary keychain access;
   user asked to unlock the session/profile. No release/catalog changes yet.
+
+## October 18 — Platinum screenshot audit
+
+- User requested pixel accuracy before wrapping the release. Added a Retro68
+  guest reference utility calling native Appearance Manager; collected raw
+  OS9.2.1 control captures and ten original OS8.1 archive screenshots with
+  source hashes. All VM work used disposable disk copies.
+- `codex/platinum-pixel-audit` corrects system ASCII glyphs/advances, raw gray
+  levels, button/default/checkbox/radio states, paired popup arrows, title-box
+  gradient/widgets, determinate progress and frame details. Window titles now
+  draw through non-antialiased Core Text.
+- Added zero-tolerance image comparisons for 32 states/patterns at both 1×/2×
+  and a 95-glyph atlas/advance test. Whole-app fidelity is not certified;
+  menus, scrollbars, other fonts, SwiftUI text and window states need more
+  coverage. See the audit report and reference lab.
+- Stable release not yet published. Release API credentials verified without
+  exposing or persisting them; the earlier keychain question is obsolete.
+  Windows native build reached packaging, then the real desktop smoke found
+  missing DES cipher support for authenticated VNC; libgcrypt rebuild running.

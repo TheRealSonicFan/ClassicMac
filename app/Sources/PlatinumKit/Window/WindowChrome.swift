@@ -83,7 +83,7 @@ public struct PlatinumWindowChrome<Content: View>: View {
             let titleWidth = min(fullTitle, maxTitle)
             let insets = Chrome.contentInsets(kind)
             let titleX = (w - 1 - titleWidth) / 2
-            let baseline = kind == .utility ? 11 : 14
+            let baseline = kind == .utility ? 11 : 15
 
             ZStack(alignment: .topLeading) {
                 PixelCanvas { p, r in
@@ -125,14 +125,14 @@ public struct PlatinumWindowChrome<Content: View>: View {
                 #endif
 
                 if titled && titleWidth > 0 {
-                    Text(state.title)
-                        .font(.platinumSystem)
-                        .foregroundStyle(active ? Platinum.black.color : Platinum.disabledText.color)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .frame(width: CGFloat(titleWidth), height: 16, alignment: .leading)
-                        .offset(x: CGFloat(titleX), y: CGFloat(baseline - 12))
-                        .allowsHitTesting(false)
+                    PixelCanvas { p, _ in
+                        p.text(state.title, font: .system, x: 0, baseline: 12,
+                               color: active ? Platinum.black : Platinum.disabledText, maxWidth: titleWidth)
+                    }
+                    .frame(width: CGFloat(titleWidth), height: 16)
+                    .offset(x: CGFloat(titleX), y: CGFloat(baseline - 12))
+                    .accessibilityLabel(state.title)
+                    .allowsHitTesting(false)
                 }
 
                 if active && titled {

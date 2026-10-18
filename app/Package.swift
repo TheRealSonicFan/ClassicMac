@@ -41,7 +41,8 @@ let package = Package(
         .testTarget(
             name: "ClassicMacTests",
             dependencies: ["ClassicMac", "PlatinumKit"],
-            path: "Tests/ClassicMacTests"
+            path: "Tests/ClassicMacTests",
+            resources: [.copy("Fixtures/Platinum")]
         )
     ]
 )

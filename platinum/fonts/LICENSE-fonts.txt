@@ -4,14 +4,13 @@ RetroBoot bitmap fonts
   RetroBoot Regular 12 (src/rb-regular-12.glyphs -> RetroBoot-Regular-12.bdf)
   RetroBoot Small 10   (src/rb-small-10.glyphs   -> RetroBoot-Small-10.bdf)
 
-Provenance: original pixel art drawn from scratch for RetroBoot in October
-2026, "in the spirit of" the classic Mac OS system fonts. No glyph was traced
-or copied from Apple's Chicago, Charcoal, Geneva or Monaco, from the
-M5Tab-Macintosh charcoal12.bdf, or from any other font. The .glyphs files are
-the editable source; tools/fontgen.py generates the BDF files and
-src/fonts_data.c from them. Covers printable ASCII, Latin-1 (U+00A0-U+00FF),
-U+0131, dashes, curly quotes, bullet, ellipsis, euro, trademark, arrows,
-the Command/Option/Shift key symbols and U+FFFD.
+Provenance: Regular 12, Small 10 and the System 12 extended glyphs are
+original pixel art drawn for RetroBoot in October 2026. ClassicMac replaced
+System 12's printable ASCII with the user's M5Tab-Macintosh Charcoal12 pixel
+recreation (bcfa1649bcbd5a6c433ad4d09b93b543ae768275), traced from Mac OS 8
+SimpleText screenshots. The source BDF records the reference hash. This is
+not Apple's original font program. BDF files are the editable sources in
+ClassicMac; rebuild embedded TrueType with build_platinum_swift.py.
 
 Copyright (c) 2026 RetroBoot contributors
 

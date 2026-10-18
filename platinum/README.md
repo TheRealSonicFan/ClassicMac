@@ -1,14 +1,16 @@
 # Platinum appearance
 
 ClassicMac draws its own interface in the Mac OS 8/9 "Platinum" appearance,
-shared with RetroBoot so the two products look and behave alike. Everything in
-this directory is original and MIT licensed; nothing is copied from Apple
-software.
+shared with RetroBoot so the two products look and behave alike. The font programs, icon art and measured control drawing code are MIT
+licensed. Reference screenshot crops are test evidence, kept separate from
+shipping app resources; their provenance is recorded in `reference/README.md`.
 
 - `fonts/` — RetroBoot System 12, Regular 12 and Small 10 bitmap fonts:
   original pixel art "in the spirit of" the classic system fonts (see
   `LICENSE-fonts.txt`). Source: RetroBoot `presenter/ui/assets/fonts`
-  at `531f953` (2026-10-11).
+  at `531f953` (2026-10-11). The system font’s printable ASCII glyphs now
+  use the Charcoal 12 pixel recreation measured in M5Tab-Macintosh; the BDF
+  records its source hash. Extended glyphs retain the original artwork.
 - `icons/` — the matching icon set and palette (see `LICENSE-icons.txt`),
   from RetroBoot `presenter/ui/assets/icons` at the same revision.
 - `tools/build_platinum_swift.py` — compiles the bitmap fonts to pixel-square
@@ -17,13 +19,15 @@ software.
   `app/Sources/PlatinumKit/Generated/PlatinumAssets.swift`. Standard library
   only. Run it after changing anything here.
 
-The control drawing tables in `app/Sources/PlatinumKit/Core/Chrome.swift`
-(window frame, pinstripes, push button and default ring, checkboxes, radio
-buttons, group box, fields, lists, scroll bar) were measured pixel by pixel
-from Mac OS 8.1 in the author's M5Tab-Macintosh project and ported through
-RetroBoot's rbui (`presenter/ui/src/platinum.c`, MIT). The pop-up button,
-progress bar, focus ring, menus, title-bar boxes and grow box are original
-drawings in the same palette.
+The initial control tables came through RetroBoot rbui from M5Tab-Macintosh.
+The 2026-10-18 fidelity audit corrected raw framebuffer gray levels, state
+artwork, pop-up arrows, title boxes, default rings and determinate progress.
+`MeasuredChrome.swift` ports RetroBoot rbplatinum/chrome.py at `237fe033`
+(MIT), with fresh native captures for the formerly approximate disabled
+radios, mixed checkbox, pressed pop-up and disabled default ring. See
+[the reference lab](reference/README.md) for exact coverage and limitations.
 
-One Mac pixel is one point. On Retina displays that is exactly two device
-pixels, so the interface is never resampled.
+One Mac pixel is one point. PixelPainter controls and direct system text are
+tested at both 1× and 2× device scales. SwiftUI Text and whole application
+layouts require separate verification; the control gate is not a blanket
+pixel-perfect certification.
