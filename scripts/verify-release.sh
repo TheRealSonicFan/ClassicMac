@@ -10,11 +10,19 @@
 # Examples:
 #   scripts/verify-release.sh dist/ClassicMac.app 2.3.2 2.3.2
 #   scripts/verify-release.sh dist/ClassicMac.dmg 2.3.2 2.3.2
+#
+# Environment: APP_VERSION / APP_BUILD_VERSION stand in for the version
+# arguments; DIST_DIR and DIST_NAME (defaults dist/ and ClassicMac) give the
+# default target DIST_DIR/DIST_NAME.dmg; TOOLS_CD_SRC (default
+# dist/ClassicMacTools.iso, as in bundle-qemu.sh) is the freshly built Tools
+# CD compared with the bundled one.
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET="${1:-$ROOT_DIR/dist/ClassicMac.dmg}"
+DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
+DIST_NAME="${DIST_NAME:-ClassicMac}"
+TARGET="${1:-$DIST_DIR/$DIST_NAME.dmg}"
 EXPECTED_VERSION="${2:-${APP_VERSION:-}}"
 EXPECTED_BUILD="${3:-${APP_BUILD_VERSION:-}}"
 SKIP_REPO_FRESHNESS="${VERIFY_RELEASE_SKIP_REPO_FRESHNESS:-0}"
@@ -88,9 +96,10 @@ for required in "$COPLAND_HELPER/Contents/Info.plist" "$COPLAND_ENGINE" "$PLIST"
   [ -e "$required" ] || die "Required release component is missing: $required"
 done
 [ -s "$TOOLS_CD" ] || die "Bundled ClassicMac Tools CD is empty"
+TOOLS_CD_SRC="${TOOLS_CD_SRC:-$ROOT_DIR/dist/ClassicMacTools.iso}"
 if [ "$SKIP_REPO_FRESHNESS" != "1" ] && \
-   [ -f "$ROOT_DIR/dist/ClassicMacTools.iso" ]; then
-  cmp -s "$ROOT_DIR/dist/ClassicMacTools.iso" "$TOOLS_CD" || \
+   [ -f "$TOOLS_CD_SRC" ]; then
+  cmp -s "$TOOLS_CD_SRC" "$TOOLS_CD" || \
     die "Bundled Tools CD differs from the freshly built dist image"
 fi
 if [ "$SKIP_REPO_FRESHNESS" != "1" ] && \
