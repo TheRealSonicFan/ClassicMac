@@ -33,7 +33,7 @@ struct AboutView: View {
                 credit("Sharing", "classicvirtio by Elliot Nunn")
                 credit("Appearance", "Platinum fonts, icons and controls shared with RetroBoot")
                 if IconPacks.shared.isUsingIconfactory {
-                    credit("Mac icons", "The Iconfactory (your personal copy)")
+                    credit("Mac icons", "The Iconfactory — used with permission")
                 }
             }
             Spacer(minLength: 0)

@@ -162,6 +162,9 @@ if [ "$VERSION_MAJOR" -ge 4 ]; then
   if LC_ALL=C grep -a -F "GXMetal" "$TOOLS_CD" >/dev/null; then
     die "Bundled Tools CD still carries the removed GXMetal folder"
   fi
+  log "Verifying included Iconfactory artwork and attribution"
+  diff -r "$ROOT_DIR/Resources/Iconfactory" "$APP/Contents/Resources/Iconfactory" || \
+    die "Bundled Iconfactory artwork or attribution differs from the release source"
   ATI_HELP="$("$PPC_QEMU" -device ati-vga,help 2>&1)"
   for property in model x-accel-stats x-gl-renderer xres yres refresh_rate; do
     printf '%s\n' "$ATI_HELP" | grep -q "$property" || \

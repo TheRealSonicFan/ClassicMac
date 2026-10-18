@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.0.0 — 2026-10-18
+
+- Stable release of the Platinum interface, native guest windows, Mac OS
+  Library and emulated ATI Radeon introduced in the 4.0 previews below.
+- Includes the startup timer, Cuda handshake and IDE reset fixes from Preview 3.
+- Bundles The Iconfactory’s G4, Quadra 800 and Power Mac 7500 icons with
+  permission, including both native sizes, original notices and readmes.
+  Removing imported icon collections restores these built-in defaults.
+- The macOS package defaults to version 4.0.0 and verifies bundled artwork.
+
 ## 4.0.0 Preview 3 — 2026-10-18 (local test build)
 
 ### Fixed

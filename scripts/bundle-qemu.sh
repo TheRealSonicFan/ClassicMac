@@ -13,6 +13,7 @@
 #   APP_VERSION / APP_BUILD_VERSION  CFBundleShortVersionString / CFBundleVersion
 #   DIST_DIR                         output directory (default dist/); the app is
 #                                    always DIST_DIR/ClassicMac.app
+#   VENDOR_DIR                       prepared engines and licenses (read in place)
 #   TOOLS_CD_SRC                     Tools CD image (default dist/ClassicMacTools.iso)
 #   SIGN_IDENTITY                    signing identity, "-" for ad-hoc
 
@@ -20,8 +21,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_SRC_DIR="$ROOT_DIR/app"
-QEMU_BUILD_DIR="$ROOT_DIR/vendor/qemu/build"
-QEMU_PCBIOS_DIR="$ROOT_DIR/vendor/qemu/pc-bios"
+VENDOR_DIR="${VENDOR_DIR:-$ROOT_DIR/vendor}"
+QEMU_BUILD_DIR="$VENDOR_DIR/qemu/build"
+QEMU_PCBIOS_DIR="$VENDOR_DIR/qemu/pc-bios"
 ROM_SRC="$ROOT_DIR/Resources/Quadra800.rom"
 ICON_PNG="$ROOT_DIR/Resources/AppIcon.png"
 ICON_DOC="$ROOT_DIR/Resources/AppIcon.icon"
@@ -39,8 +41,8 @@ BUNDLE_STAGE_DIR=""
 BUNDLE_PREVIOUS_APP=""
 BUNDLE_LOCK_HELD=0
 
-APP_VERSION="${APP_VERSION:-3.2.1}"
-APP_BUILD_VERSION="${APP_BUILD_VERSION:-3.2.1}"
+APP_VERSION="${APP_VERSION:-4.0.0}"
+APP_BUILD_VERSION="${APP_BUILD_VERSION:-4.0.0}"
 BUNDLE_ID="com.classicmac.emulator"
 
 log() { printf '\n==> %s\n' "$*"; }
@@ -113,7 +115,7 @@ HELPERS_DIR="$CONTENTS/Helpers"
 QUADRA_APP="$HELPERS_DIR/Quadra 800.app"
 PPC_APP="$HELPERS_DIR/Power Mac G4.app"
 COPLAND_APP="$HELPERS_DIR/Power Mac 7500.app"
-COPLAND_BIN="$ROOT_DIR/vendor/dingusppc/build/bin/dingusppc.app/Contents/MacOS/dingusppc"
+COPLAND_BIN="$VENDOR_DIR/dingusppc/build/bin/dingusppc.app/Contents/MacOS/dingusppc"
 
 # ---------------------------------------------------------------------------
 # 0. Preconditions
@@ -147,9 +149,9 @@ done
 [ -f "$BROWSER_SRC/novnc/core/rfb.js" ] || die "Bundled noVNC client is missing."
 [ -f "$BROWSER_SRC/novnc/LICENSE.txt" ] || die "Bundled noVNC license is missing."
 [ -f "$BROWSER_SRC/novnc/vendor/pako/LICENSE" ] || die "Bundled pako license is missing."
-[ -f "$ROOT_DIR/vendor/qemu/LICENSE" ] || die "QEMU LICENSE not found. Run scripts/build-qemu.sh first."
-[ -f "$ROOT_DIR/vendor/qemu/COPYING" ] || die "QEMU GPL license not found. Run scripts/build-qemu.sh first."
-[ -f "$ROOT_DIR/vendor/qemu/COPYING.LIB" ] || die "QEMU LGPL license not found. Run scripts/build-qemu.sh first."
+[ -f "$VENDOR_DIR/qemu/LICENSE" ] || die "QEMU LICENSE not found. Run scripts/build-qemu.sh first."
+[ -f "$VENDOR_DIR/qemu/COPYING" ] || die "QEMU GPL license not found. Run scripts/build-qemu.sh first."
+[ -f "$VENDOR_DIR/qemu/COPYING.LIB" ] || die "QEMU LGPL license not found. Run scripts/build-qemu.sh first."
 command -v dylibbundler >/dev/null 2>&1 || die "dylibbundler is required (brew install dylibbundler)."
 
 # ---------------------------------------------------------------------------
@@ -247,21 +249,24 @@ cp "$DECLROM_SRC" "$RES_DIR/declrom"
 cp "$NDRVLOADER_SRC" "$RES_DIR/ndrvloader"
 cp "$PRAMSEED_SRC" "$RES_DIR/pram-seed.img"
 cp -R "$BROWSER_SRC" "$RES_DIR/Browser"
+cp -R "$ROOT_DIR/Resources/Iconfactory" "$RES_DIR/Iconfactory"
 
 # Third-party notices and license texts for QEMU, its firmware, and every
 # Homebrew library copied into the self-contained helper apps below.
 LICENSES_DIR="$RES_DIR/Licenses"
 mkdir -p "$LICENSES_DIR"
 cp "$ROOT_DIR/copland/CLI11-LICENSE.txt" "$LICENSES_DIR/CLI11.txt"
-cp "$ROOT_DIR/vendor/dingusppc/LICENSE" "$LICENSES_DIR/DingusPPC-GPL-3.0.txt"
-cp "$ROOT_DIR/vendor/SDL2/LICENSE.txt" "$LICENSES_DIR/SDL2.txt"
-cp "$ROOT_DIR/vendor/dingusppc/thirdparty/capstone/LICENSE.TXT" "$LICENSES_DIR/Capstone.txt"
-cp "$ROOT_DIR/vendor/dingusppc/thirdparty/capstone/LICENSE_LLVM.TXT" "$LICENSES_DIR/Capstone-LLVM.txt"
-cp "$ROOT_DIR/vendor/dingusppc/thirdparty/cubeb/LICENSE" "$LICENSES_DIR/cubeb.txt"
+cp "$ROOT_DIR/platinum/fonts/LICENSE-fonts.txt" "$LICENSES_DIR/Platinum-fonts.txt"
+cp "$ROOT_DIR/platinum/icons/LICENSE-icons.txt" "$LICENSES_DIR/Platinum-icons.txt"
+cp "$VENDOR_DIR/dingusppc/LICENSE" "$LICENSES_DIR/DingusPPC-GPL-3.0.txt"
+cp "$VENDOR_DIR/SDL2/LICENSE.txt" "$LICENSES_DIR/SDL2.txt"
+cp "$VENDOR_DIR/dingusppc/thirdparty/capstone/LICENSE.TXT" "$LICENSES_DIR/Capstone.txt"
+cp "$VENDOR_DIR/dingusppc/thirdparty/capstone/LICENSE_LLVM.TXT" "$LICENSES_DIR/Capstone-LLVM.txt"
+cp "$VENDOR_DIR/dingusppc/thirdparty/cubeb/LICENSE" "$LICENSES_DIR/cubeb.txt"
 cp "$THIRD_PARTY_NOTICES" "$RES_DIR/ThirdPartyNotices.md"
-cp "$ROOT_DIR/vendor/qemu/LICENSE" "$LICENSES_DIR/QEMU-LICENSE.txt"
-cp "$ROOT_DIR/vendor/qemu/COPYING" "$LICENSES_DIR/GPL-2.0.txt"
-cp "$ROOT_DIR/vendor/qemu/COPYING.LIB" "$LICENSES_DIR/LGPL-2.1.txt"
+cp "$VENDOR_DIR/qemu/LICENSE" "$LICENSES_DIR/QEMU-LICENSE.txt"
+cp "$VENDOR_DIR/qemu/COPYING" "$LICENSES_DIR/GPL-2.0.txt"
+cp "$VENDOR_DIR/qemu/COPYING.LIB" "$LICENSES_DIR/LGPL-2.1.txt"
 cp "$BROWSER_SRC/novnc/LICENSE.txt" "$LICENSES_DIR/noVNC-MPL-2.0.txt"
 cp "$BROWSER_SRC/novnc/vendor/pako/LICENSE" "$LICENSES_DIR/pako-MIT.txt"
 

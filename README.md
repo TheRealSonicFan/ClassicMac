@@ -29,7 +29,7 @@
   <img src="docs/screenshots/powermacg4-macos92.png" width="410" alt="Mac OS 9.2 on the emulated Power Mac G4">
 </p>
 
-## New in ClassicMac 4.0 (preview)
+## New in ClassicMac 4.0
 
 - **Apple Platinum, top to bottom.** Every ClassicMac window is now drawn in
   the Mac OS 8/9 Platinum appearance it runs: pinstriped title bars with
@@ -61,10 +61,10 @@
 - **Get Info** replaces Settings, with General, Display and Sharing panes;
   **About This Mac** in the main window shows the GPU drawing a running Mac's
   3D.
-- **Your Iconfactory icons.** If you download The Iconfactory's classic Mac
-  icon collections, **ClassicMac → Iconfactory Icons…** uses them for the
-  Mac models. They are free for personal use only, so ClassicMac does not
-  include them.
+- **Classic icons by The Iconfactory.** The Power Mac G4, Quadra 800 and
+  Power Mac 7500 use Iconfactory artwork included with permission. No extra
+  download is needed. **ClassicMac → Iconfactory Icons…** credits the artists
+  and lets you add more collections from your own copies.
 
 <p align="center">
   <img src="docs/screenshots/platinum/guest-window.png" width="720" alt="Mac OS 9.2.2 Deluxe in ClassicMac's Platinum window with the toolbar along the bottom">

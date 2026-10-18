@@ -1,0 +1,17 @@
+{
+  "powermac_g4": {
+    "collection": "G4 v2",
+    "icon": "G4 Side List View",
+    "sha256": "72bb50ae25711283a097165df1b38a3f8ddae49136b996835e69aeef2c0141cd"
+  },
+  "quadra_800": {
+    "collection": "Apple Desktops",
+    "icon": "800/8000 series",
+    "sha256": "bf02e2b97a9f0d917867591afcfd08c46f870ee1dbc5ea73e3a75c7aa246058d"
+  },
+  "powermac_7500": {
+    "collection": "Apple Desktops",
+    "icon": "7200+series/G3 Desktop",
+    "sha256": "10d096df51ffe4916c1fc8675db27fb38db72d1d87aa277fe502ae0648ec3906"
+  }
+}
