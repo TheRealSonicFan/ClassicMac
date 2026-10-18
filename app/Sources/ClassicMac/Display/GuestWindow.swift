@@ -18,6 +18,8 @@ final class GuestWindows {
         var started = Date()
         var lastRequestedSize: CGSize?
         var resizeWork: DispatchWorkItem?
+        /// Surface sizes the window has already asked the guest to leave.
+        var reassertedSizes: [CGSize: Int] = [:]
         var observers: [NSObjectProtocol] = []
         init(session: GuestDisplaySession) { self.session = session }
     }
@@ -76,6 +78,11 @@ final class GuestWindows {
             window.center()
         }
         entry.window = window
+        updateRefreshRate(id)
+        entry.observers.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeScreenNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateRefreshRate(id) }
+            })
         entry.observers.append(NotificationCenter.default.addObserver(
             forName: NSWindow.didResizeNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.windowResized(id) }
@@ -92,6 +99,13 @@ final class GuestWindows {
         entry.window?.shouldClose = nil
         entry.window?.close()
         entry.session.stop()
+    }
+
+    /// Match QEMU's frame interval to the display (8 ms on a 120 Hz screen).
+    private func updateRefreshRate(_ id: UUID) {
+        guard let entry = entries[id] else { return }
+        let fps = max(30, (entry.window?.screen ?? NSScreen.main)?.maximumFramesPerSecond ?? 60)
+        entry.session.refreshInterval = UInt32(max(8, min(16, 1000 / fps)))
     }
 
     // MARK: Sizing
@@ -149,21 +163,35 @@ final class GuestWindows {
             let size = CGSize(width: width, height: height)
             guard size != entry.session.state.surfaceSize else { return }
             entry.lastRequestedSize = size
+            entry.reassertedSizes.removeAll()
             entry.session.resize(width: width, height: height)
         }
         entry.resizeWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + (window.inLiveResize ? 0.35 : 0.1), execute: work)
     }
 
-    /// The guest changed resolution on its own (Monitors, a game): fit the
-    /// window to it, pixel for pixel.
+    /// The guest changed resolution. A screen that follows the window asks
+    /// the guest to return to the window's size (Mac OS restores the size it
+    /// last saved when the Finder starts), twice at most per size so a guest
+    /// that cannot show it is never pestered; a fixed screen, or a size the
+    /// guest insists on, gets a window that fits it pixel for pixel.
     func surfaceChanged(_ id: UUID, to size: CGSize) {
         guard let entry = entries[id], let window = entry.window, size.width > 0, !window.inLiveResize,
               !window.state.isCollapsed else { return }
-        if let requested = entry.lastRequestedSize, requested == size { return }
         let content = PlatinumWindow.contentSize(forFrame: window.frame.size, kind: .document)
-        let current = CGSize(width: content.width, height: content.height - Self.toolbarHeight)
-        guard current.width < size.width || current.height < size.height || followsWindow(id) else { return }
+        var wanted = CGSize(width: content.width, height: content.height - Self.toolbarHeight)
+        if VMStore.shared.vms.first(where: { $0.id == id })?.machineFamily == .powerMacG4 {
+            wanted.width = CGFloat(Int(wanted.width) / 8 * 8)
+        }
+        if size == wanted { return }
+        if followsWindow(id), entry.reassertedSizes[size, default: 0] < 2,
+           wanted.width >= CGFloat(VMConfig.minWidth), wanted.height >= CGFloat(VMConfig.minHeight) {
+            entry.reassertedSizes[size, default: 0] += 1
+            entry.lastRequestedSize = wanted
+            entry.session.resize(width: Int(wanted.width), height: Int(wanted.height))
+            return
+        }
+        guard size.width > wanted.width || size.height > wanted.height || followsWindow(id) else { return }
         var frame = window.frame
         let newSize = PlatinumWindow.frameSize(forContent: NSSize(width: size.width, height: size.height + Self.toolbarHeight),
                                                kind: .document)

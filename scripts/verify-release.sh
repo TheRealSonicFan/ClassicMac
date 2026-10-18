@@ -178,6 +178,11 @@ for qemu in "$PPC_QEMU" "$QUADRA_QEMU"; do
   DISPLAY_HELP="$("$qemu" -display help 2>&1 || true)"
   printf '%s\n' "$DISPLAY_HELP" | grep -qx 'cocoa' || \
     die "Bundled $(basename "$qemu") lacks the native Cocoa display"
+  if [ "$VERSION_MAJOR" -ge 4 ]; then
+    # 4.x draws the Mac's screen in ClassicMac's own window.
+    printf '%s\n' "$DISPLAY_HELP" | grep -qx 'classicmac' || \
+      die "Bundled $(basename "$qemu") lacks the ClassicMac window display (-display classicmac)"
+  fi
 
   VNC_HELP="$("$qemu" -vnc help 2>&1 || true)"
   printf '%s\n' "$VNC_HELP" | grep -q 'vnc options' || \

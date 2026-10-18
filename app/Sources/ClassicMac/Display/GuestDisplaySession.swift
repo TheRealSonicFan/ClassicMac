@@ -42,6 +42,10 @@ final class GuestDisplaySession: @unchecked Sendable {
     private var inbox: [UInt8] = []
     private var receivedFDs: [Int32] = []
     private var revealDeadline: DispatchWorkItem?
+    /// Milliseconds between frames QEMU sends: the display's refresh rate.
+    var refreshInterval: UInt32 = 16 {
+        didSet { if refreshInterval != oldValue { send(.refreshRate, [refreshInterval]) } }
+    }
 
     // The shared framebuffer, guarded by frameLock.
     private let frameLock = NSLock()
@@ -158,7 +162,7 @@ final class GuestDisplaySession: @unchecked Sendable {
             revealed = false
             frameLock.unlock()
             scheduleRevealDeadline()
-            send(.refreshRate, [16])
+            send(.refreshRate, [refreshInterval])
             Task { @MainActor [state] in
                 state.connected = true
                 state.revealed = false
