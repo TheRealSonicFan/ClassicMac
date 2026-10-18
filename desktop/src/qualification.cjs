@@ -6,9 +6,7 @@ const {promisify}=require('node:util'),{execFile}=require('node:child_process');
 const {freshConfig,readMachine,writeJSON}=require('./machines.cjs');
 const catalog=require('./catalog.cjs'),{paste}=require('./paste.cjs');
 const run=promisify(execFile),delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function qualify({window,engines,id,home,imageTool,version}) {
- const report={platform:process.platform,version,checks:[],started:new Date().toISOString()};
- async function finder(engine){
+async function waitForFinder(engine,home){
   const file=path.join(home,'guest.ppm'),deadline=Date.now()+300000;let stable=0;
   while(Date.now()<deadline){
    await engine.command('screendump',{filename:file});const data=await fs.readFile(file);
@@ -23,6 +21,9 @@ async function qualify({window,engines,id,home,imageTool,version}) {
   throw new Error('Finder did not appear before the boot deadline.');
  }
 
+
+async function qualify({window,engines,id,home,imageTool,version}) {
+ const report={platform:process.platform,version,checks:[],started:new Date().toISOString()};
  async function check(name,fn){await fn();report.checks.push(name);console.log('PARITY PASS',name);await writeJSON(path.join(home,'parity.json'),report);}
  await check('create/import/config round trip',async()=>{
   const folder=path.join(home,'Created Test.classic');await fs.mkdir(folder);
@@ -43,7 +44,7 @@ async function qualify({window,engines,id,home,imageTool,version}) {
   if(!(await readMachine(folder)).config.toolsCDInserted)throw new Error('Library settings were not sanitized.');
  });
  let engine=engines.get(id);if(!engine)throw new Error('Boot engine stopped.');
- await finder(engine);
+ await waitForFinder(engine,home);
  await check('boot/display connection',async()=>{
   const evidence=await window.webContents.executeJavaScript('window.classicmacEvidence?.()');
   if(!evidence?.connected||!evidence.canvas)throw new Error('Guest display was not connected.');
@@ -53,7 +54,7 @@ async function qualify({window,engines,id,home,imageTool,version}) {
   const previous=engine;await previous.restart();const deadline=Date.now()+60000;
   while((!engines.has(id)||engines.get(id)===previous||!engines.get(id).initialized)&&Date.now()<deadline)await delay(100);
   engine=engines.get(id);if(!engine||engine===previous)throw new Error('Restart did not launch a new engine.');
-  await finder(engine);
+  await waitForFinder(engine,home);
   const evidence=await window.webContents.executeJavaScript('window.classicmacEvidence?.()');if(!evidence.connected)throw new Error('Display did not reconnect.');
  });
  await check('native guest paste chords',async()=>{
@@ -75,4 +76,4 @@ async function qualify({window,engines,id,home,imageTool,version}) {
  });
  report.completed=new Date().toISOString();await writeJSON(path.join(home,'parity.json'),report);return report;
 }
-module.exports={qualify};
+module.exports={qualify,waitForFinder};

@@ -245,15 +245,16 @@ else app.whenReady().then(async () => {
   if (process.env.CLASSICMAC_TEST_START) await start(process.env.CLASSICMAC_TEST_START);
   if (process.env.CLASSICMAC_TEST_CYCLE && process.env.CLASSICMAC_TEST_START) {
     const id = process.env.CLASSICMAC_TEST_START, engine = engines.get(id);
-    await new Promise(resolve => setTimeout(resolve, 20000));
+    await require('./qualification.cjs').waitForFinder(engine,app.getPath('userData'));
     await engine.pause();
     if ((await engine.command('query-status')).status !== 'paused') throw new Error('Pause failed.');
     await engine.resume();
     if ((await engine.command('query-status')).status !== 'running') throw new Error('Resume failed.');
     await engine.restart();
-    const deadline = Date.now() + 15000;
-    while ((!engines.has(id) || engines.get(id) === engine || !engines.get(id).endpoint) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+    const deadline = Date.now() + 60000;
+    while ((!engines.has(id) || engines.get(id) === engine || !engines.get(id).initialized) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
     if (!engines.has(id) || engines.get(id) === engine) throw new Error('Restart did not launch a new engine.');
+    await require('./qualification.cjs').waitForFinder(engines.get(id),app.getPath('userData'));
   }
   if (process.env.CLASSICMAC_TEST_PARITY === '1') {
     if(!process.env.CLASSICMAC_TEST_HOME||!process.env.CLASSICMAC_TEST_START)throw new Error('Qualification requires an isolated home and fixture.');

@@ -32,7 +32,7 @@ const run = promisify(execFile);
   await fs.writeFile(path.join(home, 'library.json'), JSON.stringify([fixture]));
   const screenshot = path.join(output, 'desktop.png');
   const env = { ...process.env, CLASSICMAC_TEST_HOME: home, CLASSICMAC_TEST_START: config.id,
-    CLASSICMAC_TEST_SCREENSHOT: screenshot, CLASSICMAC_TEST_WAIT: '45000', CLASSICMAC_TEST_AUTOSTOP: '1', CLASSICMAC_TEST_CYCLE: '1' };
+    CLASSICMAC_TEST_SCREENSHOT: screenshot, CLASSICMAC_TEST_WAIT: '2000', CLASSICMAC_TEST_AUTOSTOP: '1', CLASSICMAC_TEST_CYCLE: '1' };
   delete env.CLASSICMAC_RUNTIME; delete env.CLASSICMAC_MAC_APP;
   const child = spawn(exe, ['--disable-gpu'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   const log = createWriteStream(path.join(output, 'desktop.log')); child.stdout.pipe(log); child.stderr.pipe(log);
@@ -40,7 +40,7 @@ const run = promisify(execFile);
     const timer = setTimeout(() => {
       if (process.platform === 'win32') run('taskkill', ['/pid', String(child.pid), '/t', '/f']).catch(() => {}); else child.kill('SIGTERM');
       reject(new Error('Packaged desktop desktop smoke test timed out.'));
-    }, 150000);
+    }, 700000);
     child.once('error', error => { clearTimeout(timer); reject(error); });
     child.once('exit', code => { clearTimeout(timer); if (code !== 0) reject(new Error(`Desktop exited with ${code}`)); else resolve(); });
   });
