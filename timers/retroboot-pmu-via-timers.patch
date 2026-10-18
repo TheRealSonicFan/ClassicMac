@@ -1,0 +1,29 @@
+diff --git a/hw/misc/macio/pmu.c b/hw/misc/macio/pmu.c
+--- a/hw/misc/macio/pmu.c
++++ b/hw/misc/macio/pmu.c
+@@ -1320,11 +1320,25 @@ static void mos6522_pmu_reset_hold(Object *obj, ResetType type)
+     s->last_b = ms->b = TACK | TREQ;
+ }
+ 
++static const Property mos6522_pmu_properties[] = {
++    /*
++     * RetroBoot: as mos6522-cuda (retroboot-cuda-via-timers.patch, see
++     * get_next_irq_time() in hw/misc/mos6522.c): the Mac OS ROM calibrates
++     * against VIA timer 2 at startup on the PMU machine too, and the real
++     * timer 2 is one-shot.  This VIA counts in ns already, so only the
++     * one-shot behaviour changes.
++     */
++    DEFINE_PROP_BOOL("coherent-timers", MOS6522State, coherent_timers, true),
++};
++
+ static void mos6522_pmu_class_init(ObjectClass *oc, const void *data)
+ {
++    DeviceClass *dc = DEVICE_CLASS(oc);
+     ResettableClass *rc = RESETTABLE_CLASS(oc);
+     MOS6522DeviceClass *mdc = MOS6522_CLASS(oc);
+ 
++    device_class_set_props(dc, mos6522_pmu_properties);
++
+     resettable_class_set_parent_phases(rc, NULL, mos6522_pmu_reset_hold,
+                                        NULL, &mdc->parent_phases);
+     mdc->portB_write = mos6522_pmu_portB_write;

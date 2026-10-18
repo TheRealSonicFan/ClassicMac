@@ -30,6 +30,7 @@ QFB_DIR="$ROOT_DIR/qfb"
 POWERMAC_DIR="$ROOT_DIR/powermac"
 ATI_DIR="$ROOT_DIR/ati"
 CPU_DIR="$ROOT_DIR/cpu"
+TIMERS_DIR="$ROOT_DIR/timers"
 
 # Tracked files modified by the ClassicMac patches (reset before re-applying).
 # Files only earlier releases patched (GXMetal's ui/input.c, bochs-vbe.h) stay
@@ -111,6 +112,9 @@ PATCHED_FILES=(
   target/ppc/misc_helper.c
   target/ppc/translate/fp-impl.c.inc
   target/ppc/translate/vmx-impl.c.inc
+  hw/misc/mos6522.c
+  include/hw/misc/mos6522.h
+  hw/misc/macio/pmu.c
 )
 # Untracked files created by patches (git apply refuses to create them again)
 # or copied by earlier releases; removed before the patches are applied.
@@ -428,7 +432,25 @@ for patch in retroboot-ppc-mmu-contexts retroboot-ppc-fpu-fast \
 done
 
 # ---------------------------------------------------------------------------
-# 3e. Emulated ATI Radeon R100 (ati-vga,model=r100), applied last
+# 3e. VIA timer 2 for the Mac OS ROM's startup calibration (RetroBoot; see
+#     timers/README.md)
+# ---------------------------------------------------------------------------
+# The faster branches above make the ROM's first VIA timer-2 calibration loop
+# run out close to its 1 ms deadline; in real time (ATI and CD starts, no
+# icount) the interrupt can then land in first-time code being translated and
+# hang Mac OS before the gray screen. coherent-timers raises VIA timer
+# interrupts when the guest-visible counter passes zero and makes timer 2
+# one-shot; t2-hold lets a due timer-2 interrupt wait while the vCPU is
+# translating (single vCPU, no icount; at most 4 ms). Both default on
+# (-global mos6522-cuda.t2-hold=off, -global mos6522-cuda.coherent-timers=off
+# restore QEMU's behaviour).
+log "Installing VIA timer-2 calibration fixes (coherent timers, t2 hold)"
+for patch in retroboot-cuda-via-timers retroboot-pmu-via-timers retroboot-via-t2-hold; do
+  git -C "$QEMU_DIR" apply "$TIMERS_DIR/$patch.patch" || die "Failed to apply $patch.patch"
+done
+
+# ---------------------------------------------------------------------------
+# 3f. Emulated ATI Radeon R100 (ati-vga,model=r100), applied last
 # ---------------------------------------------------------------------------
 # RetroBoot's R100 model (PCI 1002:5144, Open Firmware ATY,Rage6p, driven by
 # Mac OS 9's own ATI drivers): register file, CRTC/PLLs, command processor,
@@ -603,6 +625,18 @@ done
 grep -q -- "-ffp-contract=off" "$BUILD_DIR/build.ninja" || \
   die "QEMU was not compiled with -ffp-contract=off"
 printf '    OK  PowerPC MMU contexts, FPU fast paths and branch cache (ppc)\n'
+for via in mos6522-cuda mos6522-pmu; do
+  VIA_HELP="$("$QEMU_PPC_BIN" -device "$via,help" 2>&1 || true)"
+  for property in coherent-timers t2-hold x-t2-hold-quiet-us x-t2-hold-max-us; do
+    printf '%s\n' "$VIA_HELP" | grep -Eq "^ *$property=" || \
+      die "$via property $property missing from the ppc build"
+  done
+  for property in coherent-timers t2-hold; do
+    printf '%s\n' "$VIA_HELP" | grep -Eq "^ *$property=.*default: on" || \
+      die "$via property $property is not on by default"
+  done
+done
+printf '    OK  VIA timer-2 coherent timers and calibration hold (ppc)\n'
 if "$QEMU_PPC_BIN" -device macio-ide,help 2>&1 | grep -q "dma-completion-delay-ns"; then
   printf '    OK  MacIO IDE DMA completion delay (ppc)\n'
 else
