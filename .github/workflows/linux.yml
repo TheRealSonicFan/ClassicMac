@@ -1,7 +1,7 @@
 name: Linux desktop
 on:
   push:
-    branches: [codex/windows-app]
+    branches: [codex/windows-app, codex/linux-release]
   workflow_dispatch:
 concurrency:
   group: linux-${{ github.ref }}
