@@ -1,0 +1,956 @@
+diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
+--- a/accel/tcg/cpu-exec.c
++++ b/accel/tcg/cpu-exec.c
+@@ -18,6 +18,7 @@
+  */
+ 
+ #include "qemu/osdep.h"
++#include "qemu/rb-stats.h"
+ #include "qemu/qemu-print.h"
+ #include "qapi/error.h"
+ #include "qapi/type-helpers.h"
+@@ -31,6 +32,7 @@
+ #include "exec/page-protection.h"
+ #include "exec/mmap-lock.h"
+ #include "exec/translation-block.h"
++#include "exec/tb-slot.h"
+ #include "tcg/tcg.h"
+ #include "qemu/atomic.h"
+ #include "qemu/rcu.h"
+@@ -242,11 +244,22 @@
+                tb->cs_base == s.cs_base &&
+                tb->flags == s.flags &&
+                tb_cflags(tb) == s.cflags)) {
++        RB_STAT("jc.hit");
+         goto hit;
+     }
++#ifdef RB_STATS
++    if (!tb) {
++        RB_STAT("jc.miss.empty");
++    } else if (jc->array[hash].pc == s.pc) {
++        RB_STAT("jc.miss.samepc.flags");
++    } else {
++        RB_STAT("jc.miss.conflict");
++    }
++#endif
+ 
+     tb = tb_htable_lookup(cpu, s);
+     if (tb == NULL) {
++        RB_STAT("ht.miss");
+         return NULL;
+     }
+ 
+@@ -384,6 +397,7 @@
+      * The next TB, if we chain to it, will clear the flag again.
+      */
+     cpu->neg.can_do_io = true;
++    RB_STAT("lookup.generic");
+ 
+     TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
+     s.cflags = curr_cflags(cpu);
+@@ -416,6 +430,7 @@
+     TranslationBlock *tb;
+ 
+     cpu->neg.can_do_io = true;
++    RB_STAT("lookup.fast");
+ 
+     if (unlikely(!QTAILQ_EMPTY(&cpu->breakpoints)) ||
+         unlikely(qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC))) {
+@@ -424,8 +439,90 @@
+ 
+     tb = tb_lookup(cpu, s);
+     return tb ? tb->tc.ptr : tcg_code_gen_epilogue;
++}
++
++/*
++ * RetroBoot TB slots (exec/tb-slot.h): the arena is allocated on first use
++ * and recycled by tb_flush; translation allocates, the vCPU fills.
++ */
++#define TB_SLOT_ARENA (1u << 20)
++
++uint32_t tcg_tb_gen = 1;
++TBSlot tcg_tb_slot_none = { .pc = UINT64_MAX, .gen = 0 };
++static TBSlot *tb_slot_arena;
++static unsigned tb_slot_next;
++
++TBSlot *tcg_tb_slot_new(uint64_t pc, uint32_t flags)
++{
++    unsigned i;
++    TBSlot *s;
++
++    if (unlikely(!tb_slot_arena)) {
++        tb_slot_arena = g_new0(TBSlot, TB_SLOT_ARENA);
++    }
++    i = qatomic_fetch_inc(&tb_slot_next);
++    if (i >= TB_SLOT_ARENA) {
++        return NULL;
++    }
++    s = &tb_slot_arena[i];
++    s->pc = pc;
++    s->flags = flags;
++    s->gen = 0;
++    s->code = NULL;
++    return s;
++}
++
++void tcg_tb_gen_bump(void)
++{
++    qatomic_inc(&tcg_tb_gen);
++}
++
++void tcg_tb_slot_reset(void)
++{
++    tcg_tb_gen_bump();
++    qatomic_set(&tb_slot_next, 0);
++}
++
++const void *HELPER(lookup_tb_slot)(CPUArchState *env, void *p)
++{
++    TBSlot *slot = p;
++    CPUState *cpu = env_cpu(env);
++    TCGTBCPUState s = {
++        .pc = slot->pc,
++        .flags = slot->flags,
++        .cflags = curr_cflags(cpu),
++    };
++    /* read before the lookup: an invalidation in between leaves it stale */
++    uint32_t gen = qatomic_read(&tcg_tb_gen);
++    TranslationBlock *tb;
++
++    cpu->neg.can_do_io = true;
++    RB_STAT("lookup.slot");
++
++    if (unlikely(!QTAILQ_EMPTY(&cpu->breakpoints)) ||
++        unlikely(qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC))) {
++        return tcg_code_gen_epilogue;
++    }
++
++    tb = tb_lookup(cpu, s);
++    if (tb == NULL) {
++        return tcg_code_gen_epilogue;
++    }
++    slot->code = tb->tc.ptr;
++    slot->gen = gen;
++    return tb->tc.ptr;
+ }
+ 
++/* the same for a slot that follows a computed branch: it now caches @pc */
++const void *HELPER(lookup_tb_slot_pc)(CPUArchState *env, void *p, uint64_t pc)
++{
++    TBSlot *slot = p;
++
++    slot->gen = 0;
++    slot->pc = pc;
++    return HELPER(lookup_tb_slot)(env, p);
++}
++
+ /* Return the current PC from CPU, which may be cached in TB. */
+ static vaddr log_pc(CPUState *cpu, const TranslationBlock *tb)
+ {
+@@ -987,6 +1084,7 @@
+                 break;
+             }
+ 
++            RB_STAT("exec.loop.lookup");
+             tb = tb_lookup(cpu, s);
+             if (tb == NULL) {
+                 CPUJumpCache *jc;
+diff --git a/accel/tcg/cputlb.c b/accel/tcg/cputlb.c
+--- a/accel/tcg/cputlb.c
++++ b/accel/tcg/cputlb.c
+@@ -18,6 +18,8 @@
+  */
+ 
+ #include "qemu/osdep.h"
++#include "qemu/rb-stats.h"
++#include "exec/tb-slot.h"
+ #include "qemu/main-loop.h"
+ #include "qemu/target-info.h"
+ #include "accel/tcg/cpu-ops.h"
+@@ -154,6 +156,8 @@
+     if (unlikely(!jc)) {
+         return;
+     }
++    RB_STAT("jc.clear.page");
++    tcg_tb_gen_bump();
+ 
+     i0 = tb_jmp_cache_hash_page(page_addr);
+     for (i = 0; i < TB_JMP_PAGE_SIZE; i++) {
+@@ -390,6 +394,7 @@
+ 
+     qemu_spin_unlock(&cpu->neg.tlb.c.lock);
+ 
++    RB_STAT("tlb.flush.mmuidx");
+     tcg_flush_jmp_cache(cpu);
+ 
+     if (to_clean == ALL_MMUIDX_BITS) {
+@@ -627,6 +632,7 @@
+ 
+     mask &= TARGET_PAGE_MASK;
+     addr &= mask;
++    RB_STAT("tlb.flush.class");
+     qemu_spin_lock(&cpu->neg.tlb.c.lock);
+     /* an index without entries since its last full flush has none to drop */
+     for (work = idxmap & cpu->neg.tlb.c.dirty; work; work &= work - 1) {
+@@ -647,6 +653,7 @@
+     qemu_spin_unlock(&cpu->neg.tlb.c.lock);
+ 
+     if (jc) {
++        tcg_tb_gen_bump();
+         for (i = 0; i < TB_JMP_CACHE_SIZE; i++) {
+             if ((qatomic_read(&jc->array[i].pc) & mask) == addr) {
+                 qatomic_set(&jc->array[i].tb, NULL);
+diff --git a/accel/tcg/tb-maint.c b/accel/tcg/tb-maint.c
+--- a/accel/tcg/tb-maint.c
++++ b/accel/tcg/tb-maint.c
+@@ -18,6 +18,8 @@
+  */
+ 
+ #include "qemu/osdep.h"
++#include "qemu/rb-stats.h"
++#include "exec/tb-slot.h"
+ #include "qemu/interval-tree.h"
+ #include "qemu/qtree.h"
+ #include "exec/cputlb.h"
+@@ -814,6 +816,7 @@
+     CPU_FOREACH(cpu) {
+         tcg_flush_jmp_cache(cpu);
+     }
++    tcg_tb_slot_reset();
+ 
+     qht_reset_size(&tb_ctx.htable, CODE_GEN_HTABLE_SIZE);
+     tb_remove_all();
+@@ -929,6 +932,11 @@
+ {
+     CPUState *cpu;
+ 
++#ifndef RB_TEST_STALE_SLOTS
++    /* (lab negative control: without it tests/ppcfpu's smc sees old code) */
++    tcg_tb_gen_bump();
++#endif
++
+     if (tb_cflags(tb) & CF_PCREL) {
+         /* A TB may be at any virtual address */
+         CPU_FOREACH(cpu) {
+@@ -959,6 +967,7 @@
+     uint32_t orig_cflags = tb_cflags(tb);
+ 
+     assert_memory_lock();
++    RB_STAT("tb.invalidate");
+ 
+     /* make sure no further incoming jumps will be chained to this TB */
+     qemu_spin_lock(&tb->jmp_lock);
+diff --git a/accel/tcg/tcg-runtime.c b/accel/tcg/tcg-runtime.c
+--- a/accel/tcg/tcg-runtime.c
++++ b/accel/tcg/tcg-runtime.c
+@@ -26,6 +26,7 @@
+ #include "exec/cpu-common.h"
+ #include "exec/helper-proto-common.h"
+ #include "accel/tcg/getpc.h"
++#include "qemu/rb-stats.h"
+ 
+ #define HELPER_H  "accel/tcg/tcg-runtime.h"
+ #include "exec/helper-info.c.inc"
+@@ -133,3 +134,63 @@
+ {
+     cpu_loop_exit_atomic(env_cpu(env), GETPC());
+ }
++
++#ifdef RB_STATS
++static RBStat *rb_stat_list;
++static QemuMutex rb_stat_lock;
++static bool rb_stat_init_done;
++
++static void rb_stat_dump(const char *tag)
++{
++    for (RBStat *s = rb_stat_list; s; s = s->next) {
++        fprintf(stderr, "rb-stats %s %s %" PRIu64 "\n", tag, s->name, s->n);
++    }
++}
++
++static void rb_stat_dump_exit(void)
++{
++    rb_stat_dump("exit");
++}
++
++static void *rb_stat_thread(void *arg)
++{
++    unsigned period = (uintptr_t)arg;
++
++    for (;;) {
++        char tag[32];
++
++        g_usleep(period * G_USEC_PER_SEC);
++        snprintf(tag, sizeof(tag), "%.1f", g_get_real_time() / 1e6);
++        rb_stat_dump(tag);
++    }
++    return NULL;
++}
++
++void rb_stat_register(RBStat *s)
++{
++    if (!rb_stat_init_done) {
++        const char *p = getenv("RB_STATS_PERIOD");
++
++        rb_stat_init_done = true;
++        qemu_mutex_init(&rb_stat_lock);
++        atexit(rb_stat_dump_exit);
++        if (p && atoi(p) > 0) {
++            QemuThread t;
++            qemu_thread_create(&t, "rb-stats", rb_stat_thread,
++                               (void *)(uintptr_t)atoi(p), QEMU_THREAD_DETACHED);
++        }
++    }
++    qemu_mutex_lock(&rb_stat_lock);
++    if (!s->listed) {
++        s->next = rb_stat_list;
++        rb_stat_list = s;
++        s->listed = true;
++    }
++    qemu_mutex_unlock(&rb_stat_lock);
++}
++
++void HELPER(rb_count)(void *p)
++{
++    rb_stat_add(p, 1);
++}
++#endif
+diff --git a/accel/tcg/tcg-runtime.h b/accel/tcg/tcg-runtime.h
+--- a/accel/tcg/tcg-runtime.h
++++ b/accel/tcg/tcg-runtime.h
+@@ -22,8 +22,14 @@
+ 
+ DEF_HELPER_FLAGS_1(lookup_tb_ptr, TCG_CALL_NO_WG_SE, cptr, env)
+ DEF_HELPER_FLAGS_3(lookup_tb_ptr_fast, TCG_CALL_NO_WG_SE, cptr, env, i64, i32)
++DEF_HELPER_FLAGS_2(lookup_tb_slot, TCG_CALL_NO_WG, cptr, env, ptr)
++DEF_HELPER_FLAGS_3(lookup_tb_slot_pc, TCG_CALL_NO_WG, cptr, env, ptr, i64)
+ 
+ DEF_HELPER_FLAGS_1(exit_atomic, TCG_CALL_NO_WG, noreturn, env)
++
++#ifdef RB_STATS
++DEF_HELPER_FLAGS_1(rb_count, TCG_CALL_NO_RWG, void, ptr)
++#endif
+ 
+ #ifndef IN_HELPER_PROTO
+ /*
+diff --git a/accel/tcg/translate-all.c b/accel/tcg/translate-all.c
+--- a/accel/tcg/translate-all.c
++++ b/accel/tcg/translate-all.c
+@@ -18,6 +18,8 @@
+  */
+ 
+ #include "qemu/osdep.h"
++#include "qemu/rb-stats.h"
++#include "exec/tb-slot.h"
+ 
+ #include "trace.h"
+ #include "disas/disas.h"
+@@ -270,6 +272,7 @@
+ 
+     assert_memory_lock();
+     qemu_thread_jit_write();
++    RB_STAT("tb.gen");
+ 
+     phys_pc = get_page_addr_code_hostp(env, s.pc, &host_pc);
+ 
+@@ -636,6 +639,8 @@
+     if (unlikely(jc == NULL)) {
+         return;
+     }
++    RB_STAT("jc.flush.all");
++    tcg_tb_gen_bump();
+ 
+     for (int i = 0; i < TB_JMP_CACHE_SIZE; i++) {
+         qatomic_set(&jc->array[i].tb, NULL);
+diff --git a/include/exec/tb-slot.h b/include/exec/tb-slot.h
+new file mode 100644
+--- /dev/null
++++ b/include/exec/tb-slot.h
+@@ -0,0 +1,44 @@
++/*
++ * RetroBoot: cached branch destinations for translated code (TB slots).
++ *
++ * A slot caches the host code of the TB for (pc, flags) exactly as a jump
++ * cache entry would, and is valid while tcg_tb_gen still equals the
++ * generation it was filled in.  The generation advances whenever an entry
++ * of any CPU's jump cache could become stale: a whole or partial jump cache
++ * flush (TLB flushes, tb_flush), a page or class of pages cleared from it,
++ * or a TB invalidated.  tb_flush also recycles the slot arena; a slot that
++ * is reused only ever matches a pc, flags and generation it was filled for.
++ *
++ * Translated code checks the generation (and, for a slot it did not
++ * allocate itself, pc and flags) and jumps to the cached code; otherwise it
++ * calls helper_lookup_tb_slot, which looks the TB up like
++ * helper_lookup_tb_ptr_fast and refills the slot.  The cached TB is the one
++ * found through the translating CPU's mappings, so translators use slots
++ * only while there is a single vCPU.
++ */
++#ifndef EXEC_TB_SLOT_H
++#define EXEC_TB_SLOT_H
++
++typedef struct TBSlot {
++    uint64_t pc;
++    uint32_t flags;
++    uint32_t gen;           /* 0: never valid */
++    const void *code;
++} TBSlot;
++
++/* starts at 1, never 0 in practice (2^32 invalidations) */
++extern uint32_t tcg_tb_gen;
++
++/* a slot that never matches (pc all-ones, generation 0) */
++extern TBSlot tcg_tb_slot_none;
++
++/* a fresh slot for (pc, flags), or NULL when the arena is used up */
++TBSlot *tcg_tb_slot_new(uint64_t pc, uint32_t flags);
++
++/* every cached destination may be stale */
++void tcg_tb_gen_bump(void);
++
++/* tb_flush: every slot is free again */
++void tcg_tb_slot_reset(void);
++
++#endif
+diff --git a/include/qemu/rb-stats.h b/include/qemu/rb-stats.h
+new file mode 100644
+--- /dev/null
++++ b/include/qemu/rb-stats.h
+@@ -0,0 +1,33 @@
++/*
++ * RetroBoot lab counters: configure --extra-cflags=-DRB_STATS.
++ * Each named counter is printed to stderr at exit and, with RB_STATS_PERIOD=N
++ * in the environment, every N seconds ("rb-stats T name count").
++ * Compiled out otherwise.
++ */
++#ifndef QEMU_RB_STATS_H
++#define QEMU_RB_STATS_H
++
++#ifdef RB_STATS
++typedef struct RBStat {
++    const char *name;
++    uint64_t n;
++    struct RBStat *next;
++    bool listed;
++} RBStat;
++
++void rb_stat_register(RBStat *s);
++
++static inline void rb_stat_add(RBStat *s, uint64_t k)
++{
++    if (unlikely(!s->listed)) {
++        rb_stat_register(s);
++    }
++    s->n += k;
++}
++#define RB_STAT(NAME) \
++    do { static RBStat rb_st_ = { .name = NAME }; rb_stat_add(&rb_st_, 1); } while (0)
++#else
++#define RB_STAT(NAME) do { } while (0)
++#endif
++
++#endif
+diff --git a/include/tcg/tcg-op-common.h b/include/tcg/tcg-op-common.h
+--- a/include/tcg/tcg-op-common.h
++++ b/include/tcg/tcg-op-common.h
+@@ -83,6 +83,10 @@
+  */
+ void tcg_gen_lookup_and_goto_ptr(void);
+ void tcg_gen_lookup_and_goto_ptr_fast(TCGv_i64 pc, TCGv_i32 flags);
++/* RetroBoot TB slots (exec/tb-slot.h) */
++void tcg_gen_goto_code_ptr(TCGv_ptr code);
++void tcg_gen_lookup_slot_and_goto_ptr(TCGv_ptr slot);
++void tcg_gen_lookup_slot_pc_and_goto_ptr(TCGv_ptr slot, TCGv_i64 pc);
+ 
+ void tcg_gen_plugin_cb(unsigned from);
+ void tcg_gen_plugin_mem_cb(TCGv_i64 addr, unsigned meminfo);
+diff --git a/target/ppc/cpu.h b/target/ppc/cpu.h
+--- a/target/ppc/cpu.h
++++ b/target/ppc/cpu.h
+@@ -1385,6 +1385,9 @@
+     bool fast_vmx;          /* fast-fpu AltiVec lanes (vmx_fast.c.inc) */
+     bool fast_vmx_simd;     /* fast-fpu AltiVec: 4 lanes at once */
+     bool fast_fpexc;        /* fast-fpu CALLS: HFLAGS_FPEXC is maintained */
++    /* fast-branch RAS: TB slots (exec/tb-slot.h) of pending return sites */
++    void *rb_ras[16];
++    uint32_t rb_ras_top;
+     target_ulong fpscr;     /* Floating point status and control register */
+ 
+     /* Internal devices resources */
+@@ -1557,6 +1560,9 @@
+     /* RetroBoot fast FPU paths (fpu_fast.c.inc, translate/fp-impl.c.inc) */
+     bool fast_fpu;
+     uint32_t fast_fpu_mask;
++    /* RetroBoot branch caches (exec/tb-slot.h, translate.c) */
++    bool fast_branch;
++    uint32_t fast_branch_mask;
+ 
+     /* Those resources are used only during code translation */
+     /* opcode handlers */
+@@ -3075,6 +3081,13 @@
+ #define PPC_FAST_FPU_VLDST  0x40  /* AltiVec element loads and stores inline */
+ #define PPC_FAST_FPU_ALL    0x7f
+ 
++/* fast-branch parts (x-fast-branch-mask) */
++#define PPC_FAST_BRANCH_XPAGE  0x1  /* cached destination of cross-page b/bc */
++#define PPC_FAST_BRANCH_RAS    0x2  /* return-address cache for blr */
++#define PPC_FAST_BRANCH_SITE   0x4  /* last destination of each blr/bctr */
++#define PPC_FAST_BRANCH_ALL    0x7
++#define PPC_RB_RAS_N           16   /* return-address cache entries */
++
+ static inline uint64_t *cpu_fpr_ptr(CPUPPCState *env, int i)
+ {
+     return (uint64_t *)((uintptr_t)env + fpr_offset(i));
+diff --git a/target/ppc/cpu_init.c b/target/ppc/cpu_init.c
+--- a/target/ppc/cpu_init.c
++++ b/target/ppc/cpu_init.c
+@@ -41,6 +41,7 @@
+ #include "disas/capstone.h"
+ #include "fpu/softfloat.h"
+ #include "exec/watchpoint.h"
++#include "exec/tb-slot.h"
+ #include "helper_regs.h"
+ #include "internal.h"
+ #include "spr_common.h"
+@@ -62,6 +63,10 @@
+     DEFINE_PROP_BOOL("fast-fpu", PowerPCCPU, fast_fpu, true),
+     DEFINE_PROP_UINT32("x-fast-fpu-mask", PowerPCCPU, fast_fpu_mask,
+                        PPC_FAST_FPU_ALL),
++    /* Cached branch destinations (cross-page branches, returns) */
++    DEFINE_PROP_BOOL("fast-branch", PowerPCCPU, fast_branch, true),
++    DEFINE_PROP_UINT32("x-fast-branch-mask", PowerPCCPU, fast_branch_mask,
++                       PPC_FAST_BRANCH_ALL),
+ };
+ 
+ static inline void vscr_init(CPUPPCState *env, uint32_t val)
+@@ -7257,6 +7262,12 @@
+     env->fast_vmx_simd = env->fast_vmx &&
+                          (cpu->fast_fpu_mask & PPC_FAST_FPU_SIMD);
+     env->fast_fpexc = cpu->fast_fpu && (cpu->fast_fpu_mask & PPC_FAST_FPU_CALLS);
++#ifdef CONFIG_TCG
++    for (i = 0; i < PPC_RB_RAS_N; i++) {
++        env->rb_ras[i] = &tcg_tb_slot_none;
++    }
++    env->rb_ras_top = 0;
++#endif
+ 
+     msr = (target_ulong)0;
+     if (!(env->flags & POWERPC_FLAG_PPE42)) {
+diff --git a/target/ppc/mmu_helper.c b/target/ppc/mmu_helper.c
+--- a/target/ppc/mmu_helper.c
++++ b/target/ppc/mmu_helper.c
+@@ -18,6 +18,7 @@
+  */
+ 
+ #include "qemu/osdep.h"
++#include "qemu/rb-stats.h"
+ #include "qemu/units.h"
+ #include "cpu.h"
+ #include "system/kvm.h"
+@@ -185,6 +186,7 @@
+ 
+     env->tlb_need_flush &= ~TLB_NEED_CTX_SWITCH;
+     ppc_tlb_ctx_key(env, key);
++    RB_STAT("ctx.switch.call");
+     if (env->tlb_ctx_valid[cur] && !memcmp(key, env->tlb_ctx_key[cur], sizeof(key))) {
+         return;
+     }
+@@ -206,12 +208,14 @@
+             }
+         }
+         /* also clears the jump cache: TBs of this context may be stale */
++        RB_STAT("ctx.recycle");
+         tlb_flush_by_mmuidx(env_cpu(env), ppc_tlb_ctx_idxmap(use));
+         memcpy(env->tlb_ctx_key[use], key, sizeof(key));
+         env->tlb_ctx_valid[use] = true;
+     }
+     env->tlb_ctx_used[use] = ++env->tlb_ctx_tick;
+     if (use != cur) {
++        RB_STAT("ctx.change");
+         env->tlb_ctx = use;
+         hreg_compute_hflags(env);
+     }
+@@ -222,6 +226,7 @@
+ {
+     unsigned cur = env->tlb_ctx;
+ 
++    RB_STAT("ctx.restart");
+     tlb_flush_by_mmuidx(env_cpu(env), ppc_tlb_ctx_idxmap(cur));
+     ppc_tlb_ctx_key(env, env->tlb_ctx_key[cur]);
+     env->tlb_ctx_valid[cur] = true;
+@@ -370,6 +375,7 @@
+ /* TLB management */
+ void ppc_tlb_invalidate_all(CPUPPCState *env)
+ {
++    RB_STAT("ppc.tlbia");
+ #if defined(TARGET_PPC64)
+     if (mmu_is_64bit(env->mmu_model)) {
+         env->tlb_need_flush = 0;
+@@ -409,6 +415,7 @@
+ 
+ void ppc_tlb_invalidate_one(CPUPPCState *env, target_ulong addr)
+ {
++    RB_STAT("ppc.tlbie");
+ #if !defined(FLUSH_ALL_TLBS)
+     addr &= TARGET_PAGE_MASK;
+ #if defined(TARGET_PPC64)
+@@ -494,7 +501,9 @@
+         ppc_store_slb(cpu, srnum, esid, vsid);
+     } else
+ #endif
++    RB_STAT("ppc.mtsr");
+     if (env->sr[srnum] != value) {
++        RB_STAT("ppc.mtsr.changed");
+         env->sr[srnum] = value;
+         /*
+          * Invalidating 256MB of virtual memory in 4kB pages is way
+diff --git a/target/ppc/translate.c b/target/ppc/translate.c
+--- a/target/ppc/translate.c
++++ b/target/ppc/translate.c
+@@ -31,6 +31,7 @@
+ 
+ #include "exec/translator.h"
+ #include "exec/translation-block.h"
++#include "exec/tb-slot.h"
+ #include "exec/log.h"
+ #include "qemu/atomic128.h"
+ #include "spr_common.h"
+@@ -41,6 +42,17 @@
+ 
+ #define HELPER_H "helper.h"
+ #include "exec/helper-info.c.inc"
++
++#include "qemu/rb-stats.h"
++#ifdef RB_STATS
++#include "exec/helper-gen-common.h"
++/* lab build: count executions of a translated path (rb-stats at exit) */
++#define GEN_RB_COUNT(NAME) \
++    do { static RBStat st_ = { .name = NAME }; \
++         gen_helper_rb_count(tcg_constant_ptr(&st_)); } while (0)
++#else
++#define GEN_RB_COUNT(NAME) do { } while (0)
++#endif
+ #undef  HELPER_H
+ 
+ #define CPU_SINGLE_STEP 0x1
+@@ -187,6 +199,7 @@
+     bool fpu_enabled;
+     uint32_t fast_fpu;      /* PPC_FAST_FPU_* parts enabled */
+     bool ff_norwg;          /* FP helpers cannot trap: call them NO_RWG */
++    uint32_t fast_branch;   /* PPC_FAST_BRANCH_* parts usable in this TB */
+     bool altivec_enabled;
+     bool vsx_enabled;
+     bool spe_enabled;
+@@ -3708,6 +3721,8 @@
+     tcg_gen_lookup_and_goto_ptr_fast(
+         next_pc, tcg_constant_i32(ctx->base.tb->flags));
+ }
++
++static bool gen_site_slot_goto(DisasContext *ctx);
+ 
+ static void gen_guarded_indirect_goto(DisasContext *ctx, TCGv target)
+ {
+@@ -3722,6 +3737,7 @@
+         return;
+     }
+ 
++    GEN_RB_COUNT("x.indirect");
+     ctx->base.tb->indirect_jmp_mask |= 1u;
+     tcg_gen_ld_tl(cached,
+                   tcg_constant_ptr(&ctx->base.tb->indirect_pc[0]), 0);
+@@ -3736,9 +3752,153 @@
+     tcg_gen_exit_tb(ctx->base.tb, 0);
+ 
+     gen_set_label(miss);
+-    gen_fast_lookup_and_goto_ptr(ctx);
++    GEN_RB_COUNT("x.indirect.miss");
++    if (!gen_site_slot_goto(ctx)) {
++        gen_fast_lookup_and_goto_ptr(ctx);
++    }
++}
++
++/*
++ * RetroBoot fast-branch (exec/tb-slot.h).  XPAGE: a direct branch to
++ * another page cannot be chained with goto_tb (the page's mapping may
++ * change), so it went through helper_lookup_tb_ptr every time; instead it
++ * gets a slot of its own and jumps to the slot's code while the slot is
++ * valid.  RAS: bl and bctrl push a slot for their return address and blr
++ * pops one and jumps to its code when it is valid for LR and this TB's
++ * flags; a slot whose pc and flags match but which is stale is refilled,
++ * anything else continues with the guarded indirect branch below.
++ */
++static TCGv_i32 gen_slot_gen_ok(TCGv_ptr slot, TCGLabel *stale)
++{
++    TCGv_i32 g = tcg_temp_new_i32();
++    TCGv_i32 cur = tcg_temp_new_i32();
++
++    tcg_gen_ld_i32(g, slot, offsetof(TBSlot, gen));
++    tcg_gen_ld_i32(cur, tcg_constant_ptr(&tcg_tb_gen), 0);
++    tcg_gen_brcond_i32(TCG_COND_NE, g, cur, stale);
++    return g;
++}
++
++static bool gen_goto_slot(DisasContext *ctx, target_ulong dest)
++{
++    TBSlot *s;
++    TCGv_ptr sp, code;
++    TCGLabel *stale;
++
++    if (!(ctx->fast_branch & PPC_FAST_BRANCH_XPAGE) || NARROW_MODE(ctx) ||
++        !(s = tcg_tb_slot_new(dest, ctx->base.tb->flags))) {
++        return false;
++    }
++    sp = tcg_constant_ptr(s);
++    code = tcg_temp_new_ptr();
++    stale = gen_new_label();
++    gen_slot_gen_ok(sp, stale);
++    tcg_gen_ld_ptr(code, sp, offsetof(TBSlot, code));
++    tcg_gen_goto_code_ptr(code);
++    gen_set_label(stale);
++    tcg_gen_movi_tl(cpu_nip, dest);
++    tcg_gen_lookup_slot_and_goto_ptr(sp);
++    return true;
++}
++
++/* bl, bctrl: remember the slot of the return address */
++static void gen_ras_push(DisasContext *ctx, target_ulong ret)
++{
++    TBSlot *s;
++    TCGv_i32 top;
++    TCGv_ptr p;
++
++    if (!(ctx->fast_branch & PPC_FAST_BRANCH_RAS) || NARROW_MODE(ctx) ||
++        !(s = tcg_tb_slot_new(ret, ctx->base.tb->flags))) {
++        return;
++    }
++    top = tcg_temp_new_i32();
++    p = tcg_temp_new_ptr();
++    tcg_gen_ld_i32(top, tcg_env, offsetof(CPUPPCState, rb_ras_top));
++    tcg_gen_addi_i32(top, top, 1);
++    tcg_gen_andi_i32(top, top, PPC_RB_RAS_N - 1);
++    tcg_gen_st_i32(top, tcg_env, offsetof(CPUPPCState, rb_ras_top));
++    tcg_gen_muli_i32(top, top, sizeof(void *));
++    tcg_gen_ext_i32_ptr(p, top);
++    tcg_gen_add_ptr(p, p, tcg_env);
++    tcg_gen_st_ptr(tcg_constant_ptr(s), p, offsetof(CPUPPCState, rb_ras));
++}
++
++/* blr (cpu_nip already holds LR & ~3): pop a slot, jump if it predicts */
++static void gen_ras_pop_goto(DisasContext *ctx)
++{
++    TCGv_i32 top, t, sflags;
++    TCGv_i64 spc, nip64;
++    TCGv_ptr p, s, code;
++    TCGLabel *miss, *stale;
++
++    if (!(ctx->fast_branch & PPC_FAST_BRANCH_RAS) || NARROW_MODE(ctx)) {
++        return;
++    }
++    miss = gen_new_label();
++    stale = gen_new_label();
++    top = tcg_temp_new_i32();
++    t = tcg_temp_new_i32();
++    p = tcg_temp_new_ptr();
++    s = tcg_temp_new_ptr();
++    tcg_gen_ld_i32(top, tcg_env, offsetof(CPUPPCState, rb_ras_top));
++    tcg_gen_subi_i32(t, top, 1);
++    tcg_gen_andi_i32(t, t, PPC_RB_RAS_N - 1);
++    tcg_gen_st_i32(t, tcg_env, offsetof(CPUPPCState, rb_ras_top));
++    tcg_gen_muli_i32(top, top, sizeof(void *));
++    tcg_gen_ext_i32_ptr(p, top);
++    tcg_gen_add_ptr(p, p, tcg_env);
++    tcg_gen_ld_ptr(s, p, offsetof(CPUPPCState, rb_ras));
++    spc = tcg_temp_new_i64();
++    nip64 = tcg_temp_new_i64();
++    tcg_gen_ld_i64(spc, s, offsetof(TBSlot, pc));
++    tcg_gen_extu_tl_i64(nip64, cpu_nip);
++    tcg_gen_brcond_i64(TCG_COND_NE, spc, nip64, miss);
++    sflags = tcg_temp_new_i32();
++    tcg_gen_ld_i32(sflags, s, offsetof(TBSlot, flags));
++    tcg_gen_brcondi_i32(TCG_COND_NE, sflags, ctx->base.tb->flags, miss);
++    gen_slot_gen_ok(s, stale);
++    code = tcg_temp_new_ptr();
++    tcg_gen_ld_ptr(code, s, offsetof(TBSlot, code));
++    tcg_gen_goto_code_ptr(code);
++    gen_set_label(stale);
++    tcg_gen_lookup_slot_and_goto_ptr(s);
++    gen_set_label(miss);
+ }
+ 
++/*
++ * SITE: a blr or bctr whose destination is neither predicted by the RAS nor
++ * chained on its own page keeps a slot with its last destination
++ * (cpu_nip holds the destination).
++ */
++static bool gen_site_slot_goto(DisasContext *ctx)
++{
++    TBSlot *s;
++    TCGv_ptr sp, code;
++    TCGv_i64 spc, nip64;
++    TCGLabel *fill;
++
++    if (!(ctx->fast_branch & PPC_FAST_BRANCH_SITE) || NARROW_MODE(ctx) ||
++        !(s = tcg_tb_slot_new(UINT64_MAX, ctx->base.tb->flags))) {
++        return false;
++    }
++    sp = tcg_constant_ptr(s);
++    fill = gen_new_label();
++    spc = tcg_temp_new_i64();
++    nip64 = tcg_temp_new_i64();
++    tcg_gen_ld_i64(spc, sp, offsetof(TBSlot, pc));
++    tcg_gen_extu_tl_i64(nip64, cpu_nip);
++    tcg_gen_brcond_i64(TCG_COND_NE, spc, nip64, fill);
++    gen_slot_gen_ok(sp, fill);
++    code = tcg_temp_new_ptr();
++    tcg_gen_ld_ptr(code, sp, offsetof(TBSlot, code));
++    tcg_gen_goto_code_ptr(code);
++    gen_set_label(fill);
++    tcg_gen_extu_tl_i64(nip64, cpu_nip);
++    tcg_gen_lookup_slot_pc_and_goto_ptr(sp, nip64);
++    return true;
++}
++
+ /***                                Branch                                 ***/
+ static void gen_goto_tb(DisasContext *ctx, unsigned tb_slot_idx,
+                         target_ulong dest)
+@@ -3748,12 +3908,16 @@
+     }
+     if (use_goto_tb(ctx, dest)) {
+         pmu_count_insns(ctx);
++        GEN_RB_COUNT("x.direct.samepage");
+         tcg_gen_goto_tb(tb_slot_idx);
+         tcg_gen_movi_tl(cpu_nip, dest & ~3);
+         tcg_gen_exit_tb(ctx->base.tb, tb_slot_idx);
+     } else {
+-        tcg_gen_movi_tl(cpu_nip, dest & ~3);
+-        gen_lookup_and_goto_ptr(ctx);
++        GEN_RB_COUNT("x.direct.xpage");
++        if (!gen_goto_slot(ctx, dest & ~3)) {
++            tcg_gen_movi_tl(cpu_nip, dest & ~3);
++            gen_lookup_and_goto_ptr(ctx);
++        }
+     }
+ }
+ 
+@@ -3779,7 +3943,9 @@
+         target = li;
+     }
+     if (LK(ctx->opcode)) {
++        GEN_RB_COUNT("x.call.bl");
+         gen_setlr(ctx, ctx->base.pc_next);
++        gen_ras_push(ctx, ctx->base.pc_next);
+         gen_update_branch_history(ctx, ctx->cia, NULL, BHRB_TYPE_CALL);
+     } else {
+         gen_update_branch_history(ctx, ctx->cia, NULL, BHRB_TYPE_OTHER);
+@@ -3818,6 +3984,9 @@
+     }
+     if (LK(ctx->opcode)) {
+         gen_setlr(ctx, ctx->base.pc_next);
++        if ((type == BCOND_CTR || type == BCOND_LR) && (bo & 0x14) == 0x14) {
++            gen_ras_push(ctx, ctx->base.pc_next);       /* bctrl, blrl */
++        }
+         bhrb_type |= BHRB_TYPE_CALL;
+     }
+     l1 = gen_new_label();
+@@ -3901,6 +4070,12 @@
+             tcg_gen_andi_tl(cpu_nip, target, (uint32_t)~3);
+         } else {
+             tcg_gen_andi_tl(cpu_nip, target, ~3);
++        }
++        if (type == BCOND_LR && !LK(ctx->opcode)) {
++            GEN_RB_COUNT("x.indirect.blr");
++            gen_ras_pop_goto(ctx);
++        } else if (type == BCOND_CTR) {
++            GEN_RB_COUNT("x.indirect.bctr");
+         }
+         gen_guarded_indirect_goto(ctx, target);
+     }
+@@ -6621,6 +6796,19 @@
+                     POWERPC_CPU(cs)->fast_fpu_mask : 0;
+     ctx->ff_norwg = (ctx->fast_fpu & PPC_FAST_FPU_CALLS) &&
+                     !((hflags >> HFLAGS_FPEXC) & 1);
++    /*
++     * Branch caches: one vCPU (a slot holds the TB found through its
++     * mappings), and only in TBs with ordinary cflags, whose exits may
++     * chain and goto_ptr.
++     */
++    ctx->fast_branch = POWERPC_CPU(cs)->fast_branch ?
++                       POWERPC_CPU(cs)->fast_branch_mask : 0;
++    if (CPU_NEXT(first_cpu) || cs->singlestep_enabled ||
++        (ctx->base.tb->cflags & (CF_COUNT_MASK | CF_NO_GOTO_TB |
++                                 CF_NO_GOTO_PTR | CF_SINGLE_STEP |
++                                 CF_USE_ICOUNT | CF_NOIRQ | CF_BP_PAGE))) {
++        ctx->fast_branch = 0;
++    }
+     ctx->spe_enabled = (hflags >> HFLAGS_SPE) & 1;
+     ctx->altivec_enabled = (hflags >> HFLAGS_VR) & 1;
+     ctx->vsx_enabled = (hflags >> HFLAGS_VSX) & 1;
+@@ -6747,6 +6935,7 @@
+     case DISAS_TOO_MANY:
+         if (use_goto_tb(ctx, nip)) {
+             pmu_count_insns(ctx);
++            GEN_RB_COUNT("x.stop.chain");
+             tcg_gen_goto_tb(0);
+             gen_update_nip(ctx, nip);
+             tcg_gen_exit_tb(ctx->base.tb, 0);
+@@ -6764,6 +6953,7 @@
+         if (ctx->base.tb->flags & CF_NO_GOTO_PTR) {
+             pmu_count_insns(ctx);
+         }
++        GEN_RB_COUNT("x.stop.lookup");
+ 
+         tcg_gen_lookup_and_goto_ptr();
+         break;
+diff --git a/tcg/tcg-op.c b/tcg/tcg-op.c
+--- a/tcg/tcg-op.c
++++ b/tcg/tcg-op.c
+@@ -2565,10 +2565,50 @@
+     plugin_gen_disable_mem_helpers();
+     ptr = tcg_temp_ebb_new_ptr();
+     gen_helper_lookup_tb_ptr(ptr, tcg_env);
++    tcg_gen_op1i(INDEX_op_goto_ptr, TCG_TYPE_PTR, tcgv_ptr_arg(ptr));
++    tcg_temp_free_ptr(ptr);
++}
++
++/* jump to the host code of a TB taken from a valid TB slot */
++void tcg_gen_goto_code_ptr(TCGv_ptr code)
++{
++    tcg_debug_assert(!(tcg_ctx->gen_tb->cflags & CF_NO_GOTO_PTR));
++    plugin_gen_disable_mem_helpers();
++    tcg_gen_op1i(INDEX_op_goto_ptr, TCG_TYPE_PTR, tcgv_ptr_arg(code));
++}
++
++/* look up (and cache) the TB of a slot, jump to it or exit */
++void tcg_gen_lookup_slot_and_goto_ptr(TCGv_ptr slot)
++{
++    TCGv_ptr ptr;
++
++    if (tcg_ctx->gen_tb->cflags & CF_NO_GOTO_PTR) {
++        tcg_gen_exit_tb(NULL, 0);
++        return;
++    }
++    plugin_gen_disable_mem_helpers();
++    ptr = tcg_temp_ebb_new_ptr();
++    gen_helper_lookup_tb_slot(ptr, tcg_env, slot);
+     tcg_gen_op1i(INDEX_op_goto_ptr, TCG_TYPE_PTR, tcgv_ptr_arg(ptr));
+     tcg_temp_free_ptr(ptr);
+ }
+ 
++/* the same, after setting the slot's pc (computed branches) */
++void tcg_gen_lookup_slot_pc_and_goto_ptr(TCGv_ptr slot, TCGv_i64 pc)
++{
++    TCGv_ptr ptr;
++
++    if (tcg_ctx->gen_tb->cflags & CF_NO_GOTO_PTR) {
++        tcg_gen_exit_tb(NULL, 0);
++        return;
++    }
++    plugin_gen_disable_mem_helpers();
++    ptr = tcg_temp_ebb_new_ptr();
++    gen_helper_lookup_tb_slot_pc(ptr, tcg_env, slot, pc);
++    tcg_gen_op1i(INDEX_op_goto_ptr, TCG_TYPE_PTR, tcgv_ptr_arg(ptr));
++    tcg_temp_free_ptr(ptr);
++}
++
+ void tcg_gen_lookup_and_goto_ptr_fast(TCGv_i64 pc, TCGv_i32 flags)
+ {
+     TCGv_ptr ptr;

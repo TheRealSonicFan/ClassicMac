@@ -1,0 +1,494 @@
+diff --git a/accel/tcg/cputlb.c b/accel/tcg/cputlb.c
+--- a/accel/tcg/cputlb.c
++++ b/accel/tcg/cputlb.c
+@@ -614,6 +614,47 @@ void tlb_flush_page_by_mmuidx(CPUState *cpu, vaddr addr, MMUIdxMap idxmap)
+     tlb_flush_page_by_mmuidx_async_0(cpu, addr, idxmap);
+ }
+ 
++void tlb_flush_page_class_by_mmuidx(CPUState *cpu, vaddr addr, vaddr mask,
++                                    MMUIdxMap idxmap)
++{
++    CPUJumpCache *jc = cpu->tb_jmp_cache;
++    MMUIdxMap work;
++    size_t i;
++
++    assert_cpu_is_self(cpu);
++    tlb_debug("class %016" VADDR_PRIx "/%016" VADDR_PRIx " mmu_idx:%" PRIx16 "\n",
++              addr, mask, idxmap);
++
++    mask &= TARGET_PAGE_MASK;
++    addr &= mask;
++    qemu_spin_lock(&cpu->neg.tlb.c.lock);
++    /* an index without entries since its last full flush has none to drop */
++    for (work = idxmap & cpu->neg.tlb.c.dirty; work; work &= work - 1) {
++        int midx = ctz32(work);
++        CPUTLBDescFast *f = cpu_tlb_fast(cpu, midx);
++        size_t n = tlb_n_entries(f);
++
++        for (i = 0; i < n; i++) {
++            /* TLB_INVALID_MASK in the mask: empty entries never match */
++            if (tlb_flush_entry_mask_locked(&f->table[i], addr,
++                                            mask | TLB_INVALID_MASK)) {
++                tlb_n_used_entries_dec(cpu, midx);
++            }
++        }
++        tlb_flush_vtlb_page_mask_locked(cpu, midx, addr,
++                                        mask | TLB_INVALID_MASK);
++    }
++    qemu_spin_unlock(&cpu->neg.tlb.c.lock);
++
++    if (jc) {
++        for (i = 0; i < TB_JMP_CACHE_SIZE; i++) {
++            if ((qatomic_read(&jc->array[i].pc) & mask) == addr) {
++                qatomic_set(&jc->array[i].tb, NULL);
++            }
++        }
++    }
++}
++
+ void tlb_flush_page(CPUState *cpu, vaddr addr)
+ {
+     tlb_flush_page_by_mmuidx(cpu, addr, ALL_MMUIDX_BITS);
+diff --git a/include/exec/cputlb.h b/include/exec/cputlb.h
+--- a/include/exec/cputlb.h
++++ b/include/exec/cputlb.h
+@@ -153,6 +153,21 @@ void tlb_flush_all_cpus_synced(CPUState *src_cpu);
+ void tlb_flush_page_by_mmuidx(CPUState *cpu, vaddr addr,
+                               MMUIdxMap idxmap);
+ 
++/**
++ * tlb_flush_page_class_by_mmuidx:
++ * @cpu: CPU whose TLB should be flushed (the current one)
++ * @addr: virtual address selecting the class
++ * @mask: the page-address bits that form a class
++ * @idxmap: bitmap of MMU indexes to flush
++ *
++ * Flush every TLB entry of the given MMU indexes whose page address equals
++ * @addr in the bits of @mask, and the jump-cache entries of such pages:
++ * the congruence-class invalidation a set-associative hardware TLB does
++ * for an invalidate-by-address instruction.
++ */
++void tlb_flush_page_class_by_mmuidx(CPUState *cpu, vaddr addr, vaddr mask,
++                                    MMUIdxMap idxmap);
++
+ /**
+  * tlb_flush_page_by_mmuidx_all_cpus_synced:
+  * @cpu: Originating CPU of the flush
+@@ -247,6 +262,10 @@ static inline void tlb_flush_page_by_mmuidx(CPUState *cpu,
+                                             vaddr addr, MMUIdxMap idxmap)
+ {
+ }
++static inline void tlb_flush_page_class_by_mmuidx(CPUState *cpu, vaddr addr,
++                                                  vaddr mask, MMUIdxMap idxmap)
++{
++}
+ 
+ static inline void tlb_flush_by_mmuidx(CPUState *cpu, MMUIdxMap idxmap)
+ {
+diff --git a/target/ppc/cpu.h b/target/ppc/cpu.h
+--- a/target/ppc/cpu.h
++++ b/target/ppc/cpu.h
+@@ -872,6 +872,7 @@ enum {
+     HFLAGS_PMC_OTHER = 18, /* PMC other than PMC5-6 is enabled */
+     HFLAGS_INSN_CNT = 19, /* PMU instruction count enabled */
+     HFLAGS_BHRB_ENABLE = 20, /* Summary flag for enabling BHRB */
++    HFLAGS_MMU_CTX = 21, /* 21..22 -- 32-bit hash MMU context, high bits */
+     HFLAGS_VSX = 23, /* MSR_VSX if cpu has VSX */
+     HFLAGS_VR = 25,  /* MSR_VR if cpu has VRE */
+ 
+@@ -1342,6 +1343,24 @@ struct CPUArchState {
+     uint32_t tlb_need_flush; /* Delayed flush needed */
+ #define TLB_NEED_LOCAL_FLUSH   0x1
+ #define TLB_NEED_GLOBAL_FLUSH  0x2
++#define TLB_NEED_CTX_SWITCH    0x4 /* 32-bit hash MMU: SR/BAT state changed */
++    /*
++     * 32-bit hash MMU translation contexts (CPU property mmu-contexts).
++     * Translated accesses of context c use MMU indexes 4 * c + {0, 1}; the
++     * real-mode indexes 2 and 3 are shared.  Context c only ever holds
++     * translations made while the segment registers, BATs and SDR1 equal
++     * tlb_ctx_key[c], so switching back to a known address space (Mac OS
++     * does so on every interrupt) needs no TLB or jump-cache flush.
++     */
++#define PPC_TLB_CTX_N          5
++#define PPC_TLB_CTX_IDXMAP_ALL 0x33333   /* 4 * c + {0, 1}, c < 5 */
++#define PPC_TLB_CTX_KEY        (16 + 2 * 2 * 8 + 1)
++    bool tlb_ctx_on;
++    uint32_t tlb_ctx;
++    bool tlb_ctx_valid[PPC_TLB_CTX_N];
++    uint64_t tlb_ctx_used[PPC_TLB_CTX_N];
++    uint64_t tlb_ctx_tick;
++    target_ulong tlb_ctx_key[PPC_TLB_CTX_N][PPC_TLB_CTX_KEY];
+ #endif
+ 
+     /* Other registers */
+@@ -1530,6 +1549,7 @@ struct ArchCPU {
+     int32_t node_id; /* NUMA node this CPU belongs to */
+     PPCHash64Options *hash64_opts;
+     bool rtas_stopped_state;
++    bool mmu_contexts;
+ 
+     /* Those resources are used only during code translation */
+     /* opcode handlers */
+@@ -1661,6 +1681,9 @@ void ppc_translate_code(CPUState *cs, TranslationBlock *tb,
+ 
+ #if !defined(CONFIG_USER_ONLY)
+ void ppc_store_sdr1(CPUPPCState *env, target_ulong value);
++void ppc_tlb_ctx_reset(CPUPPCState *env);
++void ppc_tlb_ctx_switch(CPUPPCState *env);
++void ppc_tlb_ctx_restart(CPUPPCState *env);
+ void ppc_store_lpcr(PowerPCCPU *cpu, target_ulong val);
+ void ppc_update_ciabr(CPUPPCState *env);
+ void ppc_store_ciabr(CPUPPCState *env, target_ulong value);
+@@ -1735,12 +1758,23 @@ int ppc_dcr_write(ppc_dcr_t *dcr_env, int dcrn, uint32_t val);
+ 
+ /* MMU modes definitions */
+ #define MMU_USER_IDX 0
++static inline int ppc_hflags_mmu_index(uint32_t hflags, bool ifetch)
++{
++    int idx = (hflags >> (ifetch ? HFLAGS_IMMU_IDX : HFLAGS_DMMU_IDX)) & 7;
++
++    /* translated accesses of 32-bit hash MMU context c: 4 * c + {0, 1} */
++    if (!(idx & 2)) {
++        idx |= ((hflags >> HFLAGS_MMU_CTX) & 3) << 3;
++    }
++    return idx;
++}
++
+ static inline int ppc_env_mmu_index(CPUPPCState *env, bool ifetch)
+ {
+ #ifdef CONFIG_USER_ONLY
+     return MMU_USER_IDX;
+ #else
+-    return (env->hflags >> (ifetch ? HFLAGS_IMMU_IDX : HFLAGS_DMMU_IDX)) & 7;
++    return ppc_hflags_mmu_index(env->hflags, ifetch);
+ #endif
+ }
+ 
+diff --git a/target/ppc/cpu_init.c b/target/ppc/cpu_init.c
+--- a/target/ppc/cpu_init.c
++++ b/target/ppc/cpu_init.c
+@@ -56,6 +56,8 @@
+ static const Property powerpc_cpu_properties[] = {
+     DEFINE_PROP_BOOL("rtas-stopped-state", PowerPCCPU,
+                       rtas_stopped_state, true),
++    /* 32-bit hash MMU: keep translations of recently used address spaces */
++    DEFINE_PROP_BOOL("mmu-contexts", PowerPCCPU, mmu_contexts, true),
+ };
+ 
+ static inline void vscr_init(CPUPPCState *env, uint32_t val)
+@@ -7299,6 +7301,7 @@ static void ppc_cpu_reset_hold(Object *obj, ResetType type)
+ 
+     /* clean any pending stop state */
+     env->resume_as_sreset = 0;
++    ppc_tlb_ctx_reset(env);
+ #endif
+     hreg_compute_hflags(env);
+     env->reserve_addr = (target_ulong)-1ULL;
+diff --git a/target/ppc/helper_regs.c b/target/ppc/helper_regs.c
+--- a/target/ppc/helper_regs.c
++++ b/target/ppc/helper_regs.c
+@@ -235,6 +235,14 @@ static uint32_t hreg_compute_hflags_value(CPUPPCState *env)
+         immu_idx = dmmu_idx;
+         immu_idx |= msr & (1 << MSR_IR) ? 0 : 2;
+         dmmu_idx |= msr & (1 << MSR_DR) ? 0 : 2;
++#if !defined(CONFIG_USER_ONLY)
++        if (env->tlb_ctx_on && (msr & ((1 << MSR_IR) | (1 << MSR_DR)))) {
++            /* translated side(s) use the current context's indexes */
++            immu_idx |= msr & (1 << MSR_IR) ? (env->tlb_ctx & 1) << 2 : 0;
++            dmmu_idx |= msr & (1 << MSR_DR) ? (env->tlb_ctx & 1) << 2 : 0;
++            hflags |= (env->tlb_ctx >> 1) << HFLAGS_MMU_CTX;
++        }
++#endif
+     }
+     hflags |= immu_idx << HFLAGS_IMMU_IDX;
+     hflags |= dmmu_idx << HFLAGS_DMMU_IDX;
+@@ -348,6 +356,11 @@ int hreg_store_msr(CPUPPCState *env, target_ulong value, int alter_hv)
+     env->msr = value;
+     hreg_compute_hflags(env);
+ #if !defined(CONFIG_USER_ONLY)
++    if ((env->tlb_need_flush & TLB_NEED_CTX_SWITCH) &&
++        (value & ((1 << MSR_IR) | (1 << MSR_DR)))) {
++        /* translation (re)enabled: a BAT change made in real mode applies */
++        ppc_tlb_ctx_switch(env);
++    }
+     ppc_maybe_interrupt(env);
+ 
+     if (unlikely(FIELD_EX64(env->msr, MSR, POW))) {
+@@ -379,9 +392,13 @@ void check_tlb_flush(CPUPPCState *env, bool global)
+     /* Handle global flushes first */
+     if (global && (env->tlb_need_flush & TLB_NEED_GLOBAL_FLUSH)) {
+         env->tlb_need_flush &= ~TLB_NEED_GLOBAL_FLUSH;
+-        env->tlb_need_flush &= ~TLB_NEED_LOCAL_FLUSH;
+-        tlb_flush_all_cpus_synced(cs);
+-        return;
++        if (env->tlb_ctx_on && !CPU_NEXT(first_cpu) &&
++            !(env->tlb_need_flush & TLB_NEED_LOCAL_FLUSH)) {
++            /* 32-bit tlbie on the only CPU: its class is already gone */
++        } else {
++            env->tlb_need_flush &= ~TLB_NEED_LOCAL_FLUSH;
++            tlb_flush_all_cpus_synced(cs);
++        }
+     }
+ 
+     /* Then handle local ones */
+@@ -389,6 +406,11 @@ void check_tlb_flush(CPUPPCState *env, bool global)
+         env->tlb_need_flush &= ~TLB_NEED_LOCAL_FLUSH;
+         tlb_flush(cs);
+     }
++
++    /* 32-bit hash MMU: changed segment registers or BATs */
++    if (env->tlb_need_flush & TLB_NEED_CTX_SWITCH) {
++        ppc_tlb_ctx_switch(env);
++    }
+ }
+ #endif /* !CONFIG_USER_ONLY */
+ 
+diff --git a/target/ppc/machine.c b/target/ppc/machine.c
+--- a/target/ppc/machine.c
++++ b/target/ppc/machine.c
+@@ -255,6 +255,7 @@ static int cpu_post_load(void *opaque, int version_id)
+ 
+     if (!cpu->vhyp) {
+         ppc_store_sdr1(env, env->spr[SPR_SDR1]);
++        ppc_tlb_ctx_reset(env);
+     }
+ 
+     if (!cpu->rtas_stopped_state) {
+diff --git a/target/ppc/misc_helper.c b/target/ppc/misc_helper.c
+--- a/target/ppc/misc_helper.c
++++ b/target/ppc/misc_helper.c
+@@ -165,6 +165,9 @@ void helper_store_sdr1(CPUPPCState *env, target_ulong val)
+     if (env->spr[SPR_SDR1] != val) {
+         ppc_store_sdr1(env, val);
+         tlb_flush(env_cpu(env));
++        if (env->tlb_ctx_on) {
++            ppc_tlb_ctx_restart(env);
++        }
+     }
+ }
+ 
+diff --git a/target/ppc/mmu_helper.c b/target/ppc/mmu_helper.c
+--- a/target/ppc/mmu_helper.c
++++ b/target/ppc/mmu_helper.c
+@@ -143,6 +143,112 @@ static void booke206_flush_tlb(CPUPPCState *env, int flags,
+     tlb_flush(env_cpu(env));
+ }
+ 
++/*****************************************************************************/
++/* 32-bit hash MMU translation contexts */
++
++static MMUIdxMap ppc_tlb_ctx_idxmap(unsigned ctx)
++{
++    return 3u << (4 * ctx);
++}
++
++static void ppc_tlb_ctx_key(CPUPPCState *env, target_ulong *key)
++{
++    memcpy(key, env->sr, 16 * sizeof(target_ulong));
++    memcpy(key + 16, env->IBAT, sizeof(env->IBAT));
++    memcpy(key + 16 + 16, env->DBAT, sizeof(env->DBAT));
++    key[PPC_TLB_CTX_KEY - 1] = env->spr[SPR_SDR1];
++}
++
++/* Forget every context; the caller flushes the TLB (reset, migration). */
++void ppc_tlb_ctx_reset(CPUPPCState *env)
++{
++    PowerPCCPU *cpu = env_archcpu(env);
++
++    QEMU_BUILD_BUG_ON(4 * (PPC_TLB_CTX_N - 1) + 1 >= NB_MMU_MODES);
++    QEMU_BUILD_BUG_ON(sizeof(env->IBAT) != 16 * sizeof(target_ulong));
++    env->tlb_ctx_on = cpu->mmu_contexts && env->mmu_model == POWERPC_MMU_32B;
++    env->tlb_ctx = 0;
++    env->tlb_ctx_tick = 0;
++    memset(env->tlb_ctx_valid, 0, sizeof(env->tlb_ctx_valid));
++    memset(env->tlb_ctx_used, 0, sizeof(env->tlb_ctx_used));
++    env->tlb_need_flush &= ~TLB_NEED_CTX_SWITCH;
++}
++
++/*
++ * At a context-synchronising event after an SR or BAT change: continue in
++ * the context that holds the new state, or recycle the least recently used.
++ */
++void ppc_tlb_ctx_switch(CPUPPCState *env)
++{
++    target_ulong key[PPC_TLB_CTX_KEY];
++    unsigned cur = env->tlb_ctx, use = PPC_TLB_CTX_N, c;
++
++    env->tlb_need_flush &= ~TLB_NEED_CTX_SWITCH;
++    ppc_tlb_ctx_key(env, key);
++    if (env->tlb_ctx_valid[cur] && !memcmp(key, env->tlb_ctx_key[cur], sizeof(key))) {
++        return;
++    }
++    for (c = 0; c < PPC_TLB_CTX_N; c++) {
++        if (env->tlb_ctx_valid[c] && !memcmp(key, env->tlb_ctx_key[c], sizeof(key))) {
++            use = c;
++            break;
++        }
++    }
++    if (use == PPC_TLB_CTX_N) {
++        use = 0;
++        for (c = 0; c < PPC_TLB_CTX_N; c++) {
++            if (!env->tlb_ctx_valid[c]) {
++                use = c;
++                break;
++            }
++            if (env->tlb_ctx_used[c] < env->tlb_ctx_used[use]) {
++                use = c;
++            }
++        }
++        /* also clears the jump cache: TBs of this context may be stale */
++        tlb_flush_by_mmuidx(env_cpu(env), ppc_tlb_ctx_idxmap(use));
++        memcpy(env->tlb_ctx_key[use], key, sizeof(key));
++        env->tlb_ctx_valid[use] = true;
++    }
++    env->tlb_ctx_used[use] = ++env->tlb_ctx_tick;
++    if (use != cur) {
++        env->tlb_ctx = use;
++        hreg_compute_hflags(env);
++    }
++}
++
++/* The state changed under translated execution: refill the current context. */
++void ppc_tlb_ctx_restart(CPUPPCState *env)
++{
++    unsigned cur = env->tlb_ctx;
++
++    tlb_flush_by_mmuidx(env_cpu(env), ppc_tlb_ctx_idxmap(cur));
++    ppc_tlb_ctx_key(env, env->tlb_ctx_key[cur]);
++    env->tlb_ctx_valid[cur] = true;
++    env->tlb_need_flush &= ~TLB_NEED_CTX_SWITCH;
++}
++
++/* A BAT register changed (the new value is already stored). */
++static void ppc_tlb_ctx_bat_changed(CPUPPCState *env)
++{
++    if (env->msr & ((1 << MSR_IR) | (1 << MSR_DR))) {
++        ppc_tlb_ctx_restart(env);       /* effective at once, as before */
++    } else {
++        /* real mode does not use BATs: switch at the next sync or mtmsr */
++        env->tlb_need_flush |= TLB_NEED_CTX_SWITCH;
++    }
++}
++
++static void ppc_store_batu(CPUPPCState *env, target_ulong (*bat)[8],
++                           uint32_t nr, target_ulong value)
++{
++    target_ulong mask = (value << 15) & 0x0FFE0000UL;
++
++    bat[0][nr] = (value & 0x00001FFFUL) | (value & ~0x0001FFFFUL & ~mask);
++    bat[1][nr] = (bat[1][nr] & 0x0000007B) | (bat[1][nr] & ~0x0001FFFF & ~mask);
++    ppc_tlb_ctx_bat_changed(env);
++}
++
+ /*****************************************************************************/
+ /* BATs management */
+ #if !defined(FLUSH_ALL_TLBS)
+@@ -177,6 +283,12 @@ void helper_store_ibatu(CPUPPCState *env, uint32_t nr, target_ulong value)
+     target_ulong mask;
+ 
+     dump_store_bat(env, 'I', 0, nr, value);
++    if (env->tlb_ctx_on) {
++        if (env->IBAT[0][nr] != value) {
++            ppc_store_batu(env, env->IBAT, nr, value);
++        }
++        return;
++    }
+     if (env->IBAT[0][nr] != value) {
+         mask = (value << 15) & 0x0FFE0000UL;
+ #if !defined(FLUSH_ALL_TLBS)
+@@ -202,6 +314,11 @@ void helper_store_ibatu(CPUPPCState *env, uint32_t nr, target_ulong value)
+ void helper_store_ibatl(CPUPPCState *env, uint32_t nr, target_ulong value)
+ {
+     dump_store_bat(env, 'I', 1, nr, value);
++    if (env->tlb_ctx_on && env->IBAT[1][nr] != value) {
++        env->IBAT[1][nr] = value;
++        ppc_tlb_ctx_bat_changed(env);
++        return;
++    }
+     env->IBAT[1][nr] = value;
+ }
+ 
+@@ -210,6 +327,12 @@ void helper_store_dbatu(CPUPPCState *env, uint32_t nr, target_ulong value)
+     target_ulong mask;
+ 
+     dump_store_bat(env, 'D', 0, nr, value);
++    if (env->tlb_ctx_on) {
++        if (env->DBAT[0][nr] != value) {
++            ppc_store_batu(env, env->DBAT, nr, value);
++        }
++        return;
++    }
+     if (env->DBAT[0][nr] != value) {
+         /*
+          * When storing valid upper BAT, mask BEPI and BRPN and
+@@ -235,6 +358,11 @@ void helper_store_dbatu(CPUPPCState *env, uint32_t nr, target_ulong value)
+ void helper_store_dbatl(CPUPPCState *env, uint32_t nr, target_ulong value)
+ {
+     dump_store_bat(env, 'D', 1, nr, value);
++    if (env->tlb_ctx_on && env->DBAT[1][nr] != value) {
++        env->DBAT[1][nr] = value;
++        ppc_tlb_ctx_bat_changed(env);
++        return;
++    }
+     env->DBAT[1][nr] = value;
+ }
+ 
+@@ -269,7 +397,7 @@ void ppc_tlb_invalidate_all(CPUPPCState *env)
+         booke206_flush_tlb(env, -1, 0);
+         break;
+     case POWERPC_MMU_32B:
+-        env->tlb_need_flush = 0;
++        env->tlb_need_flush &= TLB_NEED_CTX_SWITCH;
+         tlb_flush(env_cpu(env));
+         break;
+     default:
+@@ -300,6 +428,19 @@ void ppc_tlb_invalidate_one(CPUPPCState *env, target_ulong addr)
+         ppc6xx_tlb_invalidate_virt(env, addr, 1);
+         break;
+     case POWERPC_MMU_32B:
++        if (env->tlb_ctx_on && !CPU_NEXT(first_cpu)) {
++            /*
++             * Invalidate the congruence class in every context at once.
++             * 32 classes (EA bits 12-16): a superset of the 64-set ITLB/DTLB
++             * of the 604/750/7400/7450, so software that sweeps classes
++             * (Linux's tlbia) or invalidates single pages (Mac OS 9's
++             * PrepareMemoryForIO) both see all their entries gone.  The
++             * sync that follows needs no further flush (check_tlb_flush).
++             */
++            tlb_flush_page_class_by_mmuidx(env_cpu(env), addr, 0x1F000,
++                                           PPC_TLB_CTX_IDXMAP_ALL);
++            break;
++        }
+         /*
+          * Actual CPUs invalidate entire congruence classes based on
+          * the geometry of their TLBs and some OSes take that into
+@@ -370,7 +511,16 @@ void helper_store_sr(CPUPPCState *env, target_ulong srnum, target_ulong value)
+             }
+         }
+ #else
+-        env->tlb_need_flush |= TLB_NEED_LOCAL_FLUSH;
++        if (env->tlb_ctx_on) {
++            /* like the flush below, the switch waits for context sync */
++            env->tlb_need_flush |= TLB_NEED_CTX_SWITCH;
++            if (env->msr & ((1 << MSR_IR) | (1 << MSR_DR))) {
++                /* refills before the sync use the new SR: not this key's */
++                env->tlb_ctx_valid[env->tlb_ctx] = false;
++            }
++        } else {
++            env->tlb_need_flush |= TLB_NEED_LOCAL_FLUSH;
++        }
+ #endif
+     }
+ }
+diff --git a/target/ppc/translate.c b/target/ppc/translate.c
+--- a/target/ppc/translate.c
++++ b/target/ppc/translate.c
+@@ -6578,7 +6578,7 @@ static void ppc_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
+ 
+     ctx->spr_cb = env->spr_cb;
+     ctx->pr = (hflags >> HFLAGS_PR) & 1;
+-    ctx->mem_idx = (hflags >> HFLAGS_DMMU_IDX) & 7;
++    ctx->mem_idx = ppc_hflags_mmu_index(hflags, false);
+     ctx->dr = (hflags >> HFLAGS_DR) & 1;
+     ctx->hv = (hflags >> HFLAGS_HV) & 1;
+     ctx->insns_flags = env->insns_flags;

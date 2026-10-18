@@ -29,6 +29,7 @@ QEMU_TAG="${QEMU_TAG:-v11.0.2}"
 QFB_DIR="$ROOT_DIR/qfb"
 POWERMAC_DIR="$ROOT_DIR/powermac"
 ATI_DIR="$ROOT_DIR/ati"
+CPU_DIR="$ROOT_DIR/cpu"
 
 # Tracked files modified by the ClassicMac patches (reset before re-applying).
 # Files only earlier releases patched (GXMetal's ui/input.c, bochs-vbe.h) stay
@@ -98,6 +99,18 @@ PATCHED_FILES=(
   hw/display/ati_int.h
   hw/display/ati_regs.h
   hw/display/trace-events
+  accel/tcg/tcg-runtime.c
+  include/exec/cputlb.h
+  target/ppc/cpu.h
+  target/ppc/cpu_init.c
+  target/ppc/fpu_helper.c
+  target/ppc/helper.h
+  target/ppc/helper_regs.c
+  target/ppc/int_helper.c
+  target/ppc/machine.c
+  target/ppc/misc_helper.c
+  target/ppc/translate/fp-impl.c.inc
+  target/ppc/translate/vmx-impl.c.inc
 )
 # Untracked files created by patches (git apply refuses to create them again)
 # or copied by earlier releases; removed before the patches are applied.
@@ -108,6 +121,11 @@ UNTRACKED_PATCH_FILES=(
   hw/display/ati_gl.c
   hw/display/ati_gl.h
   hw/display/ati_glr.c
+  include/exec/tb-slot.h
+  include/qemu/rb-stats.h
+  target/ppc/ff_stats.h
+  target/ppc/fpu_fast.c.inc
+  target/ppc/vmx_fast.c.inc
   hw/display/gxmetal_protocol.h
   hw/display/gxmetal_decode.h
   hw/display/gxmetal_decode.c
@@ -395,7 +413,22 @@ git -C "$QEMU_DIR" apply "$POWERMAC_DIR/classicmac-boot-handoff-display.patch" |
 git -C "$QEMU_DIR" apply "$ROOT_DIR/monitor/media-control.patch" || die "Failed to apply ClassicMac media control bridge"
 
 # ---------------------------------------------------------------------------
-# 3d. Emulated ATI Radeon R100 (ati-vga,model=r100), applied last
+# 3d. Faster PowerPC CPU emulation (RetroBoot; see cpu/README.md)
+# ---------------------------------------------------------------------------
+# 32-bit hash-MMU translation contexts, host-FPU fast paths for scalar and
+# AltiVec floating point (bit-identical to softfloat), and cached branch
+# destinations. Each is a CPU property that defaults on and can be turned
+# off (-cpu 7400,mmu-contexts=off,fast-fpu=off,fast-branch=off). They need
+# -ffp-contract=off (configure flags below) so the host compiler never fuses
+# a*b+c into an FMA that rounds differently.
+log "Installing faster PowerPC CPU emulation (MMU contexts, FPU, branch cache)"
+for patch in retroboot-ppc-mmu-contexts retroboot-ppc-fpu-fast \
+             retroboot-ppc-fpu-vmx retroboot-ppc-fpu-r17 retroboot-ppc-branch-cache; do
+  git -C "$QEMU_DIR" apply "$CPU_DIR/$patch.patch" || die "Failed to apply $patch.patch"
+done
+
+# ---------------------------------------------------------------------------
+# 3e. Emulated ATI Radeon R100 (ati-vga,model=r100), applied last
 # ---------------------------------------------------------------------------
 # RetroBoot's R100 model (PCI 1002:5144, Open Firmware ATY,Rage6p, driven by
 # Mac OS 9's own ATI drivers): register file, CRTC/PLLs, command processor,
@@ -421,7 +454,14 @@ fi
 # ---------------------------------------------------------------------------
 # 4. Configure (out-of-tree) if not already configured
 # ---------------------------------------------------------------------------
-if [ -f "$BUILD_DIR/build.ninja" ] && [ -z "${FORCE_CONFIGURE:-}" ]; then
+# -ffp-contract=off: clang's default on arm64 fuses a*b+c into one FMA, which
+# rounds differently from the separate operations the PowerPC FPU fast paths
+# and the ATI vertex decoder are written for.
+QEMU_CFLAGS="-O3 -ffp-contract=off"
+CONFIGURE_STAMP="$BUILD_DIR/classicmac-configure.stamp"
+CONFIGURE_ID="cflags=$QEMU_CFLAGS"
+if [ -f "$BUILD_DIR/build.ninja" ] && [ -z "${FORCE_CONFIGURE:-}" ] && \
+   [ "$(cat "$CONFIGURE_STAMP" 2>/dev/null || true)" = "$CONFIGURE_ID" ]; then
   log "Already configured (set FORCE_CONFIGURE=1 to reconfigure)"
 else
   log "Configuring QEMU for m68k-softmmu + ppc-softmmu (cocoa, VNC, slirp, coreaudio, 9p)"
@@ -445,12 +485,13 @@ else
       --disable-guest-agent \
       --disable-debug-info \
       --enable-lto \
-      --extra-cflags=-O3 \
-      --extra-cxxflags=-O3 \
-      --extra-objcflags=-O3
+      --extra-cflags="$QEMU_CFLAGS" \
+      --extra-cxxflags="$QEMU_CFLAGS" \
+      --extra-objcflags="$QEMU_CFLAGS"
   )
   "$BUILD_DIR/pyvenv/bin/meson" configure "$BUILD_DIR" \
     -Doptimization=3 -Db_lto_mode=thin
+  printf '%s\n' "$CONFIGURE_ID" > "$CONFIGURE_STAMP"
 fi
 
 # ---------------------------------------------------------------------------
@@ -554,6 +595,14 @@ if [ -n "${CLASSICMAC_ATI_GL_OPTIONAL:-}" ]; then
 fi
 "$PYTHON_BIN" "$ATI_DIR/tests/test_qemu_ati.py" "${ATI_TEST_ARGS[@]+"${ATI_TEST_ARGS[@]}"}" \
   "$QEMU_PPC_BIN" "$QEMU_DIR/pc-bios" || die "ATI Radeon realization test failed"
+CPU_HELP="$("$QEMU_PPC_BIN" -device 7400_v2.9-powerpc-cpu,help 2>&1 || true)"
+for property in mmu-contexts fast-fpu x-fast-fpu-mask fast-branch x-fast-branch-mask; do
+  printf '%s\n' "$CPU_HELP" | grep -q "$property" || \
+    die "PowerPC CPU property $property missing from the ppc build"
+done
+grep -q -- "-ffp-contract=off" "$BUILD_DIR/build.ninja" || \
+  die "QEMU was not compiled with -ffp-contract=off"
+printf '    OK  PowerPC MMU contexts, FPU fast paths and branch cache (ppc)\n'
 if "$QEMU_PPC_BIN" -device macio-ide,help 2>&1 | grep -q "dma-completion-delay-ns"; then
   printf '    OK  MacIO IDE DMA completion delay (ppc)\n'
 else
