@@ -194,7 +194,7 @@ struct MachinePanel: View {
                     infoRow("Hard disk:", diskText)
                     infoRow("Screen:", screenText)
                     if vm.machineFamily == .powerMacG4 {
-                        infoRow("Graphics:", vm.graphicsCard.longLabel)
+                        infoRow("Graphics:", graphicsText)
                     }
                     infoRow("Sharing:", sharingText)
                 }
@@ -240,6 +240,21 @@ struct MachinePanel: View {
         }
         let depth = ColorDepth(rawValue: vm.depth)?.label ?? "Thousands"
         return "\(vm.width) × \(vm.height), \(depth)"
+    }
+
+    private var graphicsText: String {
+        let card = QEMUManager.effectiveGraphicsCard(for: vm)
+        guard running, card == .atiRadeon else {
+            if vm.graphicsCard == .atiRadeon && card == .standard {
+                return "Standard while starting from a CD"
+            }
+            return vm.graphicsCard.longLabel
+        }
+        switch manager.atiRenderers[vm.id] {
+        case nil: return "ATI Radeon"
+        case "": return "ATI Radeon (3D unavailable)"
+        case let renderer?: return "ATI Radeon, 3D on \(renderer)"
+        }
     }
 
     private var sharingText: String {

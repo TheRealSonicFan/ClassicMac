@@ -140,6 +140,8 @@ enum GraphicsCard: String, Codable, CaseIterable, Identifiable {
 // RetroBoot Display, installed in the Library's ATI-ready Macs, switches
 // Mac OS to that size during startup (RetroBoot hostd/retroboot/graphics.py).
 enum ATIDisplay {
+    /// QOM id of the card: status lives at /machine/peripheral/ati0.
+    static let deviceID = "ati0"
     static let startupSize = (width: 640, height: 480)
     static let minimum = (width: 640, height: 480)
     static let maximum = (width: 1920, height: 1440)
@@ -168,6 +170,19 @@ enum ATIDisplay {
               (minimum.height...maximum.height).contains(height),
               refresh(width: w, height: height) != nil else { return nil }
         return (w, height)
+    }
+
+    /// The renderer from an HMP `qom-get ... x-gl-renderer` reply, such as
+    /// "CGL; GL 4.1 Metal - 91.7; Apple M5 Max" → "Apple M5 Max". Empty when
+    /// 3D is off.
+    static func rendererName(fromHMP reply: String) -> String {
+        let line = reply.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty && !$0.hasPrefix("(qemu)") && !$0.contains("qom-get") && !$0.hasPrefix("Error") } ?? ""
+        let value = line.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        guard !value.isEmpty else { return "" }
+        let parts = value.split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }
+        return parts.last ?? value
     }
 
     /// The closest size the card can show within width x height.

@@ -79,6 +79,8 @@ final class QEMUManager: ObservableObject {
     // kept after shutdown so the library shows what was last on screen.
     @Published private(set) var previews: [UUID: NSImage] = [:]
     @Published private(set) var coplandHaltedIDs: Set<UUID> = []
+    /// The host renderer drawing each running ATI Mac's 3D ("" when 3D is off).
+    @Published private(set) var atiRenderers: [UUID: String] = [:]
     @Published var lastError: AppError?
     @Published private(set) var pendingStopID: UUID?
 
@@ -222,6 +224,7 @@ final class QEMUManager: ObservableObject {
                 let monitor = self.qmpMonitors.removeValue(forKey: config.id)
                 self.runningIDs.remove(config.id)
                 self.pausedIDs.remove(config.id)
+                self.atiRenderers[config.id] = nil
                 if self.pendingStopID == config.id {
                     self.pendingStopID = nil
                 }
@@ -331,7 +334,10 @@ final class QEMUManager: ObservableObject {
             config.cdImagePath?.isEmpty == false
         // ATI starts run in real time from power-on (no instruction clock).
         let acceleratedHardDiskBoot = config.machineFamily == .powerMacG4 &&
-            !bootingFromUserCD && config.graphicsCard == .standard
+            !bootingFromUserCD && Self.effectiveGraphicsCard(for: config) == .standard
+        if Self.effectiveGraphicsCard(for: config) == .atiRadeon {
+            probeATIRenderer(for: config.id)
+        }
         if acceleratedHardDiskBoot {
             startBootClockHandoff(for: config)
         }
@@ -408,6 +414,24 @@ final class QEMUManager: ObservableObject {
     }
 
     // MARK: Screen previews
+
+    /// Asks the running ATI card which host renderer draws its 3D
+    /// (QOM x-gl-renderer on /machine/peripheral/ati0), once the monitor is up.
+    private func probeATIRenderer(for id: UUID) {
+        let socket = Self.monitorSocketURL(for: id).path
+        Task.detached(priority: .utility) { [weak self] in
+            for _ in 0..<20 {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard let reply = HMPClient.command(
+                    "qom-get /machine/peripheral/\(ATIDisplay.deviceID) x-gl-renderer", socketPath: socket) else {
+                    continue
+                }
+                let renderer = ATIDisplay.rendererName(fromHMP: reply)
+                await MainActor.run { self?.atiRenderers[id] = renderer }
+                return
+            }
+        }
+    }
 
     static func screenDumpURL(for id: UUID) -> URL {
         let dir = URL(fileURLWithPath: "/tmp/ClassicMac", isDirectory: true)
@@ -760,10 +784,17 @@ final class QEMUManager: ObservableObject {
         return options.joined(separator: ",")
     }
 
+    /// The card a start actually uses. Installer and CD starts stay on the
+    /// standard card, as RetroBoot does: the CD route is qualified there.
+    static func effectiveGraphicsCard(for config: VMConfig) -> GraphicsCard {
+        let bootingFromUserCD = config.bootFromCD && config.cdImagePath?.isEmpty == false
+        return config.machineFamily == .powerMacG4 && !bootingFromUserCD ? config.graphicsCard : .standard
+    }
+
     // The Power Mac's display card and its boot framebuffer.
     static func graphicsCardArguments(for config: VMConfig, bootingFromUserCD: Bool) -> [String] {
         var args: [String] = []
-        switch config.graphicsCard {
+        switch effectiveGraphicsCard(for: config) {
         case .standard:
             // Keep the host-resize registers available for the native window
             // and compatibility with the bundled qemu_vga.ndrv. Browser viewing
@@ -802,16 +833,19 @@ final class QEMUManager: ObservableObject {
             let depth = config.depth == ColorDepth.millions.rawValue ? 32 : 15
             args += ["-g", "\(config.width)x\(config.height)x\(depth)"]
         case .atiRadeon:
-            // The emulated R100 Radeon. No card ROM: the bundled OpenBIOS
+            // The emulated R100 Radeon. No card ROM ("romfile=" is required:
+            // QEMU's x86 vgabios-ati.bin is not bundled): the bundled OpenBIOS
             // builds its device node and boot mode. The emulated monitor's
-            // EDID offers exactly the chosen size, which RetroBoot Display
-            // (in the Library's ATI-ready Macs) selects during startup.
+            // EDID offers exactly the chosen size, which ClassicMac Display
+            // (Tools) or RetroBoot Display (the Library's ATI-ready Macs)
+            // selects during startup. "ati0" names the QOM status path.
             let size = ATIDisplay.size(fitting: config.width, height: config.height)
-            var device = "ati-vga,model=r100,vgamem_mb=32,romfile=,guest_hwcursor=on"
+            var device = "ati-vga,id=\(ATIDisplay.deviceID),model=r100,vgamem_mb=32,romfile=,guest_hwcursor=on"
             if let hz = ATIDisplay.refresh(width: size.width, height: size.height) {
                 device += ",xres=\(size.width),yres=\(size.height),refresh_rate=\(hz * 1000)"
             }
             args += ["-vga", "none", "-device", device]
+            args += ["-prom-env", "classicmac-display=\(size.width)x\(size.height)"]
             args += ["-prom-env", "retroboot-display=\(size.width)x\(size.height)"]
             // ATI's driver starts every session at 640 x 480.
             args += ["-g", "\(ATIDisplay.startupSize.width)x\(ATIDisplay.startupSize.height)x32"]
@@ -867,7 +901,7 @@ final class QEMUManager: ObservableObject {
         // 195 MB during a single arena; a 512 MB cache prevents translation
         // churn across longer sessions and multiple maps.
         args += ["-accel", "tcg,tb-size=512"]
-        let ati = config.graphicsCard == .atiRadeon
+        let ati = effectiveGraphicsCard(for: config) == .atiRadeon
         if !bootingFromUserCD && !ati {
             // Mac OS 9 spends much of hard-disk startup polling timers for
             // hardware that mac99 does not expose. Instruction timing lets

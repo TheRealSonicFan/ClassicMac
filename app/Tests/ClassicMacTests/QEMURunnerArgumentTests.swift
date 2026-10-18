@@ -63,12 +63,26 @@ final class QEMURunnerArgumentTests: XCTestCase {
 
         XCTAssertEqual(optionValues("-vga", in: arguments), ["none"])
         XCTAssertTrue(optionValues("-device", in: arguments).contains(
-            "ati-vga,model=r100,vgamem_mb=32,romfile=,guest_hwcursor=on,xres=1024,yres=768,refresh_rate=75000"))
+            "ati-vga,id=ati0,model=r100,vgamem_mb=32,romfile=,guest_hwcursor=on,xres=1024,yres=768,refresh_rate=75000"))
+        XCTAssertTrue(optionValues("-prom-env", in: arguments).contains("classicmac-display=1024x768"))
         XCTAssertTrue(optionValues("-prom-env", in: arguments).contains("retroboot-display=1024x768"))
         XCTAssertEqual(optionValues("-g", in: arguments), ["640x480x32"])
         // ATI starts run in real time and never use the VGA-only Finder detector.
         XCTAssertTrue(optionValues("-icount", in: arguments).isEmpty)
         XCTAssertFalse(optionValues("-global", in: arguments).contains { $0.hasPrefix("VGA.") })
+    }
+
+    func testATIMacStartsFromCDOnTheStandardCard() {
+        var vm = config()
+        vm.graphicsCard = .atiRadeon
+        let arguments = QEMUManager.buildArguments(for: vm)
+        XCTAssertEqual(optionValues("-vga", in: arguments), ["std"])
+        XCTAssertFalse(arguments.contains { $0.hasPrefix("ati-vga") })
+    }
+
+    func testATIRendererNameFromMonitorReply() {
+        XCTAssertEqual(ATIDisplay.rendererName(fromHMP: "\"CGL; GL 4.1 Metal - 91.7; Apple M5 Max\"\r\n"), "Apple M5 Max")
+        XCTAssertEqual(ATIDisplay.rendererName(fromHMP: "\"\"\r\n"), "")
     }
 
     func testATIDisplaySizesFollowTheDriverLimits() {
