@@ -26,6 +26,8 @@ OUT_IMAGE="${TOOLS_CD_OUTPUT:-$ROOT_DIR/dist/ClassicMacTools.iso}"
 OUT_DIR="$(dirname "$OUT_IMAGE")"
 VOLUME_NAME="ClassicMac Tools"
 HFS_COPY="$ROOT_DIR/guestcd/hfs-copy.py"
+# ClassicMac Display (guestcd/classicmac-display, MIT, prebuilt with Retro68)
+DISPLAY_BIN_DIR="$ROOT_DIR/guestcd/classicmac-display/bin"
 # 32 MiB: plenty for ~10 MB of expanded tools, and a multiple of the
 # 2048-byte CD sector size.
 IMAGE_BYTES=$((32 * 1024 * 1024))
@@ -153,6 +155,15 @@ USB Overdrive 1.4  (Power Mac only, Mac OS 8.5 - 9.2)
 
 On a Quadra (System 7 through Mac OS 8.1), skip USB Overdrive -
 it needs a Power Mac running Mac OS 8.5 or later.
+
+ClassicMac Display  (Power Mac G4 with the ATI Radeon card only)
+   Starts Mac OS at the screen size ClassicMac chose for the
+   ATI Radeon instead of ATI's default 640 x 480. It needs ATI's
+   own Mac OS 9 graphics software (ATI Driver Update and the ATI
+   3D extensions). Open the "ClassicMac Display" folder, drag
+   both items onto the closed System Folder (Mac OS puts them
+   in Extensions), then restart. With the standard graphics
+   card it does nothing.
 EOF
 
 # ---------------------------------------------------------------------------
@@ -215,6 +226,23 @@ hmount "$WORK_IMAGE" >/dev/null
 # Read Me first so it lands at the top of the (unsorted) catalog.
 hcopy -t "$README" ":Read Me"
 hattrib -t TEXT -c ttxt ":Read Me"
+
+# ClassicMac Display: the startup extension's leading space loads it early in
+# the extension parade. Mac OS never calls an INIT file flagged kHasNoINITs,
+# so the MacBinary Finder flags must be clear (Retro68 writes them clear).
+hmkdir ":ClassicMac Display"
+for item in "ClassicMacDisplayInit.bin= ClassicMac Display Startup" \
+            "ClassicMacDisplay.bin=ClassicMac Display"; do
+  bin="${item%%=*}"
+  mac_name="${item#*=}"
+  [ -f "$DISPLAY_BIN_DIR/$bin" ] || die "missing $DISPLAY_BIN_DIR/$bin"
+  "$PYTHON_BIN" - "$DISPLAY_BIN_DIR/$bin" <<'PYEOF' || die "unexpected Finder flags in $bin"
+import sys
+header = open(sys.argv[1], "rb").read(128)
+sys.exit(0 if header[73] & 0x01 == 0 and header[101] & 0x80 == 0 else 1)
+PYEOF
+  hcopy -m "$DISPLAY_BIN_DIR/$bin" ":ClassicMac Display:$mac_name"
+done
 
 while IFS=$'\t' read -r name handling md5 url; do
   case "$name" in ''|'#'*) continue ;; esac
