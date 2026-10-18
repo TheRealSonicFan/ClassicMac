@@ -90,10 +90,22 @@ open class PlatinumWindow: NSWindow {
         close()
     }
 
+    private var didClose = false
+
+    open override func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+        if place != .out { didClose = false }
+        super.order(place, relativeTo: otherWin)
+    }
+
     open override func close() {
+        guard !didClose else { return }
+        didClose = true
         if let parent = modalParent {
-            parent.modalChild = nil
-            parent.state.isBlockedByModal = false
+            modalParent = nil
+            if parent.modalChild === self {
+                parent.modalChild = nil
+                parent.state.isBlockedByModal = false
+            }
             parent.removeChildWindow(self)
             parent.makeKeyAndOrderFront(nil)
         }

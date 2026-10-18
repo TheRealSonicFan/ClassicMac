@@ -21,6 +21,7 @@ final class WindowManager {
     private var aboutWindow: PlatinumWindow?
     private var subscriptions: Set<AnyCancellable> = []
     private var showingError = false
+    private weak var shutDownAlert: PlatinumWindow?
 
     static let mainContentSize = NSSize(width: 780, height: 500)
     static let mainMinimumContent = NSSize(width: 660, height: 440)
@@ -36,8 +37,15 @@ final class WindowManager {
         manager.$lastError.compactMap { $0 }.receive(on: RunLoop.main)
             .sink { [weak self] error in self?.presentError(error) { manager.lastError = nil } }
             .store(in: &subscriptions)
-        manager.$pendingStopID.compactMap { $0 }.receive(on: RunLoop.main)
-            .sink { [weak self] id in self?.confirmShutDown(id) }
+        manager.$pendingStopID.receive(on: RunLoop.main)
+            .sink { [weak self] id in
+                if let id {
+                    self?.confirmShutDown(id)
+                } else {
+                    // Confirmed or cancelled elsewhere: take the question down.
+                    self?.shutDownAlert?.close()
+                }
+            }
             .store(in: &subscriptions)
         store.$isPresentingNewVM.filter { $0 }.receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -141,8 +149,9 @@ final class WindowManager {
     // MARK: Alerts
 
     /// A Platinum alert. Stop and caution alerts beep, as Mac OS's did.
+    @discardableResult
     func alert(_ icon: PlatinumAlertIcon, _ message: String, informative: String? = nil,
-               buttons: [PlatinumAlertButton], parent: PlatinumWindow? = nil, width: CGFloat = 420) {
+               buttons: [PlatinumAlertButton], parent: PlatinumWindow? = nil, width: CGFloat = 420) -> PlatinumWindow {
         let handle = DialogHandle()
         let window = PlatinumWindow.dialog(kind: .modal) {
             PlatinumAlert(icon: icon, message: message, informative: informative, buttons: buttons,
@@ -155,6 +164,7 @@ final class WindowManager {
         } else {
             window.presentAlone()
         }
+        return window
     }
 
     private func presentError(_ error: AppError, clear: @escaping () -> Void) {
@@ -181,7 +191,8 @@ final class WindowManager {
         let informative = vm?.machineFamily == .powerMac7500
             ? "This turns Copland off at once and may lose unsaved work. For a clean shut down, choose Cancel and use Shut Down in Copland's Spaz menu."
             : "Mac OS shuts down first, as if you chose Shut Down from the Special menu, so its disk stays healthy. If Mac OS does not respond within 15 seconds, the Mac turns off and unsaved work may be lost."
-        alert(.caution, "Shut down \(name)?", informative: informative, buttons: [
+        shutDownAlert?.close()
+        shutDownAlert = alert(.caution, "Shut down \(name)?", informative: informative, buttons: [
             PlatinumAlertButton("Shut Down", role: .default) { manager.confirmStop() },
             PlatinumAlertButton("Cancel", role: .cancel) { manager.cancelStop() },
         ])

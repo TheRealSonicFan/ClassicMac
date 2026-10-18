@@ -17,18 +17,48 @@ enum DebugSnapshots {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             for step in tour {
+                if step.hasPrefix("wait:"), let seconds = UInt64(step.dropFirst(5)) {
+                    try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+                    continue
+                }
+                if step.hasPrefix("shot:") {
+                    snapshot(into: out, prefix: String(step.dropFirst(5)))
+                    continue
+                }
+                if step == "stop" {
+                    await stopSelected()
+                    continue
+                }
                 open(step)
                 try? await Task.sleep(nanoseconds: 1_200_000_000)
             }
             try? await Task.sleep(nanoseconds: 800_000_000)
-            var index = 0
-            for window in NSApp.orderedWindows.reversed() where window.isVisible {
-                index += 1
-                let name = String(format: "%02d-%@.png", index,
-                                  window.title.isEmpty ? "window" : window.title.replacingOccurrences(of: "/", with: "-"))
-                write(window, to: out.appendingPathComponent(name))
+            snapshot(into: out, prefix: "")
+            if env["CLASSICMAC_UI_STAY"] == nil {
+                await stopSelected()
+                NSApp.terminate(nil)
             }
-            if env["CLASSICMAC_UI_STAY"] == nil { NSApp.terminate(nil) }
+        }
+    }
+
+    private static func snapshot(into out: URL, prefix: String) {
+        var index = 0
+        for window in NSApp.orderedWindows.reversed() where window.isVisible {
+            index += 1
+            let title = window.title.isEmpty ? "window" : window.title.replacingOccurrences(of: "/", with: "-")
+            let name = String(format: "%@%02d-%@.png", prefix.isEmpty ? "" : prefix + "-", index, title)
+            write(window, to: out.appendingPathComponent(name))
+        }
+    }
+
+    /// Shuts the selected Mac down the way the app does, waiting up to 40 s.
+    private static func stopSelected() async {
+        let manager = QEMUManager.shared
+        guard let id = VMStore.shared.selectedID, manager.isRunning(id) else { return }
+        manager.requestStop(id)
+        manager.confirmStop()
+        for _ in 0..<80 where manager.isRunning(id) {
+            try? await Task.sleep(nanoseconds: 500_000_000)
         }
     }
 
@@ -45,6 +75,7 @@ enum DebugSnapshots {
         case "alert":
             manager.alert(.caution, "This is a Platinum alert.", informative: "Buttons, icon and text follow the Mac OS alert layout.",
                           buttons: [PlatinumAlertButton("OK", role: .default), PlatinumAlertButton("Cancel", role: .cancel)])
+        case "start": if let id = store.selectedID, let vm = store.vms.first(where: { $0.id == id }) { QEMUManager.shared.start(vm) }
         case "collapse": (NSApp.orderedWindows.first { $0.isVisible } as? PlatinumWindow)?.toggleCollapse()
         default:
             if step.hasPrefix("select:"), let n = Int(step.dropFirst(7)), store.vms.indices.contains(n) {
