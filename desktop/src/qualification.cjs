@@ -34,6 +34,13 @@ async function qualify({window,engines,id,home,imageTool,version}) {
   if(!evidence?.connected||!evidence.canvas)throw new Error('Guest display was not connected.');
  });
  await check('pause/resume',async()=>{await engine.pause();if((await engine.command('query-status')).status!=='paused')throw new Error('Pause failed');await engine.resume();});
+ await check('restart/new engine/reconnect',async()=>{
+  const previous=engine;await previous.restart();const deadline=Date.now()+20000;
+  while((!engines.has(id)||engines.get(id)===previous)&&Date.now()<deadline)await delay(100);
+  engine=engines.get(id);if(!engine||engine===previous)throw new Error('Restart did not launch a new engine.');
+  await delay(45000);
+  const evidence=await window.webContents.executeJavaScript('window.classicmacEvidence?.()');if(!evidence.connected)throw new Error('Display did not reconnect.');
+ });
  await check('native guest paste chords',async()=>{
   await engine.hmp('sendkey meta_l-w');await delay(300);
   await paste(engine,'ClassicMacParity');await engine.hmp('sendkey meta_l-o');await delay(1500);
