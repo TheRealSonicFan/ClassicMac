@@ -71,6 +71,13 @@ class Engine extends EventEmitter {
     });
   }
   hmp(command) { return this.command('human-monitor-command', { 'command-line': command }); }
+  async restart() {
+    try { await this.command('system_reset'); }
+    catch (error) {
+      // QEMU can exit for -no-reboot before sending the command reply.
+      if (!this.exited || !['guest-reset', 'host-qmp-system-reset'].includes(this.shutdownReason)) throw error;
+    }
+  }
   async pause() { await this.command('stop'); this.paused = true; }
   async resume() { await this.command('cont'); this.paused = false; }
   async shutdown() {

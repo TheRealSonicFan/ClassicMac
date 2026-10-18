@@ -143,7 +143,7 @@ function installHandlers() {
   });
   handle('restart', async id => {
     const engine = engines.get(id); if (!engine) throw new Error('This Mac is not running.');
-    await engine.command('system_reset');
+    await engine.restart();
   });
   handle('forceOff', async id => {
     const engine = engines.get(id); if (!engine) return;
@@ -210,7 +210,7 @@ else app.whenReady().then(async () => {
     if ((await engine.command('query-status')).status !== 'paused') throw new Error('Pause failed.');
     await engine.resume();
     if ((await engine.command('query-status')).status !== 'running') throw new Error('Resume failed.');
-    await engine.command('system_reset');
+    await engine.restart();
     const deadline = Date.now() + 15000;
     while ((!engines.has(id) || engines.get(id) === engine || !engines.get(id).endpoint) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
     if (!engines.has(id) || engines.get(id) === engine) throw new Error('Restart did not launch a new engine.');
