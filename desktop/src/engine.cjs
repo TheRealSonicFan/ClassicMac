@@ -59,6 +59,7 @@ class Engine extends EventEmitter {
       await ready;
       await this.command('qmp_capabilities');
       await this.command('set_password', { protocol: 'vnc', password: this.password });
+      this.initialized = true;
     } catch (error) { this.child.kill(); throw error; }
     return { ...this.endpoint, password: this.password };
   }

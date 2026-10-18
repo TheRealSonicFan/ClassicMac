@@ -8,6 +8,9 @@ const {pipeline}=require('node:stream/promises'),{Readable}=require('node:stream
 const run=promisify(execFile);
 (async()=>{
  const exe=path.resolve(process.argv[2]),out=path.resolve(process.argv[3]),probe=path.resolve(process.argv[4]);await fs.mkdir(out,{recursive:true});
+ const supplied=process.env.CLASSICMAC_TEST_FIXTURE;
+ let fixture=supplied?path.resolve(supplied):path.join(out,'Parity Mac.classic');
+ if(!supplied){
  const archive=path.join(out,'fixture.tar.gz');
  if(!await fs.access(archive).then(()=>true,()=>false)){
   const r=await fetch('https://mcchord.net/classicmac/mac-os-9.2.1-gxmetal-2.3.0-v1.tar.gz');if(!r.ok)throw new Error('Fixture download failed');
@@ -15,7 +18,8 @@ const run=promisify(execFile);
  }
  const hash=createHash('sha256');for await(const part of createReadStream(archive))hash.update(part);
  if(hash.digest('hex')!=='9dedbf11c866b18c8d9bc54843f42872fbdb7fe9838c75fad2cc6abdb50fd5cb')throw new Error('Fixture hash mismatch');
- const fixture=path.join(out,'Parity Mac.classic');await fs.mkdir(fixture);await run('tar',['-xzf',archive,'-C',fixture],{windowsHide:true});
+ await fs.mkdir(fixture);await run('tar',['-xzf',archive,'-C',fixture],{windowsHide:true});
+ }
  const file=path.join(fixture,'config.json'),c=JSON.parse(await fs.readFile(file,'utf8'));
  Object.assign(c,{id:randomUUID(),name:'ClassicMac Parity OS 9',machineFamily:'powerMacG4',graphicsCard:process.env.CLASSICMAC_TEST_ATI?'atiRadeon':'standard',width:640,height:480,depth:32,sound:false,networking:true,toolsCDInserted:true,tabletInput:true,bootFromCD:false});
  for(const key of ['sharedFolderPath','cdImagePath','floppyImagePath'])delete c[key];

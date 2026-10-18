@@ -51,7 +51,7 @@ async function qualify({window,engines,id,home,imageTool,version}) {
  await check('pause/resume',async()=>{await engine.pause();if((await engine.command('query-status')).status!=='paused')throw new Error('Pause failed');await engine.resume();});
  await check('restart/new engine/reconnect',async()=>{
   const previous=engine;await previous.restart();const deadline=Date.now()+20000;
-  while((!engines.has(id)||engines.get(id)===previous)&&Date.now()<deadline)await delay(100);
+  while((!engines.has(id)||engines.get(id)===previous||!engines.get(id).initialized)&&Date.now()<deadline)await delay(100);
   engine=engines.get(id);if(!engine||engine===previous)throw new Error('Restart did not launch a new engine.');
   await finder(engine);
   const evidence=await window.webContents.executeJavaScript('window.classicmacEvidence?.()');if(!evidence.connected)throw new Error('Display did not reconnect.');
