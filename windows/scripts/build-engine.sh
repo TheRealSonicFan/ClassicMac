@@ -17,4 +17,5 @@ ninja -j 3 qemu-system-m68k.exe qemu-system-ppc.exe qemu-img.exe
 python3 "$ROOT_DIR/windows/scripts/stage-runtime.py" "$PWD" "$ROOT_DIR/output/windows/runtime"
 "$ROOT_DIR/output/windows/runtime/bin/qemu-system-ppc.exe" -device ati-vga,help | grep x-gl-renderer
 "$ROOT_DIR/output/windows/runtime/bin/qemu-system-m68k.exe" -device nubus-qfb,help | grep width
-"$ROOT_DIR/output/windows/runtime/bin/qemu-system-ppc.exe" -display help | grep vnc
+VNC_HELP="$("$ROOT_DIR/output/windows/runtime/bin/qemu-system-ppc.exe" -vnc help 2>&1 || true)"
+grep -q "vnc options" <<< "$VNC_HELP"
