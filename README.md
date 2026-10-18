@@ -14,19 +14,52 @@
   <img src="https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black" alt="Platform">
   <img src="https://img.shields.io/badge/guests-System%207.1%20–%20Mac%20OS%209.2.2-blueviolet" alt="Guest OS range">
   <img src="https://img.shields.io/badge/QEMU-11.0.2%20(custom)-orange" alt="QEMU">
-  <img src="https://img.shields.io/badge/UI-SwiftUI-blue" alt="SwiftUI">
-  <img src="https://img.shields.io/badge/3D-GXMetal%20(experimental)-6e56cf" alt="GXMetal experimental 3D acceleration">
+  <img src="https://img.shields.io/badge/UI-Apple%20Platinum-lightgrey" alt="Apple Platinum interface">
+  <img src="https://img.shields.io/badge/3D-ATI%20Radeon%20(emulated)-c00" alt="Emulated ATI Radeon 3D">
 </p>
 
 ---
 
 <p align="center">
-  <img src="docs/screenshots/configurator.png" width="720" alt="The ClassicMac configurator with a running Power Mac G4">
+  <img src="docs/screenshots/platinum/running-ati.png" width="720" alt="ClassicMac 4.0 in the Apple Platinum appearance, with Mac OS 9.2.2 Deluxe running on the emulated ATI Radeon">
 </p>
 
 <p align="center">
   <img src="docs/screenshots/quadra800-macos81.png" width="410" alt="Mac OS 8.1 on the emulated Quadra 800">
   <img src="docs/screenshots/powermacg4-macos92.png" width="410" alt="Mac OS 9.2 on the emulated Power Mac G4">
+</p>
+
+## New in ClassicMac 4.0 (preview)
+
+- **Apple Platinum, top to bottom.** Every ClassicMac window is now drawn in
+  the Mac OS 8/9 Platinum appearance it runs: pinstriped title bars with
+  close, zoom and WindowShade boxes, a grow box, movable modal dialogs, the
+  default-button ring that flashes when you press Return, beeping caution
+  alerts, Platinum pop-up menus that open with the current item under the
+  pointer, lavender lists and scroll bars, and the barber-pole progress bar.
+  One Mac pixel is one point, so on a Retina display nothing is ever
+  resampled. The look, fonts and icons are shared with RetroBoot through the
+  new `PlatinumKit` module, which also builds for iPad.
+- **The Mac OS Library.** **File → Mac OS Library…** (⇧⌘L) lists every
+  ready-to-run Mac with what is inside it: Mac OS 9.2.2 SuperDeluxe (54
+  games, ClarisWorks, Home Page), Deluxe (16 games, After Dark, music,
+  benchmarks), a clean Mac OS 9.2.1 and Copland. Downloads resume, verify and
+  show a classic copy-progress dialog.
+- **3D through an emulated ATI Radeon, with no custom drivers.** Power Macs
+  can use an emulated ATI Radeon (R100, PCI "Radeon Mac Edition") that Mac OS
+  9's own ATI software drives, so QuickDraw 3D RAVE and OpenGL games render on
+  your Mac's GPU. The Library's Deluxe Macs start on it. GXMetal is retired.
+- **Get Info** replaces Settings, with General, Display and Sharing panes;
+  **About This Mac** in the main window shows the GPU drawing a running Mac's
+  3D.
+- **Your Iconfactory icons.** If you download The Iconfactory's classic Mac
+  icon collections, **ClassicMac → Iconfactory Icons…** uses them for the
+  Mac models. They are free for personal use only, so ClassicMac does not
+  include them.
+
+<p align="center">
+  <img src="docs/screenshots/platinum/library.png" width="410" alt="The Mac OS Library">
+  <img src="docs/screenshots/platinum/get-info-display.png" width="410" alt="Get Info, Display pane with the graphics card choice">
 </p>
 
 ## Copland preview
@@ -77,63 +110,32 @@ beta also uses upstream UTM display hardware, so ClassicMac's GXMetal renderer
 and custom `nubus-qfb` display device are not included yet. See
 [`ios/README.md`](ios/README.md) for the pinned build and TestFlight workflow.
 
-## GXMetal: Mac OS 9 3D accelerated by Metal
+## 3D games: the emulated ATI Radeon
 
-GXMetal is ClassicMac's experimental paravirtualized 3D stack for PowerPC Mac
-OS 9. It accelerates QuickDraw 3D RAVE and a growing ATI-era OpenGL/AGL
-compatibility path with the Apple Silicon Mac's GPU—without pretending to be a
-specific period 3D card. The one-click guest installer and matching host
-renderer are bundled with ClassicMac; a standalone package is also available
-for custom [QEMU and UTM builds](#standalone-gxmetal-for-qemu-and-utm).
+`Mac OS 9 game → ATI's own Mac OS 9 drivers → emulated Radeon R100 in QEMU → OpenGL on your Mac's GPU`
 
-<p align="center">
-  <img src="docs/screenshots/gxmetal/quake3-arena.png" width="640" alt="Quake III Arena Q3DM1 rendered through GXMetal">
-</p>
+Choose **Get Info → Display → ATI Radeon (3D acceleration)** for a Power
+Mac, or download a Deluxe Mac from the Library, which starts on it. The card
+is QEMU's `ati-vga` with RetroBoot's R100 model: register file, display
+modes and EDID, command processor, 2D engine and a 3D engine whose draws run
+on a host OpenGL 4.1 thread (Apple's OpenGL over Metal). Mac OS 9's stock
+*ATI Driver Update*, *ATI Radeon 3D Accelerator*, *ATI Resource Manager* and
+*OpenGLRendererATI* do the rest; nothing is installed from ClassicMac. On an
+Apple M5 Max the Quake III Arena demo runs at about 150 frames per second.
 
-<p align="center"><strong>Quake III Arena</strong> — five distinct Q3DM1 views retained complete textured geometry, depth, and HUD rendering.</p>
+- Mac OS starts at 640 × 480 and switches to the size you chose (640 × 480
+  up to 1920 × 1440) during startup through RetroBoot Display (in the
+  Library's Macs) or ClassicMac Display (on the Tools disk). The size stays
+  fixed while the Mac runs; colors are 256, Thousands or Millions.
+- A Mac without ATI's software still starts on the card, at 640 × 480 with
+  no 3D. Installer and CD starts always use the Standard card.
+- The Standard card remains the default: any size, live window resizing and
+  every color depth.
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/gxmetal/cromag-rally.png" width="400" alt="Cro-Mag Rally running an accelerated desert race through GXMetal"><br>
-      <strong>Cro-Mag Rally</strong> — accelerated 640×480 Practice/Desert gameplay, with steering and acceleration verified.
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/gxmetal/oni.png" width="400" alt="Oni warehouse gameplay rendered through GXMetal"><br>
-      <strong>Oni</strong> — warehouse gameplay with relative-look input and a clean two-process quit/relaunch route.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/gxmetal/dark-vengeance.png" width="400" alt="Dark Vengeance gameplay rendered through GXMetal"><br>
-      <strong>Dark Vengeance</strong> — a five-minute packaged rendering soak held a coherent textured combat scene with direct presentation and zero fallback frames.
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/gxmetal/conformance.png" width="400" alt="GXMetal Test reporting a passed RAVE conformance run on Mac OS 9"><br>
-      <strong>GXMetal Test</strong> — the advertised RAVE contract passed before game testing, including textures, blending, depth, clipping, and framebuffer access.
-    </td>
-  </tr>
-</table>
-
-### How it works
-
-`Mac OS 9 game → GXMetal guest driver → custom QEMU PCI device → macOS Metal`
-
-1. The guest RAVE engine and ATI compatibility layer collect geometry,
-   textures, render state, and presentation commands into batches.
-2. GXMetal's custom QEMU device validates the queue metadata and transports
-   those batches and shared resources to the host instead of emulating a
-   historical GPU instruction by instruction.
-3. The macOS backend translates the work into Metal pipelines and command
-   buffers, then presents completed frames directly. Unsupported contexts stay
-   on Apple's software renderer rather than being claimed as accelerated.
-
-The screenshots above are unedited frames captured by the automated harness
-on clean Mac OS 9 VM clones. See the evidence-backed
-[compatibility report](docs/gxmetal-ten-game-compatibility.md) for exact builds,
-routes, telemetry, verified behavior, and open gaps. GXMetal remains
-experimental; the report is the source of truth for what each run does—and
-does not—prove.
+See the [engine report](docs/engine-4.0-ati.md) for the design, provenance,
+argument sets and test evidence. GXMetal, the 3.x paravirtual renderer,
+remains in the history of the
+[v3.2.1 release](https://github.com/amcchord/ClassicMac/releases/tag/v3.2.1).
 
 ## What it is
 
@@ -171,25 +173,15 @@ ClassicMac exists because of years of brilliant work by other engineers. The pat
 - **Self-contained `.classic` machine documents.** Each VM is a single Finder package holding its config, disk, and PRAM. Keep it anywhere, double-click to boot, move it between Macs.
 - **Classic input helpers.** Secondary click opens contextual menus as Control+click, and the scroll wheel becomes arrow-key taps. Turn both off in machine settings for guests with real drivers (e.g. USB Overdrive).
 - **A guest-additions Tools volume** (StuffIt Expander, Disk Copy, USB Overdrive, Transmit, Lido, patched HD SC Setup...) built from `guestcd/manifest.tsv`. On Power Macs it mounts automatically at startup as a read-only Virtio disk, using the same guest-driver path as folder sharing instead of unreliable OS 9 IDE hot-plug. Everything is pre-expanded and ready to run.
-- **Experimental GXMetal 3D acceleration on Mac OS 9.** The Tools CD carries a
-  one-click installer for a PowerPC QuickDraw 3D RAVE engine. It batches guest
-  drawing commands to the host, renders them with Metal, and safely leaves
-  unsupported contexts to Apple's software renderer. The included GXMetal
-  Test verifies the advertised RAVE contract and measures both engines before
-  a game is launched. GXMetal AGL Probe separately verifies accelerated Apple
-  OpenGL context creation, triangle and quad rendering, RGBA textures,
-  independent primary MIN/MAG and mip selection plus the advertised unit-1
-  binding and trilinear path when its ARB entry points are available,
-  source-alpha blending, depth ordering, readback, resource deletion, and
-  teardown. Protocol 1.24 supports mutable dirty-rectangle draw-buffer access,
-  exact complex-region clipping, deep-Z
-  contexts, public RGB24 and private RGBA uploads, and the ATI/OpenGL filled
-  triangle, strip, fan, quad, quad-strip, polygon, and clipped-fan paths
-  exercised by Cro-Mag Rally and Oni. The ATI compatibility layer synchronizes
-  OpenGL alpha, blend, depth, fog, channel-mask, clear, and texture sampling
-  state before those draws. A classic
-  puzzle-piece M appears in the startup extension row when GXMetal's companion
-  loads.
+- **3D on the emulated ATI Radeon.** Mac OS 9's own ATI drivers drive an
+  emulated Radeon R100 whose 3D engine renders through your Mac's GPU, so RAVE
+  and OpenGL games such as Quake III, Nanosaur and Cro-Mag Rally run
+  accelerated with nothing installed from ClassicMac.
+- **An Apple Platinum interface.** Pixel-exact Mac OS 8/9 windows, controls,
+  menus, dialogs and alerts, with original MIT fonts and icons shared with
+  RetroBoot.
+- **The Mac OS Library.** Ready-to-run Macs with games and classic software,
+  described edition by edition, downloaded with resume and integrity checks.
 - **Native machine control.** Pause / Resume, Restart, and Shut Down from the app, live screen previews in the library, a visible browser URL, and a "Match Display" button that chooses a screen-sized boot resolution.
 - **Safe, faster shutdown cycles.** The app's Shut Down command presses the
   virtual Mac's Power key and confirms Mac OS's own dialog, allowing HFS/HFS+
@@ -199,37 +191,29 @@ ClassicMac exists because of years of brilliant work by other engineers. The pat
 ## Getting started
 
 1. Grab **ClassicMac.dmg** from the [latest release](../../releases/latest), drag ClassicMac to Applications, and launch it.
-2. Choose **File → New Machine** (⌘N) and continue with the recommended
-   **Download a Mac** option. Name your Mac, choose its location, and
-   download it. The image is hosted on mcchord.net and contains Mac OS 9.2.1
-   with GXMetal 2.3.0 already installed. **File → Download a Mac** also
-   opens the download directly.
-3. Click **Start Mac**. The Mac opens in a native window. To use your browser,
-   enable **View in browser** in **Settings → Display** before startup.
-4. Use **Media** to attach discs, or **Settings → Sharing** to select a shared
-   folder. The shared folder appears in the guest as a writable disk.
-5. On the downloaded Mac, open **ClassicMac Utilities** on Macintosh HD and
-   run **GXMetal Test**. The compact GXMetal menu shows activity and guidance.
+2. In the welcome panel choose **The Mac OS Library**, or open it later with
+   **File → Mac OS Library…** (⇧⌘L). Pick a Mac (SuperDeluxe and Deluxe come
+   with games and classic software and start on the ATI Radeon card), name
+   it, and click **Download**.
+3. Select your Mac and click **Start Up** (⌘R). It opens in its own window;
+   **Show Mac** brings it forward. To use your browser instead, turn on
+   **Get Info → Display → Show the Mac in a web browser** before startup.
+4. Use **Media…** to attach discs and **Get Info** (⌘I) for memory, display,
+   graphics card and a shared folder, which appears in the guest as a
+   writable disk.
 
-For a manual installation, choose **New Machine → Install from your own
-disc** and choose a Quadra 800
-(System 7.1–8.1) or Power Mac G4 (Mac OS 8.5–9.2.2), RAM, and a virtual disk up
-to 120 GB. Attach your Mac OS install CD image through **Media**, choose it as
-the startup disc, and start the Mac. You can also attach a raw floppy image to
-a Quadra.
+For a manual installation, choose **File → New Mac…** (⌘N): a Quadra 800
+(System 7.1–8.1) or Power Mac G4 (Mac OS 8.5–9.2.2), memory, a virtual disk up
+to 120 GB and your Mac OS CD image. The Mac starts from the CD; once Mac OS is
+installed it starts from its hard disk by itself. To use the ATI Radeon card
+on a Mac you installed yourself, install ATI's Mac OS 9 drivers from your
+Mac OS 9.2 CD and ClassicMac Display from the Tools disk.
 
 New Power Mac disks default to 32 GB. New disks use sparse storage: their
 capacity is available to the classic Mac, while the file on your modern Mac
-starts small and grows as data is written. The download screen shows the
-download size, virtual disk capacity, and initial storage separately. Existing
+starts small and grows as data is written. The Library shows the download
+size, virtual disk capacity, and free space needed separately. Existing
 machines keep their current disk sizes.
-
-To add GXMetal to a manually installed Mac OS 9 machine, open the automatically
-mounted **ClassicMac Tools** disk, then open **GXMetal**,
-   run **Install GXMetal**, restart, and run **GXMetal Test**. Proceed to a RAVE
-   game only after the test reports a pass; moving both GXMetal and GXMetal
-   Startup out of Extensions and restarting restores the normal Apple software
-   path.
 
 > [!IMPORTANT]
 > **Installing Mac OS 9?** Initialize the destination with Drive Setup from
@@ -254,7 +238,7 @@ Requirements: an Apple Silicon Mac (M1 or later) running macOS 15 or newer.
 - The resolution you pick is the *boot* resolution and the depth is the *deepest available* mode; classic Mac OS chooses the active depth at startup (a fresh system comes up in B&W until you pick Thousands/Millions once in Monitors — it's remembered per machine).
 - Machines use the native window by default. The per-machine **View in browser** toggle is available under **Settings → Display** and takes effect on the next start.
 - The browser's **Fit** mode prefers the largest whole-number scale that fits the tab and uses sharp nearest-neighbor edges when it must shrink the image. Choose **Actual Size** for one guest pixel per browser pixel, and use the page's **Fullscreen** button to enter or leave browser fullscreen.
-- The browser toolbar provides sticky Command, Option, and Control modifiers plus a dedicated Escape button, which makes host-reserved key combinations practical. Games using GXMetal Input automatically reveal a **Capture game mouse** control for relative movement; press Escape to leave pointer lock.
+- The browser toolbar provides sticky Command, Option, and Control modifiers plus a dedicated Escape button, which makes host-reserved key combinations practical. Games that ask for relative mouse movement reveal a **Capture game mouse** control; press Escape to leave pointer lock.
 - Power Mac widths snap down to a multiple of 8 (a VGA hardware constraint).
 - The Power Mac's packed low-bpp patch adds Black & White, 4 and 16 colors to the Monitors panel alongside 256/thousands/millions.
 - Mac OS 9 wants **less than 1 GB of RAM** for stable sound, so the app's presets stop at 896 MB.
@@ -264,47 +248,34 @@ Requirements: an Apple Silicon Mac (M1 or later) running macOS 15 or newer.
 
 ```bash
 # 1. Build the emulator (clones mainline QEMU 11.0.2, applies the ClassicMac
-#    patch set, compiles qemu-system-m68k + qemu-system-ppc)
+#    patch set and the ATI Radeon R100 last, compiles qemu-system-m68k +
+#    qemu-system-ppc, and checks the host OpenGL path) and the Copland engine
 ./scripts/build-qemu.sh
 ./scripts/build-copland.sh
 
-# 2. Build the guest-additions Tools CD (cached downloads). This must precede
-#    app bundling so the exact GXMetal driver and installer enter the release.
+# 2. Build the guest-additions Tools CD (cached downloads, hfsutils/unar),
+#    including ClassicMac Display for the ATI card
 ./scripts/build-guest-cd.sh
 
-# Optional: clone a user-supplied Mac OS 9.2.1 CD and integrate GXMetal,
-# USB Overdrive, StuffIt/DropStuff, and Transmit into the regular OS installer.
-./scripts/build-os9-921-installer-cd.sh /path/to/macos_921_ppc.iso
+# 3. Build the app and bundle QEMU + firmware + dylibs into
+#    dist/ClassicMac.app (code-signed). APP_VERSION, APP_BUILD_VERSION and
+#    DIST_DIR override the version and output folder.
+APP_VERSION=4.0.0 APP_BUILD_VERSION=4.0.0 ./scripts/bundle-qemu.sh
 
-# 3. Build the SwiftUI app and bundle QEMU + firmware + dylibs into
-#    dist/ClassicMac.app (code-signed)
-./scripts/bundle-qemu.sh
-
-# 4. Notarize and package a distributable disk image
+# 4. Notarize and package a distributable disk image (DIST_NAME and
+#    DMG_VOLUME_NAME name the outputs)
 ./scripts/make-dmg.sh
 
 # 5. Verify the exact signed/stapled artifact, including versions, Gatekeeper,
-#    the bundled Tools CD, and the GXMetal-enabled Power Mac executable
-./scripts/verify-release.sh dist/ClassicMac.dmg 3.2.0 3.2.0
+#    the bundled Tools CD and both Power Mac display cards
+./scripts/verify-release.sh dist/ClassicMac.dmg 4.0.0 4.0.0
 ```
 
 All scripts are idempotent and safe to re-run. Building needs the Xcode command line tools and [Homebrew](https://brew.sh).
 
-### Standalone GXMetal for QEMU and UTM
-
-GXMetal can also be packaged independently of the ClassicMac app. The
-standalone release includes a mountable HFS guest image, prebuilt MacBinary
-components, the matching Power Mac video NDRV, complete source, and a minimal
-patch for pristine QEMU 11.0.2:
-
-```bash
-./scripts/package-gxmetal-release.sh
-```
-
-This produces `dist/GXMetal-2.3.0.tar.gz`, a ZIP variant, checksums, and
-`dist/GXMetal-Guest.iso`. See
-[`gxmetal/standalone/README.md`](gxmetal/standalone/README.md) for QEMU build
-arguments, the UTM custom-QEMU rebuild path, installation, and limitations.
+The Platinum fonts and icons are generated from the MIT sources in
+`platinum/` with `python3 platinum/tools/build_platinum_swift.py`; see
+[`platinum/README.md`](platinum/README.md).
 
 The guest-side binaries are committed, so a normal build needs no cross toolchain. If you change them, rebuild with:
 
@@ -318,7 +289,8 @@ The guest-side binaries are committed, so a normal build needs no cross toolchai
 # Classicvirtio Quadra card firmware and Power Mac NDRV loader
 ./scripts/build-classicvirtio-floppy.sh  # -> shared/declrom + shared/ndrvloader
 
-# Power Mac OpenBIOS firmware (uses the OpenBIOS Linux builder container)
+# Power Mac OpenBIOS firmware with the ATI Radeon node and the sound-objects
+# fix (uses the OpenBIOS Linux builder container)
 ./scripts/build-openbios.sh               # -> screamer/openbios-ppc
 ```
 
@@ -326,7 +298,9 @@ The guest-side binaries are committed, so a normal build needs no cross toolchai
 
 ```
 ClassicMac/
-  app/                      # SwiftUI configurator / launcher (SwiftPM package)
+  app/                      # the ClassicMac app and PlatinumKit (SwiftPM package)
+  platinum/                 # MIT Platinum fonts, icons and asset generators
+  ati/                      # emulated ATI Radeon R100: QEMU, macOS GL and OpenBIOS patches
   browser/                  # branded loopback-only noVNC display client
   Resources/                # app icon, machine icon, bundled firmware
   qfb/                      # nubus-qfb enhanced framebuffer device + 68k driver
@@ -352,6 +326,8 @@ ClassicMac/
 - **Optional browser display** — when enabled for a machine, its run gets an HTTP server and QEMU VNC WebSocket bound only to `127.0.0.1`. The bundled noVNC client renders the framebuffer, sends keyboard and pointer input, scales it to the tab, reconnects across Power Mac restarts, and understands QEMU's relative-pointer extension for games. Otherwise QEMU uses ClassicMac's native Cocoa window.
 - **Quadra video** — `nubus-qfb`, a paravirtualized NuBus framebuffer (ported from [SolraBizna/qemu](https://github.com/SolraBizna/qemu) onto QEMU 11.0.2) with 68k card firmware and a driver built with Retro68.
 - **Power Mac video** — QEMU's std VGA gains packed low-color and optimized framebuffer paths. The bundled `qemu_vga.ndrv` supplies the full classic Mac display-mode set without a guest installation.
+- **ATI Radeon 3D** — `ati-vga,model=r100` (from RetroBoot) emulates the card Mac OS 9's ATI drivers expect, down to its command processor and 3D engine. 3D draws run on a separate thread through Apple's OpenGL 4.1 (loaded at run time, so QEMU never links OpenGL); finished frames return to the card's VRAM for display. OpenBIOS names the card `ATY,Rage6p` and programs its boot mode, and the emulated monitor's EDID offers exactly the screen size you chose.
+- **Platinum interface** — `PlatinumKit` draws every control from measured Mac OS 8.1 pixel tables with a one-Mac-pixel-per-point painter, uses bitmap fonts compiled to pixel-square TrueType, and hosts SwiftUI content in borderless windows with their own pinstriped frames, WindowShade and modal dialog handling.
 - **Restart and installer handoff** — both models exit and relaunch cleanly at a reset boundary. This works around QEMU's broken in-place `mac99` reset and gives ClassicMac a safe point to recognize a newly blessed hard disk before the next boot.
 - **Sound** — the ASC is patched to output silence when idle (`qfb/asc-silence.patch`); the Power Mac uses Mark Cave-Ayland's screamer device with a screamer-aware OpenBIOS build.
 - **Power Mac storage** — MacIO IDE/DBDMA holds the final DMA descriptor for 1 ms before publishing completion. Real hardware cannot finish in the same scheduling window in which the driver starts an operation; without this small latency, cached host I/O can beat Mac OS 9's synchronous-wait setup and lose its wakeup, freezing Installer mid-copy. Focused MacIO/DBDMA tracepoints remain available for regression runs.

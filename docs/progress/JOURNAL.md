@@ -298,3 +298,33 @@
 - All task-owned emulators are stopped. User library and root iPad checkout are
   unchanged. Follow-up complete; further OS/control-panel compatibility remains
   experimental, with D7 full boot not yet qualified.
+
+## October 17 — ClassicMac 4.0 Preview 1 (ATI Radeon, Library, Platinum)
+
+- Scope: port RetroBoot's ATI Radeon R100 and drop GXMetal, bring over the
+  Library of OS images, and rebuild the UI in Apple Platinum. Two worktrees:
+  `claude/4.0-engine` (engine agent: GXMetal removal `0004bcd`, ATI with a
+  CGL/OpenGL 4.1 back end and OpenBIOS node `273ebc7`, script overrides
+  `5f2c378`, ClassicMac Display `c5701c9`, faster PPC `74275dd`, harness
+  `90a7e4c`, report `ab0d314`) and `claude/4.0-platinum` (PlatinumKit
+  `f813b2d`, Platinum app/Library/graphics card `8c946a2`, tests `d5b3d4d`,
+  iPad build `f9b09a1`). Integrated on `claude/4.0` (`6b29ac7` onward): ATI
+  launch arguments and 3D status `e143884`, OpenBIOS sound-objects fix
+  `88e9c39` (firmware `f1cd3599…`, built under a temporary Rosetta colima
+  profile that was deleted; the 3.x firmware still reproduces), Iconfactory
+  support `4c220c3`.
+- The user asked to use The Iconfactory's freeware icons. Their license is
+  personal desktop use only, no redistribution, so ClassicMac reads the
+  person's own downloaded collections from Application Support and keeps
+  its MIT icons as the default; nothing Iconfactory is committed.
+- Verification: 117 Swift tests; build gates incl. host GL; Deluxe v6 ATI
+  boots (harness ×2 and bundled-app smoke test with the Cocoa window, 3D on
+  Apple M5 Max, clean app Shut Down); engine evidence in
+  `worktrees/4.0-engine/output/4.0-engine/` and `docs/engine-4.0-ati.md`.
+- Release: 4.0.0 Preview 1 bundled, notarized (app `31625b34…`, DMG
+  `b208a142…`), stapled, `verify-release.sh` passed; DMG SHA-256 `afb6b04a…`.
+  Not published. No production, catalog or GitHub changes; the user's
+  library and machines were not touched (UI runs used a scratch home).
+- Next: user testing of the Preview DMG, then the CPU-commit and publication
+  decisions.
+

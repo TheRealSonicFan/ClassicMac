@@ -1,5 +1,35 @@
 # Changelog
 
+## 4.0.0 Preview 1 — 2026-10-17 (local test build, unpublished)
+
+### Added
+
+- An Apple Platinum interface for every window, built on the new
+  `PlatinumKit` (also builds for iPad): RetroBoot's MIT bitmap fonts compiled
+  to pixel-square TrueType, measured Mac OS 8.1 control tables, Platinum
+  menus with Mac OS menu tracking and MenuFlash, borderless windows with
+  pinstriped title bars, close/zoom/WindowShade boxes, grow box and movable
+  modal dialogs, default-button flashing and caution-alert beeps.
+- The Mac OS Library: the catalog with curated SuperDeluxe, Deluxe, Mac OS
+  9.2.1 and Copland editions, contents by category, older-version hiding and
+  a classic download progress dialog.
+- An emulated ATI Radeon R100 (from RetroBoot) as a per-Mac graphics card,
+  driven by Mac OS 9's own ATI drivers with 3D on the host GPU through
+  OpenGL 4.1. About This Mac reports the GPU drawing a running Mac's 3D.
+  ClassicMac Display on the Tools disk applies the chosen size.
+- Faster PowerPC emulation (RetroBoot's MMU-context, FPU and branch-cache
+  patches): Quake III's demo rose from about 104 to 154 fps on an M5 Max.
+- Get Info (⌘I) with General, Display and Sharing panes; New Mac; original
+  machine icons; and optional use of The Iconfactory's classic icons from
+  the person's own downloaded copy.
+
+### Changed
+
+- GXMetal, its Tools CD folder, status menu and release gates are removed.
+- OpenBIOS keeps the screamer `sound-objects` list terminated, fixing an
+  intermittent "Apple Audio Extension illegal instruction" at startup.
+- Installer and CD starts always use the Standard card.
+
 ## Unreleased
 
 ### Added
