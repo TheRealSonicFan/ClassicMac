@@ -1,0 +1,187 @@
+diff --git a/hw/misc/macio/cuda.c b/hw/misc/macio/cuda.c
+--- a/hw/misc/macio/cuda.c
++++ b/hw/misc/macio/cuda.c
+@@ -797,11 +797,19 @@ static void mos6522_cuda_reset_hold(Object *obj, ResetType type)
+     ms->timers[1].frequency = CUDA_TIMER_FREQ;
+ }
+ 
++static const Property mos6522_cuda_properties[] = {
++    /* RetroBoot: see get_next_irq_time() in hw/misc/mos6522.c */
++    DEFINE_PROP_BOOL("coherent-timers", MOS6522State, coherent_timers, true),
++};
++
+ static void mos6522_cuda_class_init(ObjectClass *oc, const void *data)
+ {
++    DeviceClass *dc = DEVICE_CLASS(oc);
+     ResettableClass *rc = RESETTABLE_CLASS(oc);
+     MOS6522DeviceClass *mdc = MOS6522_CLASS(oc);
+ 
++    device_class_set_props(dc, mos6522_cuda_properties);
++
+     resettable_class_set_parent_phases(rc, NULL, mos6522_cuda_reset_hold,
+                                        NULL, &mdc->parent_phases);
+     mdc->portB_write = mos6522_cuda_portB_write;
+diff --git a/hw/misc/mos6522.c b/hw/misc/mos6522.c
+--- a/hw/misc/mos6522.c
++++ b/hw/misc/mos6522.c
+@@ -175,6 +175,9 @@ static void set_counter(MOS6522State *s, MOS6522Timer *ti, unsigned int val)
+     trace_mos6522_set_counter(1 + ti->index, val);
+     ti->load_time = get_load_time(s, ti);
+     ti->counter_value = val;
++    if (ti->index == 1) {
++        s->t2_fired = false;
++    }
+     if (ti->index == 0) {
+         mos6522_timer1_update(s, ti, ti->load_time);
+     } else {
+@@ -182,6 +185,22 @@ static void set_counter(MOS6522State *s, MOS6522Timer *ti, unsigned int val)
+     }
+ }
+ 
++/*
++ * RetroBoot (coherent_timers): subclasses may count in their own time base
++ * (mos6522-cuda loads and reads its counters in timebase ticks, so that Mac
++ * OS calibrates against the timebase), but the generic code below converted
++ * the interrupt time back as if load_time were in ns.  For mos6522-cuda the
++ * timer interrupt therefore came at a random point of the period instead of
++ * when the counter the guest reads passes zero: in the Mac OS ROM's VIA
++ * timer-2 calibration it could arrive 0.07 ms after a 1 ms load, while the
++ * nanokernel had interrupts off, and be cleared by the ROM's next reload,
++ * so the calibration handler never ran and timer 2, which QEMU also kept
++ * re-firing every period, interrupted the ROM later at a point where it
++ * could not take an interrupt (pre-gray hang, nanokernel debugger loop;
++ * emulator/reports/pregray-hang-20261011.md).  With coherent_timers the
++ * interrupt time is derived from the subclass's own counter value, and
++ * timer 2 fires once per load like the real 6522's one-shot timer 2.
++ */
+ static int64_t get_next_irq_time(MOS6522State *s, MOS6522Timer *ti,
+                                  int64_t current_time)
+ {
+@@ -191,10 +210,17 @@ static int64_t get_next_irq_time(MOS6522State *s, MOS6522Timer *ti,
+     if (ti->frequency == 0) {
+         return INT64_MAX;
+     }
++    if (s->coherent_timers && ti->index == 1 && s->t2_fired) {
++        return INT64_MAX;
++    }
+ 
+     /* current counter value */
+-    d = muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - ti->load_time,
+-                 ti->frequency, NANOSECONDS_PER_SECOND);
++    if (s->coherent_timers) {
++        d = get_counter_value(s, ti);
++    } else {
++        d = muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - ti->load_time,
++                     ti->frequency, NANOSECONDS_PER_SECOND);
++    }
+ 
+     /* the timer goes down from latch to -1 (period of latch + 2) */
+     if (d <= (ti->counter_value + 1)) {
+@@ -213,6 +239,16 @@ static int64_t get_next_irq_time(MOS6522State *s, MOS6522Timer *ti,
+         next_time = d + counter;
+     }
+     trace_mos6522_get_next_irq_time(ti->latch, d, next_time - d);
++    if (s->coherent_timers) {
++        int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++
++        next_time = now + muldiv64(next_time - d, NANOSECONDS_PER_SECOND,
++                                   ti->frequency);
++        if (next_time <= now) {
++            next_time = now + 1;
++        }
++        return next_time;
++    }
+     next_time = muldiv64(next_time, NANOSECONDS_PER_SECOND, ti->frequency) +
+                          ti->load_time;
+ 
+@@ -260,11 +296,19 @@ static void mos6522_timer1(void *opaque)
+     mos6522_update_irq(s);
+ }
+ 
++static void mos6522_timer2_fired(MOS6522State *s)
++{
++    if (s->coherent_timers) {
++        s->t2_fired = true;     /* one-shot: no more interrupts until a load */
++    }
++}
++
+ static void mos6522_timer2(void *opaque)
+ {
+     MOS6522State *s = opaque;
+     MOS6522Timer *ti = &s->timers[1];
+ 
++    mos6522_timer2_fired(s);
+     mos6522_timer2_update(s, ti, ti->next_irq_time);
+     s->ifr |= T2_INT;
+     mos6522_update_irq(s);
+@@ -305,6 +349,7 @@ uint64_t mos6522_read(void *opaque, hwaddr addr, unsigned size)
+         s->ifr |= T1_INT;
+     }
+     if (now >= s->timers[1].next_irq_time) {
++        mos6522_timer2_fired(s);
+         mos6522_timer2_update(s, &s->timers[1], now);
+         s->ifr |= T2_INT;
+     }
+@@ -621,6 +666,24 @@ static const VMStateDescription vmstate_mos6522_timer = {
+     }
+ };
+ 
++static bool vmstate_mos6522_t2_needed(void *opaque)
++{
++    MOS6522State *s = opaque;
++
++    return s->coherent_timers;
++}
++
++static const VMStateDescription vmstate_mos6522_t2 = {
++    .name = "mos6522/t2-one-shot",
++    .version_id = 1,
++    .minimum_version_id = 1,
++    .needed = vmstate_mos6522_t2_needed,
++    .fields = (const VMStateField[]) {
++        VMSTATE_BOOL(t2_fired, MOS6522State),
++        VMSTATE_END_OF_LIST()
++    }
++};
++
+ const VMStateDescription vmstate_mos6522 = {
+     .name = "mos6522",
+     .version_id = 1,
+@@ -639,6 +702,10 @@ const VMStateDescription vmstate_mos6522 = {
+         VMSTATE_STRUCT_ARRAY(timers, MOS6522State, 2, 0,
+                              vmstate_mos6522_timer, MOS6522Timer),
+         VMSTATE_END_OF_LIST()
++    },
++    .subsections = (const VMStateDescription * const []) {
++        &vmstate_mos6522_t2,
++        NULL
+     }
+ };
+ 
+@@ -664,6 +731,8 @@ static void mos6522_reset_hold(Object *obj, ResetType type)
+ 
+     s->timers[1].frequency = s->frequency;
+     s->timers[1].latch = 0xffff;
++    s->t2_fired = s->coherent_timers;   /* not loaded since reset */
++    s->timers[1].next_irq_time = s->coherent_timers ? INT64_MAX : 0;
+     timer_del(s->timers[1].timer);
+ }
+ 
+diff --git a/include/hw/misc/mos6522.h b/include/hw/misc/mos6522.h
+--- a/include/hw/misc/mos6522.h
++++ b/include/hw/misc/mos6522.h
+@@ -148,6 +148,14 @@ struct MOS6522State {
+ 
+     qemu_irq irq;
+     uint8_t last_irq_levels;
++
++    /*
++     * RetroBoot: timer interrupts when the guest-visible counters say so
++     * (also for subclasses with their own counter time base, mos6522-cuda),
++     * and timer 2 one-shot as on the real 6522.  See get_next_irq_time().
++     */
++    bool coherent_timers;
++    bool t2_fired;              /* coherent_timers: T2 fired since its load */
+ };
+ 
+ #define TYPE_MOS6522 "mos6522"

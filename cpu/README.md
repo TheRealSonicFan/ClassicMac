@@ -35,6 +35,6 @@ files they change ("RetroBoot contributors").
 Measurements and reasoning: RetroBoot `emulator/reports/ppcfpu-20261012.md`
 and `ppcfpu2-20261012.md`; ClassicMac's own correctness and speed checks are
 in `docs/engine-4.0-ati.md`. RetroBoot pairs the branch cache with a VIA
-timer-2 hold (`retroboot-via-t2-hold.patch`, not included) because faster
-branches exposed a ROM timer-calibration race on slow Linux hosts; see the
-report for the risk on ClassicMac.
+timer-2 hold because faster branches exposed a ROM timer-calibration race on
+slow Linux hosts; ClassicMac applies it right after these patches
+(`timers/README.md`).
