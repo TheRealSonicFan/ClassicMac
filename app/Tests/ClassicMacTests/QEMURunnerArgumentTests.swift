@@ -99,18 +99,15 @@ final class QEMURunnerArgumentTests: XCTestCase {
         XCTAssertEqual(decoded.graphicsCard, .standard, "Only Power Macs have the ATI card")
     }
 
-    func testBothMachinesDefaultToNativeCocoaWindow() {
+    func testBothMachinesShowTheirScreenInClassicMacsWindow() {
         let powerMac = config()
         let quadra = config(family: .quadra800)
 
         for vm in [powerMac, quadra] {
             let arguments = QEMUManager.buildArguments(for: vm)
             let display = try! XCTUnwrap(optionValues("-display", in: arguments).first)
-
-            XCTAssertTrue(display.hasPrefix("cocoa,swap-opt-cmd=off"))
-            XCTAssertTrue(display.contains("right-click-ctrl=on"))
-            XCTAssertTrue(display.contains("scroll-keys=on"))
-            XCTAssertFalse(display.contains("vnc="))
+            XCTAssertEqual(display, "classicmac,socket=\(GuestDisplaySession.socketPath(for: vm.id))")
+            XCTAssertLessThan(GuestDisplaySession.socketPath(for: vm.id).utf8.count, 104, "AF_UNIX path limit")
         }
     }
 
@@ -133,7 +130,9 @@ final class QEMURunnerArgumentTests: XCTestCase {
         }
     }
 
-    func testNativeWindowCanDisableClassicInputHelpers() {
+    func testQEMUWindowFallbackCanDisableClassicInputHelpers() {
+        UserDefaults.standard.set(true, forKey: "ClassicMacUseQEMUWindow")
+        defer { UserDefaults.standard.removeObject(forKey: "ClassicMacUseQEMUWindow") }
         let arguments = QEMUManager.buildArguments(
             for: config(classicInputHelpers: false)
         )

@@ -23,9 +23,14 @@ let package = Package(
                 .swiftLanguageMode(.v5)
             ]
         ),
+        // Socket and shared-memory helpers for the guest display protocol.
+        .target(
+            name: "CDisplaySocket",
+            path: "Sources/CDisplaySocket"
+        ),
         .executableTarget(
             name: "ClassicMac",
-            dependencies: ["PlatinumKit"],
+            dependencies: ["PlatinumKit", "CDisplaySocket"],
             path: "Sources/ClassicMac",
             swiftSettings: [
                 // The app predates Swift 6 strict concurrency; keep the v5

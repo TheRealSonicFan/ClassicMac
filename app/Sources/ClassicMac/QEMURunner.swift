@@ -168,6 +168,18 @@ final class QEMUManager: ObservableObject {
             try? FileManager.default.removeItem(at: displayServer.endpoint.vncSocketURL)
         }
 
+        if QEMUManager.usesClassicMacDisplay(config) {
+            do {
+                _ = try GuestWindows.shared.prepare(config)
+            } catch {
+                lastError = AppError(
+                    "Couldn't Start \u{201C}\(config.name)\u{201D}",
+                    "The Mac's screen could not be prepared. \(error.localizedDescription)"
+                )
+                return
+            }
+        }
+
         let process = Process()
         process.executableURL = AppPaths.qemuBinary(for: config.machineFamily)
         process.arguments = QEMUManager.buildArguments(
@@ -251,6 +263,7 @@ final class QEMUManager: ObservableObject {
                 if proc.terminationStatus != 0 && proc.terminationReason == .exit {
                     monitor?.cancel()
                     self.stopBrowserDisplay(for: config.id)
+                    GuestWindows.shared.machineStopped(config.id)
                     self.lastError = AppError(
                         "\u{201C}\(config.name)\u{201D} Shut Down Unexpectedly",
                         "The Mac stopped on its own. Try starting it again.",
@@ -273,6 +286,7 @@ final class QEMUManager: ObservableObject {
                 }
                 guard let monitor = monitor else {
                     self.stopBrowserDisplay(for: config.id)
+                    GuestWindows.shared.machineStopped(config.id)
                     return
                 }
                 // A restart (from inside the guest or via the app's Restart
@@ -291,6 +305,7 @@ final class QEMUManager: ObservableObject {
                     )
                 } else {
                     self.stopBrowserDisplay(for: config.id)
+                    GuestWindows.shared.machineStopped(config.id)
                 }
             }
         }
@@ -298,6 +313,7 @@ final class QEMUManager: ObservableObject {
         do {
             try process.run()
         } catch {
+            GuestWindows.shared.machineStopped(config.id)
             coplandControls.removeValue(forKey: config.id)
             if let displayServer {
                 if browserServers[config.id] === displayServer {
@@ -352,6 +368,9 @@ final class QEMUManager: ObservableObject {
         if openDisplay {
             if config.useBrowserDisplay {
                 activate(config.id)
+            } else if QEMUManager.usesClassicMacDisplay(config) {
+                // The window opens at once on the startup screen.
+                GuestWindows.shared.show(config.id)
             } else {
                 // The native QEMU Cocoa window appears shortly after the
                 // process spawns, so bring it forward twice as it settles.
@@ -385,6 +404,10 @@ final class QEMUManager: ObservableObject {
 
     // Opens the optional VNC viewer or brings the native Cocoa window forward.
     func activate(_ id: UUID) {
+        if GuestWindows.shared.session(for: id) != nil {
+            GuestWindows.shared.show(id)
+            return
+        }
         if let url = browserURLs[id] {
             if !NSWorkspace.shared.open(url) {
                 lastError = AppError(
@@ -748,10 +771,21 @@ final class QEMUManager: ObservableObject {
         if config.useBrowserDisplay {
             return ["-display", display.qemuDisplay]
         }
+        if usesClassicMacDisplay(config) {
+            // ClassicMac draws the Mac's screen in its own Platinum window;
+            // QEMU hands over the framebuffer and takes input on this socket.
+            return ["-display", "classicmac,socket=\(GuestDisplaySession.socketPath(for: config.id))"]
+        }
         return [
             "-display",
             "cocoa,swap-opt-cmd=off\(inputHelperOptions(for: config))"
         ]
+    }
+
+    /// Whether this Mac's screen appears in ClassicMac's own window.
+    static func usesClassicMacDisplay(_ config: VMConfig) -> Bool {
+        !config.useBrowserDisplay && config.machineFamily != .powerMac7500 &&
+            !UserDefaults.standard.bool(forKey: "ClassicMacUseQEMUWindow")
     }
 
     // Extra Cocoa options for the classic input helpers (right-click as

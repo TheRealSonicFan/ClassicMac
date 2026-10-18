@@ -75,6 +75,13 @@ enum DebugSnapshots {
         case "about": manager.showAbout()
         case "newmac": manager.presentNewMac()
         case "icons": manager.presentIconPacks()
+        case "guestwindow":
+            // The screen window alone, for a stand-in emulator to connect to.
+            if let id = store.selectedID, let vm = store.vms.first(where: { $0.id == id }) {
+                _ = try? GuestWindows.shared.prepare(vm)
+                GuestWindows.shared.show(id)
+                print("display-socket:", GuestDisplaySession.socketPath(for: id))
+            }
         case "settings": if let id = store.selectedID { manager.presentSettings(for: id) }
         case "media": if let id = store.selectedID { MediaController.shared.present(for: id) }
         case "shutdown": if let id = store.selectedID { QEMUManager.shared.requestStop(id) }
