@@ -545,6 +545,22 @@ final class QEMUManager: ObservableObject {
         pendingStopID = nil
     }
 
+    /// Shuts every running Mac down safely (for Quit), then calls back once
+    /// they have all stopped, or after 25 seconds.
+    func shutDownAll(then completion: @escaping () -> Void) {
+        pendingStopID = nil
+        for id in runningIDs { stop(id) }
+        let deadline = Date().addingTimeInterval(25)
+        func poll() {
+            if runningIDs.isEmpty || Date() > deadline {
+                completion()
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { poll() }
+        }
+        poll()
+    }
+
     func confirmStop() {
         guard let id = pendingStopID else { return }
         pendingStopID = nil

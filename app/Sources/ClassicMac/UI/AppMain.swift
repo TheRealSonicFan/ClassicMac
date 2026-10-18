@@ -53,6 +53,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    /// Running Macs live in ClassicMac's windows, so they shut down with it.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let manager = QEMUManager.shared
+        let running = manager.runningIDs.count
+        guard running > 0 else { return .terminateNow }
+        let names = VMStore.shared.vms.filter { manager.isRunning($0.id) }.map { "\u{201C}\($0.name)\u{201D}" }
+        let message = running == 1 ? "Shut down \(names.first ?? "the running Mac") and quit ClassicMac?"
+                                   : "Shut down \(running) running Macs and quit ClassicMac?"
+        WindowManager.shared.alert(.caution, message,
+            informative: "Each Mac shuts down safely first, as if you chose Shut Down from the Special menu. A Mac that does not respond within 15 seconds is turned off.",
+            buttons: [
+                PlatinumAlertButton("Shut Down and Quit", role: .default) {
+                    manager.shutDownAll { NSApp.reply(toApplicationShouldTerminate: true) }
+                },
+                PlatinumAlertButton("Cancel", role: .cancel) { NSApp.reply(toApplicationShouldTerminate: false) },
+            ])
+        return .terminateLater
+    }
+
     // MARK: Menu actions
 
     private var store: VMStore { .shared }
