@@ -48,8 +48,9 @@ class Engine extends EventEmitter {
     this.child.stderr.on('data', data => { this.log = (this.log + data.toString()).slice(-65536); });
     this.child.once('exit', (code, signal) => {
       this.exited = true;
-      for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('The Mac has stopped.')); }
+      for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('The Mac has stopped. ' + JSON.stringify({ code, signal, reason: this.shutdownReason }) + ' ' + this.log)); }
       this.pending.clear();
+      if (process.env.CLASSICMAC_TEST_HOME) console.error('Engine exit', JSON.stringify({ code, signal, reason: this.shutdownReason, log: this.log }));
       this.emit('exit', { code, signal, restart: !this.stopping && ['guest-reset', 'host-qmp-system-reset'].includes(this.shutdownReason) });
     });
     try {
