@@ -367,6 +367,9 @@ struct ScreenPreview: View {
                         Text(running ? "Starting up…" : "Start up this Mac to see its screen here.")
                             .font(.platinumSmall)
                             .foregroundStyle(Color.white)
+                        if running {
+                            PlatinumProgressBar(value: nil).frame(width: 120)
+                        }
                     }
                 }
                 if paused {
