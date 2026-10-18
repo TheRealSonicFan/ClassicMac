@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import AppKit
 @testable import PlatinumKit
 
 /// Renders Platinum views to PNG for visual review when
@@ -40,5 +41,21 @@ final class PlatinumRenderTests: XCTestCase {
                                             PlatinumAlertButton("Cancel", role: .cancel)]) {}
         let state = PlatinumWindowState(title: "")
         _ = try render(PlatinumWindowChrome(state: state, kind: .modal) { alert }.frame(width: 413, height: 150), name: "alert")
+    }
+
+    func testMenuRenders() throws {
+        let items = [PlatinumMenu.Item(title: "640 x 480"), PlatinumMenu.Item(title: "800 x 600"),
+                     PlatinumMenu.Item(title: "1024 x 768", checked: true), PlatinumMenu.Item(title: "", separator: true),
+                     PlatinumMenu.Item(title: "Custom…", enabled: false)]
+        let view = PlatinumMenu.MenuView(items: items)
+        view.frame = NSRect(x: 0, y: 0, width: view.naturalWidth + 2, height: view.naturalHeight + 2)
+        view.highlighted = 1
+        let rep = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: rep)
+        if let dir = ProcessInfo.processInfo.environment["PLATINUM_RENDER_DIR"] {
+            try rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: dir).appendingPathComponent("menu.png"))
+        }
+        XCTAssertEqual(view.item(at: NSPoint(x: 30, y: CGFloat(PlatinumMenu.topMargin + 16 + 4))), 1)
+        XCTAssertNil(view.item(at: NSPoint(x: 30, y: CGFloat(PlatinumMenu.topMargin + 3 * 16 + 2))), "separators are not choosable")
     }
 }

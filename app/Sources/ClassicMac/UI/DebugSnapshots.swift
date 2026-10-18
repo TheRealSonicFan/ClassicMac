@@ -45,7 +45,7 @@ enum DebugSnapshots {
         case "alert":
             manager.alert(.caution, "This is a Platinum alert.", informative: "Buttons, icon and text follow the Mac OS alert layout.",
                           buttons: [PlatinumAlertButton("OK", role: .default), PlatinumAlertButton("Cancel", role: .cancel)])
-        case "collapse": (NSApp.keyWindow as? PlatinumWindow)?.toggleCollapse()
+        case "collapse": (NSApp.orderedWindows.first { $0.isVisible } as? PlatinumWindow)?.toggleCollapse()
         default:
             if step.hasPrefix("select:"), let n = Int(step.dropFirst(7)), store.vms.indices.contains(n) {
                 store.selectedID = store.vms[n].id
