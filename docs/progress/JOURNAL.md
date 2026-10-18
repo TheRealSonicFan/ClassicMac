@@ -410,3 +410,31 @@
   exposing or persisting them; the earlier keychain question is obsolete.
   Windows native build reached packaging, then the real desktop smoke found
   missing DES cipher support for authenticated VNC; libgcrypt rebuild running.
+
+## October 18 — stable 4.0.0 shipped; native Windows prototype passes
+
+- Merged artwork PR #23 (`7960abd`) and screenshot audit PR #25 (`cee04d0`).
+  Final release source/tag is `cee04d02994314e5345d2f1c6608e4721f580687`.
+  Consolidated integration suite: 122 tests, two fixture-dependent skips,
+  zero failures. Signed package, macOS 15 runtime, ATI/OpenGL and native
+  display reconnect gates pass. Final disposable ATI/Standard Macs boot to
+  Finder with the included icons and finish normal shutdown.
+- App notary `1998d59e-e3e3-4983-8ae5-30ef3bd23b12` and DMG notary
+  `28c34264-d0df-4883-84a1-14a0f2a5d61f` accepted; both stapled. Published
+  v4.0.0 as stable Latest with DMG, ZIP, Copland corresponding source and
+  SHA256SUMS. Fresh public DMG checksum/staple/Gatekeeper/package checks pass.
+  DMG SHA256 `c367d659dc5d412c31550a97d3831426dc33b51a7ecea2aff055dbbe376e18eb`.
+  Previous stable/Preview 3 remain available for rollback; catalog unchanged.
+- Native Windows CI 39143255474 at `3b2d435` passes the packaged-desktop
+  boot/display/pause/resume/reset/reconnect/clean-shutdown smoke. Reviewed the
+  Windows screenshot: OS9 Finder is visible. Explicit libgcrypt fixes VNC
+  authentication; reset-exit handling fixes the Windows lifecycle race.
+  Six JS tests pass; native QEMU devices/optional WGL realization pass.
+- Windows unsigned prototype ZIP retained at `output/windows/2026-10-18/`,
+  SHA256 `ae7b408dbd47472b0e11409a2fed87077e76887d65c13fb61b9a1e4619980db7`.
+  PR #24 remains draft: Copland/catalog/paste/sharing and hardware/audio/game
+  qualification remain. No Windows release was published. Pixel-perfect
+  certification is explicitly limited to the covered Mac components.
+- Release API credentials existed only in a protected temporary file, removed
+  after notarization. Task-mounted source DMGs ejected. User machines and
+  unrelated gxmetal files untouched. Worktrees/evidence preserved.
