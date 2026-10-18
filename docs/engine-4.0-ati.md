@@ -297,7 +297,10 @@ the Mac OS ROM's timer-calibration loop into a race on a slow Linux host
 (N5105), causing a pre-gray hang. VGA boots are immune (icount: guest time
 does not advance while translating); ATI and CD starts run in real time.
 ClassicMac now applies RetroBoot's `cuda-via-timers`, `pmu-via-timers` and
-`via-t2-hold` patches after the CPU patches.
+`via-t2-hold` patches after the CPU patches. RetroBoot's other two pre-gray
+races, the Cuda sync handshake and the IDE soft reset (types A and C, both
+older than the CPU patches), are closed by `startup/`; see
+`docs/engine-4.0-startup-races.md`.
 
 ## Not run
 
