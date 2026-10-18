@@ -271,6 +271,7 @@ else app.whenReady().then(async () => {
       const deadline = Date.now() + 20000;
       while (engines.size && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 250));
       await fs.writeFile(process.env.CLASSICMAC_TEST_SCREENSHOT + '.shutdown.json', JSON.stringify({ cleanShutdown: engines.size === 0 }));
+      if(engines.size&&process.env.CLASSICMAC_TEST_HOME){for(const e of engines.values())await e.forceOff();app.exit(1);return;}
     }
     if (!engines.size) app.quit();
   }, Number(process.env.CLASSICMAC_TEST_WAIT || 2000));

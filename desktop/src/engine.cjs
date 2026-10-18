@@ -53,7 +53,7 @@ class Engine extends EventEmitter {
       for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('The Mac has stopped. ' + JSON.stringify({ code, signal, reason: this.shutdownReason }) + ' ' + this.log)); }
       this.pending.clear();
       if (process.env.CLASSICMAC_TEST_HOME) console.error('Engine exit', JSON.stringify({ code, signal, reason: this.shutdownReason, log: this.log }));
-      this.emit('exit', { code, signal, restart: !this.stopping && ['guest-reset', 'host-qmp-system-reset'].includes(this.shutdownReason) });
+      this.emit('exit', { code, signal, restart: (this.restarting && this.shutdownReason === 'guest-shutdown') || (!this.stopping && ['guest-reset', 'host-qmp-system-reset'].includes(this.shutdownReason)) });
     });
     try {
       await ready;
@@ -75,16 +75,11 @@ class Engine extends EventEmitter {
     });
   }
   hmp(command) { return this.command('human-monitor-command', { 'command-line': command }); }
-  async restart() {
-    try { await this.command('system_reset'); }
-    catch (error) {
-      // QEMU can exit for -no-reboot before sending the command reply.
-      if (!this.exited || !['guest-reset', 'host-qmp-system-reset'].includes(this.shutdownReason)) throw error;
-    }
-  }
+  async restart() { await this.shutdown({ restart: true }); }
   async pause() { await this.command('stop'); this.paused = true; }
   async resume() { await this.command('cont'); this.paused = false; }
-  async shutdown() {
+  async shutdown({ restart = false } = {}) {
+    this.restarting = restart;
     this.stopping = true;
     if (this.paused) await this.resume();
     await this.hmp('sendkey power');
@@ -93,6 +88,6 @@ class Engine extends EventEmitter {
     // Leave a nonresponsive Mac running until the person explicitly chooses
     // Force Off; a normal close must not silently kill a mounted HFS volume.
   }
-  async forceOff() { this.stopping = true; try { await this.command('quit'); } catch { this.child?.kill(); } }
+  async forceOff() { this.restarting = false; this.stopping = true; try { await this.command('quit'); } catch { this.child?.kill(); } }
 }
 module.exports = { Engine, availablePort };
