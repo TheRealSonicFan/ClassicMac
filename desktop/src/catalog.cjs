@@ -7,6 +7,8 @@ const {createGunzip}=require('node:zlib');
 const {freshConfig,validate,writeJSON}=require('./machines.cjs');
 const CATALOG_URL='https://mcchord.net/classicmac/catalog.json';
 const limit=140*1073741824;
+const currentVersion=require('../package.json').version;
+function supportedVersion(minimum){const a=currentVersion.split('.').map(Number),b=minimum.split('.').map(Number);for(let i=0;i<3;i++){if((a[i]||0)!==(b[i]||0))return(a[i]||0)>(b[i]||0);}return true;}
 function secureURL(value) { const u=new URL(value); if(u.protocol!=='https:'||u.username||u.password||u.hash) throw new Error('Library downloads require HTTPS.'); return u; }
 function catalog(data) {
  if(data.length>1048576) throw new Error('The Library catalog is too large.');
@@ -106,6 +108,7 @@ async function extract(archive,folder,m,{signal,progress=()=>{}}={}) {
  }finally{input.destroy();gzip.destroy();}
 }
 async function install(m,parent,name,cache,options={}) {
+ if(!supportedVersion(m.minimumAppVersion))throw new Error('Update ClassicMac to install this Library edition.');
  if((m.machineFamily||'powerMacG4')!=='powerMacG4')throw new Error('This edition needs the macOS Copland engine.');
  const archive=await download(m,cache,options);
  const stats=await fs.statfs(parent);if(stats.bavail*stats.bsize<m.installedBytes+268435456)throw new Error('There is not enough space to install this Mac.');
