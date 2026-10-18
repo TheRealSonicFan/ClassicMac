@@ -254,6 +254,11 @@ else app.whenReady().then(async () => {
     while ((!engines.has(id) || engines.get(id) === engine || !engines.get(id).endpoint) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
     if (!engines.has(id) || engines.get(id) === engine) throw new Error('Restart did not launch a new engine.');
   }
+  if (process.env.CLASSICMAC_TEST_PARITY === '1') {
+    if(!process.env.CLASSICMAC_TEST_HOME||!process.env.CLASSICMAC_TEST_START)throw new Error('Qualification requires an isolated home and fixture.');
+    await require('./qualification.cjs').qualify({window,engines,id:process.env.CLASSICMAC_TEST_START,home:app.getPath('userData'),imageTool,version:app.getVersion()});
+    app.quit();return;
+  }
   if (process.env.CLASSICMAC_TEST_SCREENSHOT) setTimeout(async () => {
     try {
       await fs.writeFile(process.env.CLASSICMAC_TEST_SCREENSHOT, (await window.webContents.capturePage()).toPNG());

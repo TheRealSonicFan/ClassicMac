@@ -25,7 +25,8 @@ async function paste(engine,text,{slow=false,signal,progress=()=>{}}={}) {
   for (const [i,sequence] of sequences.entries()) {
     if (signal?.aborted || engine.exited || engine.paused) throw new Error('Pasting stopped. Text already entered remains in the Mac.');
     for (const key of sequence) {
-      await engine.hmp(`sendkey ${key} 1`);
+      const response = await engine.hmp(`sendkey ${key} 1`);
+      if (/unknown key|error:|unknown command/i.test(String(response))) throw new Error('The Mac rejected a key chord.');
       await new Promise(resolve=>setTimeout(resolve,slow?125:50));
     }
     progress(i+1,sequences.length);

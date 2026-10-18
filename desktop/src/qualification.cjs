@@ -1,0 +1,56 @@
+'use strict';
+// Opt-in packaged-app qualification. Every write is confined to the explicit
+// disposable test home; ordinary launches never enter this path.
+const fs=require('node:fs/promises'),path=require('node:path');
+const {promisify}=require('node:util'),{execFile}=require('node:child_process');
+const {freshConfig,readMachine,writeJSON}=require('./machines.cjs');
+const catalog=require('./catalog.cjs'),{paste}=require('./paste.cjs');
+const run=promisify(execFile),delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function qualify({window,engines,id,home,imageTool,version}) {
+ const report={platform:process.platform,version,checks:[],started:new Date().toISOString()};
+ async function check(name,fn){await fn();report.checks.push(name);console.log('PARITY PASS',name);await writeJSON(path.join(home,'parity.json'),report);}
+ await check('create/import/config round trip',async()=>{
+  const folder=path.join(home,'Created Test.classic');await fs.mkdir(folder);
+  const c=freshConfig('Created Test');c.diskSizeGB=1;
+  await run(imageTool(),['create','-f','raw',path.join(folder,'disk.img'),'1G'],{windowsHide:true});
+  await writeJSON(path.join(folder,'config.json'),c);const m=await readMachine(folder);
+  if(m.config.name!==c.name)throw new Error('Created machine did not import.');
+  m.config.ramMB=256;await writeJSON(path.join(folder,'config.json'),m.config);
+  if((await readMachine(folder)).config.ramMB!==256)throw new Error('Settings did not persist.');
+ });
+ if(process.env.CLASSICMAC_TEST_LIBRARY==='1')await check('real Library pause/resume/hash/extraction',async()=>{
+  const rows=await catalog.loadCatalog(),entry=rows.find(m=>m.id==='mac-os-9.2.1-gxmetal-2.3.0-32gb-v2');
+  if(!entry)throw new Error('Clean Library edition is absent.');
+  const cache=path.join(home,'cache'),controller=new AbortController();let cancelled=false;
+  try{await catalog.download(entry,cache,{signal:controller.signal,progress:p=>{if(p.completed>1048576)controller.abort();}});}catch(e){if(!controller.signal.aborted)throw e;cancelled=true;}
+  if(!cancelled)throw new Error('Download pause did not cancel.');
+  const folder=await catalog.install(entry,home,'Library Import Test',cache);
+  if(!(await readMachine(folder)).config.toolsCDInserted)throw new Error('Library settings were not sanitized.');
+ });
+ await delay(Number(process.env.CLASSICMAC_TEST_BOOT_WAIT||45000));
+ let engine=engines.get(id);if(!engine)throw new Error('Boot engine stopped.');
+ await check('boot/display connection',async()=>{
+  const evidence=await window.webContents.executeJavaScript('window.classicmacEvidence?.()');
+  if(!evidence?.connected||!evidence.canvas)throw new Error('Guest display was not connected.');
+ });
+ await check('pause/resume',async()=>{await engine.pause();if((await engine.command('query-status')).status!=='paused')throw new Error('Pause failed');await engine.resume();});
+ await check('native guest paste chords',async()=>{
+  await engine.hmp('sendkey meta_l-w');await delay(300);
+  await paste(engine,'ClassicMacParity');await engine.hmp('sendkey meta_l-o');await delay(1500);
+  await engine.hmp('sendkey meta_l-a');await engine.hmp('sendkey meta_l-o');await delay(6000);
+  await paste(engine,'ClassicMac parity 4.1\nASCII 123; accents: é ñ',{slow:true});
+  await delay(500);
+  await fs.writeFile(path.join(home,'parity-desktop.png'),(await window.webContents.capturePage()).toPNG());
+ });
+ if(process.platform==='linux'&&engine.machine.config.sharedFolderPath)await check('guest 9p host-read and guest-write',async()=>{
+  const value=await fs.readFile(path.join(engine.machine.config.sharedFolderPath,'guest-parity.txt'),'utf8');
+  if(!value.includes('ClassicMac guest read/write PASS'))throw new Error('Guest shared-file round trip failed.');
+ });
+ await check('normal guest shutdown',async()=>{
+  await engine.hmp('sendkey meta_l-q');await delay(500);await engine.shutdown();
+  const deadline=Date.now()+40000;while(engines.has(id)&&Date.now()<deadline)await delay(250);
+  if(engines.has(id)||engine.shutdownReason!=='guest-shutdown')throw new Error('Guest did not shut down normally.');
+ });
+ report.completed=new Date().toISOString();await writeJSON(path.join(home,'parity.json'),report);return report;
+}
+module.exports={qualify};
