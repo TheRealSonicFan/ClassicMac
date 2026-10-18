@@ -2,6 +2,22 @@ import XCTest
 @testable import ClassicMac
 
 final class ClassicIconTests: XCTestCase {
+    func testBundledMachineIconsContainBothNativeSizes() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let icons = IconPacks.bundledImages(in: root.appendingPathComponent("Resources/Iconfactory"))
+        XCTAssertEqual(icons.count, 3)
+        for name in ["powermac_g4", "quadra_800", "powermac_7500"] {
+            for size in [16, 32] {
+                let image = try XCTUnwrap(icons[name]?[size], "Missing bundled \(name)@\(size)")
+                XCTAssertEqual(image.width, size)
+                XCTAssertEqual(image.height, size)
+                let pixels = try XCTUnwrap(image.dataProvider?.data as Data?)
+                XCTAssertTrue(stride(from: 3, to: pixels.count, by: 4).contains { pixels[$0] != 0 })
+            }
+        }
+    }
+
     func testStandardColorTables() {
         XCTAssertEqual(ClassicIcon.palette8.count, 256)
         XCTAssertEqual(ClassicIcon.palette8[0], 0xFFFFFF)

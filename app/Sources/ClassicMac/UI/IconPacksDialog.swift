@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import PlatinumKit
 
-/// Lets the person add The Iconfactory's classic Mac icons they downloaded.
+/// Credits the included artwork and allows additional local collections.
 struct IconPacksDialog: View {
     static let size = NSSize(width: 500, height: 330)
 
@@ -14,7 +14,7 @@ struct IconPacksDialog: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Classic Mac icons from The Iconfactory").platinumText(.emphasis)
-            Text("The Iconfactory's classic Macintosh icons suit ClassicMac perfectly. They are free for personal use and may not be redistributed, so ClassicMac doesn\u{2019}t include them. Download the collections you like, such as Apple Desktops and Expo, then add the downloaded disk images here. ClassicMac keeps a copy on this computer, with its license.")
+            Text("ClassicMac includes classic Macintosh machine icons by The Iconfactory, used with permission. You can also add collections from your own downloaded disk images. Removing added collections restores the included icons. The original collection licenses and readmes are in the app’s Resources/Iconfactory folder.")
                 .platinumText(.small)
                 .fixedSize(horizontal: false, vertical: true)
             PlatinumGroupBox(packs.isUsingIconfactory ? "Now showing" : "Now showing ClassicMac\u{2019}s own icons") {
@@ -48,7 +48,7 @@ struct IconPacksDialog: View {
             HStack(spacing: Platinum.buttonGap) {
                 PlatinumButton("Visit The Iconfactory") { NSWorkspace.shared.open(IconPacks.website) }
                 if !packs.collections.isEmpty {
-                    PlatinumButton("Remove Icons") { packs.removeAll() }
+                    PlatinumButton("Remove Added") { packs.removeAll() }
                 }
                 Spacer()
                 PlatinumButton("Add Icons…", action: chooseCollections)

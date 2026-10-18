@@ -1,16 +1,9 @@
 import AppKit
 import PlatinumKit
 
-/// The Iconfactory's classic Macintosh icons, used for ClassicMac's machine
-/// icons when the person has downloaded them.
-///
-/// The Iconfactory's freeware icons are "for personal desktop use only" and
-/// "may not be redistributed", so ClassicMac never ships them. Instead the
-/// person downloads the collections (Apple Desktops, Expo, ...) from
-/// freeware.iconfactory.com and adds the disk images or folders here.
-/// ClassicMac keeps an intact copy, license and Read Me included, in its own
-/// support folder on this computer and draws the classic 32- and 16-pixel
-/// icons from it. Without them ClassicMac's own MIT icons are used.
+/// Classic Macintosh artwork by The Iconfactory. The bundled machine icons
+/// are included under separately granted permission. Imported collections
+/// take precedence, and removing imports restores the bundled defaults.
 @MainActor
 final class IconPacks: ObservableObject {
     static let shared = IconPacks()
@@ -43,6 +36,7 @@ final class IconPacks: ObservableObject {
 
     /// Finds the collections on this computer and applies their icons.
     func load() {
+        let bundled = Self.bundledImages()
         let fm = FileManager.default
         let packs = ((try? fm.contentsOfDirectory(at: Self.directory, includingPropertiesForKeys: [.isDirectoryKey])) ?? [])
             .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
@@ -76,11 +70,26 @@ final class IconPacks: ObservableObject {
                 break
             }
             if !applied {
-                PlatinumIcons.setOverride(nil, name: choice.icon, size: 32)
-                PlatinumIcons.setOverride(nil, name: choice.icon, size: 16)
+                PlatinumIcons.setOverride(bundled[choice.icon]?[32], name: choice.icon, size: 32)
+                PlatinumIcons.setOverride(bundled[choice.icon]?[16], name: choice.icon, size: 16)
+                if bundled[choice.icon]?[32] != nil {
+                    active[choice.icon] = "The Iconfactory (included)"
+                }
             }
         }
         activeIcons = active
+    }
+
+    /// Plain icns files preserve the artists' pixels without resource-fork
+    /// dependencies, so the same assets can travel with other platforms.
+    nonisolated static func bundledImages(in directory: URL? = nil) -> [String: [Int: CGImage]] {
+        let directory = directory ?? AppPaths.resourcesDir.appendingPathComponent("Iconfactory")
+        var result: [String: [Int: CGImage]] = [:]
+        for name in ["powermac_g4", "quadra_800", "powermac_7500"] {
+            guard let data = try? Data(contentsOf: directory.appendingPathComponent(name + ".icns")) else { continue }
+            result[name] = ClassicIcon.decode(icns: data)
+        }
+        return result
     }
 
     // MARK: Adding and removing

@@ -377,3 +377,17 @@
   SHA256SUMS). Fresh download: checksum OK, staple valid, Gatekeeper
   accepted. v3.2.1 stays the latest release; catalog unchanged.
 
+
+## October 18 — stable 4.0.0 artwork and packaging
+
+- User confirmed Iconfactory permission and explicitly authorized a stable
+  release, then a Windows version. Created `codex/4.0-stable-release` under
+  `worktrees/4.0-stable-release`, preserving root untracked gxmetal files.
+- Extracted unmodified icns resources from read-only Downloads DMGs; bundled
+  G4 Side List View, 800/8000 and 7200+series/G3 Desktop, original attribution,
+  licenses/readmes and hashes. Built-ins are default; imports still override.
+- 118 Swift tests pass with three fixture-dependent skips; packaged signature,
+  runtime, artwork, ATI and display checks pass. Disposable Deluxe ATI boot
+  reaches Finder and displays included icons. Evidence `output/4.0.0`.
+- Stable notarization/publication pending existing notary keychain access;
+  user asked to unlock the session/profile. No release/catalog changes yet.

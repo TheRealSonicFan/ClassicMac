@@ -22,8 +22,8 @@ QEMU emulator as a whole is licensed under the GNU General Public License,
 version 2. Individual source and firmware files may carry compatible licenses,
 as described by QEMU's `LICENSE` file and their source headers.
 
-The exact corresponding source is reproducible from the ClassicMac 3.2.0
-source at <https://github.com/amcchord/ClassicMac/tree/v3.2.0>. The repository's
+The exact corresponding source is reproducible from the ClassicMac 4.0.0
+source at <https://github.com/amcchord/ClassicMac/tree/v4.0.0>. The repository's
 `scripts/build-qemu.sh` retrieves the pinned upstream QEMU 11.0.2 source and
 applies every ClassicMac modification stored in the repository.
 
@@ -87,3 +87,22 @@ under `Contents/Resources/Licenses`. The corresponding DingusPPC, SDL2 and pinne
 submodule sources are supplied in the Copland source archive beside the release;
 ClassicMac's own source and build patches are in the release's tagged repository.
 Apple's guest software and ROM are separate from these open-source components.
+
+## The Iconfactory
+
+The bundled classic Macintosh machine icons are copyright The Iconfactory,
+Inc. and are included under separate permission confirmed by Austin McChord
+on October 18, 2026. The G4 Side List View is from G4 v2; the 800/8000 series
+and 7200+series/G3 Desktop icons are from the Apple Desktop Collection.
+The original, unmodified icns resources, collection licenses and readmes
+are in `Resources/Iconfactory`. This permission does not relicense the
+artwork or grant downstream redistribution rights.
+
+Artist and collections: <https://freeware.iconfactory.com>
+
+## Platinum appearance
+
+PlatinumKit includes MIT-licensed fonts, icons and control tables shared
+with RetroBoot. Their notices are in `platinum/fonts/LICENSE-fonts.txt`
+and `platinum/icons/LICENSE-icons.txt`. Iconfactory artwork has its own
+terms as described above.
