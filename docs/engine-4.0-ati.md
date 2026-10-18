@@ -291,14 +291,13 @@ Speed (same host, interleaved where possible):
 | Mac OS 9.2.1 boot to Finder, icount + hand-off (s) | 9.35, 9.31, 9.90 | 9.34, 8.76, 9.60 (unchanged: no branch slots in icount TBs) |
 | FP kernels (`fpconf bench`, ns/op, best of 3) | e.g. fadd 11.6, fmul 11.5, fdiv 13.0, fmadds 17.1, AltiVec lighting 10.8 | 3.0, 2.3, 2.5, 4.6, 4.7 (x1.6–x5.2); `int_with_lfs_stfs` 0.29 → 0.38 (slower) |
 
-Risk: RetroBoot pairs the branch cache with a VIA timer-2 hold
-(`retroboot-via-t2-hold.patch`, needing its `cuda-via-timers` patch) because
-faster branches moved the Mac OS ROM's timer-calibration loop into a race on
-a slow Linux host (N5105), causing a pre-gray hang. Not included here. VGA
-boots are immune (icount: guest time does not advance while translating);
-the ATI card boots in real time, so a much slower or heavily loaded Mac
-could hit it. `-cpu 7400,fast-branch=off` is the switch if it appears (do not
-use `x-fast-branch-mask` 4 or 6, which RetroBoot found make it frequent).
+Risk (closed by `timers/`, see `docs/engine-4.0-via-timers.md`): RetroBoot
+pairs the branch cache with a VIA timer-2 hold because faster branches moved
+the Mac OS ROM's timer-calibration loop into a race on a slow Linux host
+(N5105), causing a pre-gray hang. VGA boots are immune (icount: guest time
+does not advance while translating); ATI and CD starts run in real time.
+ClassicMac now applies RetroBoot's `cuda-via-timers`, `pmu-via-timers` and
+`via-t2-hold` patches after the CPU patches.
 
 ## Not run
 
