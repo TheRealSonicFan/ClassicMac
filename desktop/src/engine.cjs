@@ -23,7 +23,7 @@ class Engine extends EventEmitter {
     const args = argumentsFor(this.machine, this.resources, this.endpoint).map(value =>
       process.env.CLASSICMAC_TEST_HOME && process.env.CLASSICMAC_TEST_TOOLS_IMAGE
         ? value.replace(require('node:path').join(this.resources,'ClassicMacTools.iso'), process.env.CLASSICMAC_TEST_TOOLS_IMAGE) : value);
-    this.child = spawn(this.binary, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    this.child = spawn(this.binary, args, { cwd: require('node:path').join(this.resources, 'bin'), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const ready = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('The emulation engine did not start. ' + this.log)), 15000);
       this.once('ready', () => { clearTimeout(timer); resolve(); });

@@ -22,7 +22,7 @@ const run=promisify(execFile);
  const home=path.join(out,'home');await fs.mkdir(home);
  if(process.platform==='linux'){c.sharedFolderPath=path.join(home,'shared');c.sharedVolumeName='Shared Files';await fs.mkdir(c.sharedFolderPath);await fs.writeFile(path.join(c.sharedFolderPath,'host-parity.txt'),'ClassicMac host fixture\n');}
  await fs.writeFile(file,JSON.stringify(c));await fs.writeFile(path.join(home,'library.json'),JSON.stringify([fixture]));
- const env={...process.env,CLASSICMAC_TEST_HOME:home,CLASSICMAC_TEST_START:c.id,CLASSICMAC_TEST_PARITY:'1',CLASSICMAC_TEST_LIBRARY:'1',CLASSICMAC_TEST_TOOLS_IMAGE:probe};
+ const env={...process.env,CLASSICMAC_TEST_HOME:home,CLASSICMAC_TEST_START:c.id,CLASSICMAC_TEST_PARITY:'1',CLASSICMAC_TEST_LIBRARY:process.env.CLASSICMAC_TEST_SKIP_LIBRARY?'0':'1',CLASSICMAC_TEST_TOOLS_IMAGE:probe};
  delete env.CLASSICMAC_TEST_CYCLE;delete env.CLASSICMAC_TEST_SCREENSHOT;delete env.CLASSICMAC_RUNTIME;delete env.CLASSICMAC_MAC_APP;
  const child=spawn(exe,['--disable-gpu'],{env,stdio:['ignore','pipe','pipe']}),log=createWriteStream(path.join(out,'app.log'));child.stdout.pipe(log);child.stderr.pipe(log);
  await new Promise((resolve,reject)=>{

@@ -12,9 +12,10 @@ static TEHandle edit;
 static char share[100]="Sharing: not mounted (Windows has no 9p backend)";
 static void text(short x,short y,const char*s){Str255 p;short n=strlen(s);p[0]=n;BlockMoveData(s,p+1,n);MoveTo(x,y);DrawString(p);}
 static void files(void){
- short i,volume;Str255 name;long freeBytes;FSSpec spec;short ref;char buf[64];long count;OSErr error;
+ short i,volume;Str255 name;HParamBlockRec pb;FSSpec spec;short ref;char buf[64];long count;OSErr error;
  for(i=1;i<40;i++){
-  if(GetVInfo(i,name,&volume,&freeBytes)!=noErr)break;
+  memset(&pb,0,sizeof(pb));pb.volumeParam.ioNamePtr=name;pb.volumeParam.ioVolIndex=i;
+  if(PBHGetVInfoSync(&pb)!=noErr)break;volume=pb.volumeParam.ioVRefNum;
   if(name[0]==12&&!memcmp(name+1,"Shared Files",12)){
    error=FSMakeFSSpec(volume,fsRtDirID,"\phost-parity.txt",&spec);
    if(error==noErr&&FSpOpenDF(&spec,fsRdPerm,&ref)==noErr){count=sizeof(buf);error=FSRead(ref,&count,buf);FSClose(ref);

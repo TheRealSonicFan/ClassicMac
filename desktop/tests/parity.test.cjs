@@ -24,7 +24,7 @@ test('Archive extraction preserves logical disk size and rejects traversal, link
  for(const [i,items] of [[member('../escape',config)],[member('config.json',config,'2')],[member('config.json',config),member('config.json',config)]].entries()){
   const bad=path.join(dir,'bad'+i);await fs.mkdir(bad);await fs.writeFile(archive,gzipSync(Buffer.concat([...items,Buffer.alloc(1024)])));await assert.rejects(extract(archive,bad,m));
  }
- assert.rejects(fs.access(path.join(dir,'escape')));
+ await assert.rejects(fs.access(path.join(dir,'escape')));
 });
 test('Resumed download requires an exact range and verifies its SHA256',async t=>{
  const dir=await temp(t),bytes=Buffer.from('archive bytes for a resume'),hash=createHash('sha256').update(bytes).digest('hex'),m={...entry,sha256:hash,archiveBytes:bytes.length};
