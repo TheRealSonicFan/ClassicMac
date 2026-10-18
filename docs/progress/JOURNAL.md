@@ -477,3 +477,27 @@
 - Final packaged CI and integration/publication pending. No new stable tag
   published in this entry. VM secrets remain in protected ignored output;
   no unrelated VM, template or user machine changed.
+
+## October 18 — 4.1.0 stable release published and verified
+
+- Merged PR #24 as a6922db and tagged that exact source v4.1.0. Main-checkout
+  consolidation passes 122 Swift tests (two Copland fixture skips) and all
+  12 Node tests. Native Windows 39158984879 and Linux 39158930105 pass strict
+  Finder/clean-restart/shutdown package gates; captures reviewed.
+- The exact CI Windows ZIP and Linux DEB were installed/run again on the
+  dedicated Proxmox hosts. Final extended checks pass, including native
+  accented input and Linux host-read/guest-write 9p. Reports retained in
+  docs/evidence/4.1.0; fresh direct screenshots are on main.
+- Published GitHub v4.1.0 as stable Latest with all three host platforms,
+  corresponding QEMU/Copland source and SHA256SUMS (ten assets). Fresh public
+  downloads match all nine archive hashes. The public Mac DMG again passes
+  staple/Gatekeeper/release verification. SHA256
+  3d2b266b66d57c0b467c788e320cf2d0248a335c5927c56fac8ba3fe9eacef8c.
+- Windows test auto-login disabled and its registry password removed. QA
+  host shutdown requested; VMs retained, not deleted. Notary API key existed
+  only in a protected temporary file and was removed after use. Prior release
+  assets and Library catalog remain unchanged; no unrelated systems touched.
+- Remaining measured limits: unsigned Windows, Mac-only Copland, no Windows
+  9p backend, physical GPU/audio/game and Internet tests outside VM proof;
+  whole-app/CSS pixel fidelity remains outside the component audit. No pending
+  release action. See docs/4.1.0-validation.md for source, gates and rollback.

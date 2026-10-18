@@ -1,0 +1,14 @@
+{
+  "platform": "win32",
+  "version": "4.1.0",
+  "checks": [
+    "create/import/config round trip",
+    "boot/display connection",
+    "pause/resume",
+    "restart/new engine/reconnect",
+    "native guest paste chords",
+    "normal guest shutdown"
+  ],
+  "started": "2026-10-18T19:36:41.536Z",
+  "completed": "2026-10-18T19:38:26.315Z"
+}
