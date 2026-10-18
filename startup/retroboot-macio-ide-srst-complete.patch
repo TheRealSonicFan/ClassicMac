@@ -1,0 +1,129 @@
+diff --git a/hw/ide/core.c b/hw/ide/core.c
+--- a/hw/ide/core.c
++++ b/hw/ide/core.c
+@@ -2335,6 +2335,10 @@ static void ide_bus_perform_srst(void *opaque)
+     IDEState *s;
+     int i;
+ 
++    if (!bus->srst_pending) {
++        return;     /* already carried out by ide_bus_srst_complete() */
++    }
++    bus->srst_pending = false;
+     for (i = 0; i < 2; i++) {
+         s = &bus->ifs[i];
+         ide_perform_srst(s);
+@@ -2343,6 +2347,19 @@ static void ide_bus_perform_srst(void *opaque)
+     bus->cmd &= ~IDE_CTRL_RESET;
+ }
+ 
++/*
++ * RetroBoot: carry out a pending software reset now, once the guest has
++ * released SRST and no DMA is in flight (then the bottom half does it, as
++ * before).  See pmac_ide_srst_complete() in hw/ide/macio.c.
++ */
++void ide_bus_srst_complete(IDEBus *bus)
++{
++    if (bus->srst_pending && !(bus->cmd & IDE_CTRL_RESET) &&
++        !(bus->dma && bus->dma->aiocb)) {
++        ide_bus_perform_srst(bus);
++    }
++}
++
+ void ide_ctrl_write(void *opaque, uint32_t addr, uint32_t val)
+ {
+     IDEBus *bus = opaque;
+@@ -2358,6 +2375,7 @@ void ide_ctrl_write(void *opaque, uint32_t addr, uint32_t val)
+             s = &bus->ifs[i];
+             s->status |= BUSY_STAT;
+         }
++        bus->srst_pending = true;
+         replay_bh_schedule_oneshot_event(qemu_get_aio_context(),
+                                          ide_bus_perform_srst, bus);
+     }
+diff --git a/hw/ide/macio.c b/hw/ide/macio.c
+--- a/hw/ide/macio.c
++++ b/hw/ide/macio.c
+@@ -363,6 +363,25 @@ static void pmac_ide_flush(DBDMA_io *io)
+     pmac_ide_drain(io->opaque);
+ }
+ 
++/*
++ * srst-complete-on-access (RetroBoot, default on): QEMU carries out an ATA
++ * software reset (SRST) in a main-loop bottom half.  On a busy host that
++ * runs milliseconds after the guest has released SRST.  OpenBIOS probes the
++ * absent slave meanwhile (its status reads 0, never busy, so OpenBIOS does
++ * not wait), the master's reset then lands in the middle of the probe, the
++ * hard disk is not found, "boot" fails silently and OpenBIOS waits at its
++ * prompt with the screen black (pre-gray hang, about 1 % of cold boots on
++ * a loaded host; emulator/reports/pregray-hang-20261011.md).  A real drive
++ * has finished its reset long before then.  So a pending reset is carried
++ * out on the guest's next access to the controller.
++ */
++static void pmac_ide_srst_complete(MACIOIDEState *d)
++{
++    if (d->srst_complete_on_access) {
++        ide_bus_srst_complete(&d->bus);
++    }
++}
++
+ /* PowerMac IDE memory IO */
+ static uint64_t pmac_ide_read(void *opaque, hwaddr addr, unsigned size)
+ {
+@@ -370,6 +389,7 @@ static uint64_t pmac_ide_read(void *opaque, hwaddr addr, unsigned size)
+     uint64_t retval = 0xffffffff;
+     int reg = addr >> 4;
+ 
++    pmac_ide_srst_complete(d);
+     switch (reg) {
+     case 0x0:
+         if (size == 1) {
+@@ -420,6 +440,8 @@ static void pmac_ide_write(void *opaque, hwaddr addr, uint64_t val,
+     MACIOIDEState *d = opaque;
+     int reg = addr >> 4;
+ 
++    pmac_ide_srst_complete(d);
++
+     switch (reg) {
+     case 0x0:
+         if (size == 2) {
+@@ -625,6 +647,8 @@ static const Property macio_ide_properties[] = {
+     DEFINE_PROP_UINT64("dma-completion-delay-ns", MACIOIDEState,
+                        dma_completion_delay_ns,
+                        MACIO_IDE_DEFAULT_COMPLETION_DELAY_NS),
++    DEFINE_PROP_BOOL("srst-complete-on-access", MACIOIDEState,
++                     srst_complete_on_access, true),
+ };
+ 
+ static void macio_ide_finalizefn(Object *obj)
+diff --git a/include/hw/ide/ide-bus.h b/include/hw/ide/ide-bus.h
+--- a/include/hw/ide/ide-bus.h
++++ b/include/hw/ide/ide-bus.h
+@@ -26,6 +26,9 @@ struct IDEBus {
+     PortioList portio_list;
+     PortioList portio2_list;
+     VMChangeStateEntry *vmstate;
++
++    /* RetroBoot: a software reset requested but not yet carried out */
++    bool srst_pending;
+ };
+ 
+ #define TYPE_IDE_BUS "IDE"
+@@ -33,6 +36,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(IDEBus, IDE_BUS)
+ 
+ void ide_bus_init(IDEBus *idebus, size_t idebus_size, DeviceState *dev,
+                   int bus_id, int max_units);
++void ide_bus_srst_complete(IDEBus *bus);
+ IDEDevice *ide_bus_create_drive(IDEBus *bus, int unit, DriveInfo *drive);
+ 
+ int ide_get_geometry(BusState *bus, int unit,
+diff --git a/include/hw/misc/macio/macio.h b/include/hw/misc/macio/macio.h
+--- a/include/hw/misc/macio/macio.h
++++ b/include/hw/misc/macio/macio.h
+@@ -98,6 +98,7 @@ struct MACIOIDEState {
+     bool dma_completion_atapi;
+     uint8_t dma_unit;
+     uint64_t dma_completion_delay_ns;
++    bool srst_complete_on_access;
+     QEMUTimer *dma_completion_timer;
+     uint32_t timing_reg;
+     uint32_t irq_reg;

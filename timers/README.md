@@ -3,7 +3,8 @@
 Three QEMU patches from RetroBoot, applied verbatim by `scripts/build-qemu.sh`
 in this order after the faster PowerPC CPU patches (`cpu/`) and before the
 ATI card. They are the companion of the branch cache: RetroBoot applies them
-in the same place.
+in the same place. The build interleaves them with the two patches in
+`startup/` (RetroBoot's other pre-gray races) in RetroBoot's lock order.
 
 | Patch | Property (default) | What |
 | --- | --- | --- |
@@ -59,11 +60,10 @@ GPL-2.0-or-later like the QEMU files they change ("RetroBoot contributors").
 | `retroboot-pmu-via-timers.patch` | `f177e9fa53f755630a7916127fd514f9250a51bf5b511da11b782debd1be75ad` | `0d3f58c` |
 | `retroboot-via-t2-hold.patch` | `8f44ec141d787fb82608cba14c22b6992b21cfdbc031db38aac0da8c679685c5` | `aefec02` |
 
-They apply to ClassicMac's tree with line offsets only. Not ported, because
-these three do not need them: RetroBoot's other Cuda patches
-(`retroboot-cuda-idle-interrupt.patch`, an empty Cuda interrupt every 50 ms
-while idle; `retroboot-cuda-shift-interrupt-timing.patch`, the Cuda sync
-handshake race, "type A"), the IDE reset race (`retroboot-macio-ide-srst-complete.patch`,
-"type C") and the PMU patches. RetroBoot's reports:
+They apply to ClassicMac's tree with line offsets only. These three do not
+need RetroBoot's other Cuda, IDE or PMU patches. The Cuda sync handshake
+race ("type A") and the IDE reset race ("type C") are in `startup/`, which
+also says why the Cuda idle interrupt (`retroboot-cuda-idle-interrupt.patch`)
+is not ported. RetroBoot's reports:
 `emulator/reports/pregray-hang-20261011.md` (types A, B, C and
 `coherent-timers`) and `emulator/reports/viacal-20261013.md` (`t2-hold`).

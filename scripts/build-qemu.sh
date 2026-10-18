@@ -31,6 +31,7 @@ POWERMAC_DIR="$ROOT_DIR/powermac"
 ATI_DIR="$ROOT_DIR/ati"
 CPU_DIR="$ROOT_DIR/cpu"
 TIMERS_DIR="$ROOT_DIR/timers"
+STARTUP_DIR="$ROOT_DIR/startup"
 
 # Tracked files modified by the ClassicMac patches (reset before re-applying).
 # Files only earlier releases patched (GXMetal's ui/input.c, bochs-vbe.h) stay
@@ -115,6 +116,8 @@ PATCHED_FILES=(
   hw/misc/mos6522.c
   include/hw/misc/mos6522.h
   hw/misc/macio/pmu.c
+  hw/ide/core.c
+  include/hw/ide/ide-bus.h
 )
 # Untracked files created by patches (git apply refuses to create them again)
 # or copied by earlier releases; removed before the patches are applied.
@@ -432,21 +435,38 @@ for patch in retroboot-ppc-mmu-contexts retroboot-ppc-fpu-fast \
 done
 
 # ---------------------------------------------------------------------------
-# 3e. VIA timer 2 for the Mac OS ROM's startup calibration (RetroBoot; see
-#     timers/README.md)
+# 3e. Host-timing races before the Mac OS gray screen (RetroBoot; see
+#     startup/README.md and timers/README.md)
 # ---------------------------------------------------------------------------
-# The faster branches above make the ROM's first VIA timer-2 calibration loop
-# run out close to its 1 ms deadline; in real time (ATI and CD starts, no
-# icount) the interrupt can then land in first-time code being translated and
-# hang Mac OS before the gray screen. coherent-timers raises VIA timer
-# interrupts when the guest-visible counter passes zero and makes timer 2
-# one-shot; t2-hold lets a due timer-2 interrupt wait while the vCPU is
-# translating (single vCPU, no icount; at most 4 ms). Both default on
-# (-global mos6522-cuda.t2-hold=off, -global mos6522-cuda.coherent-timers=off
-# restore QEMU's behaviour).
-log "Installing VIA timer-2 calibration fixes (coherent timers, t2 hold)"
-for patch in retroboot-cuda-via-timers retroboot-pmu-via-timers retroboot-via-t2-hold; do
-  git -C "$QEMU_DIR" apply "$TIMERS_DIR/$patch.patch" || die "Failed to apply $patch.patch"
+# Applied in RetroBoot's lock order. Each property defaults on; =off restores
+# QEMU's behaviour.
+#  - Cuda sync handshake ("type A", startup/): the ROM reads SR and only then
+#    polls, for a few milliseconds, for the sync step's shift interrupt.
+#    QEMU's main loop raises it 20 us after the TACK write at the earliest
+#    and, on macOS (no ppoll, timeouts in whole milliseconds), typically
+#    1.2 ms late. One that came before the read was discarded, one that came
+#    after the polls was missed; either way the ROM halted.
+#    cuda.sr-int-on-access delivers a due shift interrupt when the guest
+#    reads the VIA; cuda.sync-sr-hold keeps the sync step's over that read.
+#  - VIA timer 2 ("type B", timers/): the faster branches above make the
+#    ROM's first calibration loop run out close to its 1 ms deadline, which
+#    can then land in first-time code being translated. coherent-timers
+#    raises VIA timer interrupts when the guest-visible counter passes zero
+#    and makes timer 2 one-shot; t2-hold lets a due timer-2 interrupt wait
+#    while the vCPU is translating (single vCPU, no icount; at most 4 ms).
+#  - IDE soft reset ("type C", startup/): QEMU finishes SRST in a main-loop
+#    bottom half; run late, it reset the hard disk in the middle of
+#    OpenBIOS's probe of the absent slave. macio-ide.srst-complete-on-access
+#    finishes a released reset on the guest's next access instead.
+# A and B need real time (ATI and CD starts); C is a main-loop race under
+# icount too.
+log "Installing startup race fixes (Cuda sync, VIA timer 2, IDE soft reset)"
+for patch in "$STARTUP_DIR/retroboot-cuda-shift-interrupt-timing" \
+             "$TIMERS_DIR/retroboot-cuda-via-timers" \
+             "$STARTUP_DIR/retroboot-macio-ide-srst-complete" \
+             "$TIMERS_DIR/retroboot-pmu-via-timers" \
+             "$TIMERS_DIR/retroboot-via-t2-hold"; do
+  git -C "$QEMU_DIR" apply "$patch.patch" || die "Failed to apply ${patch#"$ROOT_DIR"/}.patch"
 done
 
 # ---------------------------------------------------------------------------
@@ -637,11 +657,21 @@ for via in mos6522-cuda mos6522-pmu; do
   done
 done
 printf '    OK  VIA timer-2 coherent timers and calibration hold (ppc)\n'
-if "$QEMU_PPC_BIN" -device macio-ide,help 2>&1 | grep -q "dma-completion-delay-ns"; then
+CUDA_HELP="$("$QEMU_PPC_BIN" -device cuda,help 2>&1 || true)"
+for property in sync-sr-hold sr-int-on-access; do
+  printf '%s\n' "$CUDA_HELP" | grep -Eq "^ *$property=.*default: on" || \
+    die "cuda property $property missing or not on by default"
+done
+printf '    OK  Cuda sync handshake hold and shift interrupt on access (ppc)\n'
+MACIO_IDE_HELP="$("$QEMU_PPC_BIN" -device macio-ide,help 2>&1 || true)"
+if printf '%s\n' "$MACIO_IDE_HELP" | grep -q "dma-completion-delay-ns"; then
   printf '    OK  MacIO IDE DMA completion delay (ppc)\n'
 else
   die "MacIO IDE DMA completion delay property missing from the ppc build"
 fi
+printf '%s\n' "$MACIO_IDE_HELP" | grep -Eq "^ *srst-complete-on-access=.*default: on" || \
+  die "macio-ide property srst-complete-on-access missing or not on by default"
+printf '    OK  MacIO IDE soft reset completed on access (ppc)\n'
 if grep -F 'qemu_input_queue_rel(dcl.con, INPUT_AXIS_Y, [event deltaY]);' \
     "$QEMU_DIR/ui/cocoa.m" >/dev/null; then
   printf '    OK  Cocoa raw relative mouse Y forwarding\n'
