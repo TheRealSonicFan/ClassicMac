@@ -9,6 +9,13 @@
 #   ati/openbios-ati-radeon.patch            the emulated ATI Radeon R100
 #                                            (ATY,Rage6p), only for that
 #                                            device (from RetroBoot)
+#   powermac/openbios-sound-objects-terminator.patch
+#                                            keeps the screamer
+#                                            sound-objects list terminated
+#                                            (0x3e4 -> 0x3e6), fixing Mac OS
+#                                            9's intermittent "Apple Audio
+#                                            Extension illegal instruction"
+#                                            (from RetroBoot)
 # built in the pinned openbios-builder image (Debian 12,
 # powerpc-linux-gnu-gcc 12.2.0) with ClassicMac's flags.
 #
@@ -25,9 +32,8 @@
 #   OPENBIOS_OUTPUT         output path (default: screamer/openbios-ppc)
 #   OPENBIOS_MAKE_JOBS      make -j value (default 2)
 #   OPENBIOS_EXTRA_PATCHES  space-separated extra patch files applied after
-#                           the two above (e.g. RetroBoot's
-#                           openbios-sound-objects-terminator.patch); not
-#                           part of the shipped firmware unless chosen
+#                           the ones above; not part of the shipped
+#                           firmware unless chosen
 
 set -euo pipefail
 
@@ -37,6 +43,7 @@ SOURCE_DIR="$VENDOR_DIR/openbios"
 PATCH_FILES=(
   "$ROOT_DIR/powermac/openbios-classic-macos-8.patch"
   "$ROOT_DIR/ati/openbios-ati-radeon.patch"
+  "$ROOT_DIR/powermac/openbios-sound-objects-terminator.patch"
 )
 OUTPUT_FILE="${OPENBIOS_OUTPUT:-$ROOT_DIR/screamer/openbios-ppc}"
 OPENBIOS_REPO="${OPENBIOS_REPO:-https://github.com/openbios/openbios.git}"
