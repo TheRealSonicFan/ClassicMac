@@ -1,33 +1,27 @@
-# ClassicMac 4.1.1 — stable release complete
+# ClassicMac 4.2.0 — final release checks
 
-Stable Latest: [v4.1.1](https://github.com/amcchord/ClassicMac/releases/tag/v4.1.1),
-published October 19, 2026. Release source/tag is
-`dfdf4c1ad2b7206b385c1b787d72aa9af5385c2b` (PRs #28 and #29).
-The release contains signed/notarized Apple Silicon Mac, Windows x64 and Linux
-x64 binaries, matching prepared engine sources and SHA256SUMS (ten assets).
-Fresh anonymous downloads of all nine archives match the published manifest.
+User authorized native classic Mac OS icons, running-VM Platinum fidelity,
+merge and stable release; specifically requested Mac OS 9 Icon Services/alpha.
+Task worktree native-platinum-icons, branch codex/native-platinum-icons, PR #31.
+Baseline main ecdda03 / stable v4.1.1; unrelated root gxmetal remains untouched.
 
-Quake III Arena Demo with ATI Radeon now receives mouse motion/buttons in
-menus and gameplay, and Finder input is restored after exit. Radeon startup
-initializes the idle-clean state expected by Mac OpenGL, restoring the id intro
-cadence. Fresh SuperDeluxe tests pass initial/replay movies, menu clicks,
-aim/fire, Finder restoration and soundtrack activity. Input was simulated
-through the native display protocol; physical trackpad/speaker capture was not
-part of qualification.
+Native Mac OS 9 Icon Services supplies the original colour/alpha families.
+32 native 16/32-pixel strikes export reproducibly; independent decode/alpha
+checks pass. Native Appearance Manager full document frames, toolbar button
+states, held widgets and grow box compare with zero differing pixels at 1×/2×.
+The composed view preserves the grow corner above guest content. Real signed
+Mac screenshots cover SuperDeluxe boot, narrow controls and WindowShade.
 
-Integrated checks pass: 125 Swift tests (two optional Copland fixture skips),
-12 desktop tests, clean engine preparation/build and display/GL/device gates.
-Final Windows/Linux CI and exact released-package Proxmox checks pass, including
-restart, native paste and clean shutdown; Linux also passes 9p host read/write.
-Mac signatures, notarization, staples, Gatekeeper and package checks pass.
-See [release verification](../4.1.1-validation.md) for exact evidence and limits.
+Mac app/DMG signed, notarized, stapled and fully verified. Final native Linux
+39267103833 and Windows 39267099712 both pass boot/display, restart/shutdown
+and actual toolbar geometry. All 54 packaged source/assets match on each.
+Qualified files are staged in a private draft; stable v4.2.0 is not published.
 
-Dedicated QA VMs 170/171 are stopped and retained. Windows QA auto-login,
-stored password and scheduled task are removed; the read-only source mount is
-detached. User gxmetal work, machines and unrelated worktrees are preserved.
-No Library catalog, DNS or Apache changes were made.
+Reference guest and screenshot guests stopped normally; task source mounts
+detached. Notary private key existed only in a mode-600 temporary file, removed
+after completion. User guests, VMs, worktrees, Library catalog and infrastructure
+remain unchanged.
 
-No release work remains. Retain stable v4.1.0 and its assets for rollback:
-`gh release edit v4.1.0 --latest`, then record the reason in 4.1.1 notes.
-Task worktree and ignored qualification output remain under
-`worktrees/q3-input-cinematic` for support and reproducibility.
+Next: merge PR #31, consolidated root checks once, tag exact source and publish stable Latest with all ten assets.
+Verify fresh public downloads and merge final release evidence. Retain 4.1.1
+for rollback. See docs/4.2.0-validation.md for current results and scope.
