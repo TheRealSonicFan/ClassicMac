@@ -1,0 +1,207 @@
+diff --git a/hw/ide/core.c b/hw/ide/core.c
+--- a/hw/ide/core.c
++++ b/hw/ide/core.c
+@@ -2339,6 +2339,11 @@ static void ide_bus_perform_srst(void *opaque)
+         return;     /* already carried out by ide_bus_srst_complete() */
+     }
+     bus->srst_pending = false;
++    trace_ide_lab_srst_done(bus, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) -
++                            bus->lab_srst_edge_ns,
++                            !(bus->cmd & IDE_CTRL_RESET),
++                            bus->lab_srst_on_access);
++    bus->lab_srst_on_access = false;
+     for (i = 0; i < 2; i++) {
+         s = &bus->ifs[i];
+         ide_perform_srst(s);
+@@ -2356,6 +2361,7 @@ void ide_bus_srst_complete(IDEBus *bus)
+ {
+     if (bus->srst_pending && !(bus->cmd & IDE_CTRL_RESET) &&
+         !(bus->dma && bus->dma->aiocb)) {
++        bus->lab_srst_on_access = true;
+         ide_bus_perform_srst(bus);
+     }
+ }
+@@ -2376,8 +2382,20 @@ void ide_ctrl_write(void *opaque, uint32_t addr, uint32_t val)
+             s->status |= BUSY_STAT;
+         }
+         bus->srst_pending = true;
+-        replay_bh_schedule_oneshot_event(qemu_get_aio_context(),
+-                                         ide_bus_perform_srst, bus);
++        bus->lab_srst_edge_ns = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
++        if (bus->lab_srst_delay_us) {
++            /* Lab: the main loop runs the bottom half this late */
++            if (!bus->lab_srst_timer) {
++                bus->lab_srst_timer = timer_new_us(QEMU_CLOCK_REALTIME,
++                                                   ide_bus_perform_srst, bus);
++            }
++            timer_mod(bus->lab_srst_timer,
++                      qemu_clock_get_us(QEMU_CLOCK_REALTIME) +
++                      bus->lab_srst_delay_us);
++        } else {
++            replay_bh_schedule_oneshot_event(qemu_get_aio_context(),
++                                             ide_bus_perform_srst, bus);
++        }
+     }
+ 
+     bus->cmd = val;
+diff --git a/hw/ide/macio.c b/hw/ide/macio.c
+--- a/hw/ide/macio.c
++++ b/hw/ide/macio.c
+@@ -599,6 +599,7 @@ static void macio_ide_realizefn(DeviceState *dev, Error **errp)
+     /* Register DMA callbacks */
+     s->dma.ops = &dbdma_ops;
+     s->bus.dma = &s->dma;
++    s->bus.lab_srst_delay_us = s->lab_srst_delay_us;
+ }
+ 
+ static void pmac_ide_irq(void *opaque, int n, int level)
+@@ -649,6 +650,8 @@ static const Property macio_ide_properties[] = {
+                        MACIO_IDE_DEFAULT_COMPLETION_DELAY_NS),
+     DEFINE_PROP_BOOL("srst-complete-on-access", MACIOIDEState,
+                      srst_complete_on_access, true),
++    DEFINE_PROP_UINT32("x-lab-srst-delay-us", MACIOIDEState,
++                       lab_srst_delay_us, 0),
+ };
+ 
+ static void macio_ide_finalizefn(Object *obj)
+diff --git a/hw/ide/trace-events b/hw/ide/trace-events
+--- a/hw/ide/trace-events
++++ b/hw/ide/trace-events
+@@ -6,6 +6,7 @@ ide_ioport_read(uint32_t addr, const char *reg, uint32_t val, void *bus, void *s
+ ide_ioport_write(uint32_t addr, const char *reg, uint32_t val, void *bus, void *s) "IDE PIO wr @ 0x%"PRIx32" (%s); val 0x%02"PRIx32"; bus %p IDEState %p"
+ ide_status_read(uint32_t addr, uint32_t val, void *bus, void *s)                   "IDE PIO rd @ 0x%"PRIx32" (Alt Status); val 0x%02"PRIx32"; bus %p; IDEState %p"
+ ide_ctrl_write(uint32_t addr, uint32_t val, void *bus)                             "IDE PIO wr @ 0x%"PRIx32" (Device Control); val 0x%02"PRIx32"; bus %p"
++ide_lab_srst_done(void *bus, int64_t ns, int released, int on_access)             "bus %p: SRST carried out %" PRId64 " ns after its edge; released %d, on access %d"
+ # Warning: verbose
+ ide_data_readw(uint32_t addr, uint32_t val, void *bus, void *s)                    "IDE PIO rd @ 0x%"PRIx32" (Data: Word); val 0x%04"PRIx32"; bus %p; IDEState %p"
+ ide_data_writew(uint32_t addr, uint32_t val, void *bus, void *s)                   "IDE PIO wr @ 0x%"PRIx32" (Data: Word); val 0x%04"PRIx32"; bus %p; IDEState %p"
+diff --git a/hw/misc/macio/cuda.c b/hw/misc/macio/cuda.c
+--- a/hw/misc/macio/cuda.c
++++ b/hw/misc/macio/cuda.c
+@@ -95,6 +95,11 @@ static void cuda_set_sr_int(void *opaque)
+     MOS6522State *ms = MOS6522(mcs);
+     qemu_irq irq = qdev_get_gpio_in(DEVICE(ms), SR_INT_BIT);
+ 
++    /* Lab: how late the shift interrupt came, and who raised it */
++    trace_cuda_lab_sr_int(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) -
++                          s->lab_sr_due_ns, s->sr_int_sync,
++                          s->lab_sr_on_access);
++    s->lab_sr_on_access = false;
+     if (s->sr_int_sync) {
+         /* a sync step's shift completed: see mos6522_cuda_read() */
+         s->sr_int_sync = false;
+@@ -112,6 +117,7 @@ static void cuda_delay_set_sr_int(CUDAState *s)
+ 
+     expire = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->sr_delay_ns;
+     timer_mod(s->sr_delay_timer, expire);
++    s->lab_sr_due_ns = expire;
+ }
+ 
+ /* NOTE: TIP and TREQ are negated */
+@@ -166,6 +172,15 @@ static void cuda_update(CUDAState *s)
+             cuda_delay_set_sr_int(s);
+             s->sr_int_sync = true;
+             trace_cuda_sync_response(!!(ms->b & TACK));
++            /*
++             * Lab: a shorter shift delay for the sync step stands for a
++             * vCPU that needs longer than 20 us to reach its SR read.
++             */
++            s->lab_sync_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++            if (s->lab_sync_sr_delay_ns >= 0) {
++                s->lab_sr_due_ns = s->lab_sync_ns + s->lab_sync_sr_delay_ns;
++                timer_mod(s->sr_delay_timer, s->lab_sr_due_ns);
++            }
+         } else {
+             if (!(s->last_b & TIP)) {
+                 /* handle end of host to cuda transfer */
+@@ -558,9 +573,18 @@ static uint64_t mos6522_cuda_read(void *opaque, hwaddr addr, unsigned size)
+         if (now >= due) {
+             timer_del(s->sr_delay_timer);
+             trace_cuda_sr_int_due(now - due);
++            s->lab_sr_on_access = true;
+             cuda_set_sr_int(s);
+         }
+     }
++    if (s->lab_sync_ns && addr == VIA_REG_SR) {
++        /* Lab: the first SR read after a sync step, and whether its shift
++         * interrupt had already come (QEMU's model then loses it) */
++        trace_cuda_lab_sync_sr_read(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) -
++                                    s->lab_sync_ns, !!(ms->ifr & SR_INT),
++                                    timer_pending(s->sr_delay_timer));
++        s->lab_sync_ns = 0;
++    }
+     val = mos6522_read(ms, addr, size);
+     if (s->sync_sr_unseen) {
+         if (addr == VIA_REG_IFR && (val & SR_INT)) {
+@@ -657,6 +681,7 @@ static void cuda_reset(DeviceState *dev)
+     s->one_second_first_packet = true;
+     s->sr_int_sync = false;
+     s->sync_sr_unseen = false;
++    s->lab_sync_ns = 0;
+ 
+     adb_set_autopoll_enabled(adb_bus, false);
+ }
+@@ -704,6 +729,8 @@ static const Property cuda_properties[] = {
+     DEFINE_PROP_UINT64("timebase-frequency", CUDAState, tb_frequency, 0),
+     DEFINE_PROP_BOOL("sr-int-on-access", CUDAState, sr_int_on_access, true),
+     DEFINE_PROP_BOOL("sync-sr-hold", CUDAState, sync_sr_hold, true),
++    DEFINE_PROP_INT64("x-lab-sync-sr-delay-ns", CUDAState,
++                      lab_sync_sr_delay_ns, -1),
+ };
+ 
+ static void cuda_class_init(ObjectClass *oc, const void *data)
+diff --git a/hw/misc/macio/trace-events b/hw/misc/macio/trace-events
+--- a/hw/misc/macio/trace-events
++++ b/hw/misc/macio/trace-events
+@@ -12,6 +12,8 @@ cuda_packet_send_data(int i, const uint8_t data) "[%d] 0x%02x"
+ cuda_sync_response(int tack) "TACK=%d with TIP negated: TREQ follows, shift interrupt delayed"
+ cuda_sync_sr_kept(void) "SR read before the host saw the sync shift interrupt: interrupt kept"
+ cuda_sr_int_due(int64_t late_ns) "shift interrupt due %" PRId64 " ns ago delivered on a VIA read"
++cuda_lab_sr_int(int64_t late_ns, int sync, int on_access) "shift interrupt %" PRId64 " ns after due; sync step %d, on access %d"
++cuda_lab_sync_sr_read(int64_t ns, int sr_int, int pending) "SR read %" PRId64 " ns after the sync step: SR_INT %d, shift pending %d"
+ 
+ # macio.c
+ macio_timer_write(uint64_t addr, unsigned len, uint64_t val) "write addr 0x%"PRIx64 " len %d val 0x%"PRIx64
+diff --git a/include/hw/ide/ide-bus.h b/include/hw/ide/ide-bus.h
+--- a/include/hw/ide/ide-bus.h
++++ b/include/hw/ide/ide-bus.h
+@@ -29,6 +29,12 @@ struct IDEBus {
+ 
+     /* RetroBoot: a software reset requested but not yet carried out */
+     bool srst_pending;
++
++    /* ClassicMac lab build only (startup/lab/README.md) */
++    uint32_t lab_srst_delay_us;     /* run the SRST bottom half this late */
++    QEMUTimer *lab_srst_timer;
++    int64_t lab_srst_edge_ns;       /* host time of the SRST edge */
++    bool lab_srst_on_access;
+ };
+ 
+ #define TYPE_IDE_BUS "IDE"
+diff --git a/include/hw/misc/macio/cuda.h b/include/hw/misc/macio/cuda.h
+--- a/include/hw/misc/macio/cuda.h
++++ b/include/hw/misc/macio/cuda.h
+@@ -101,6 +101,12 @@ struct CUDAState {
+     bool sr_int_sync;       /* the pending delayed SR_INT answers a sync step */
+     bool sync_sr_unseen;    /* it was raised and the host has not seen it yet */
+ 
++    /* ClassicMac lab build only (startup/lab/README.md) */
++    int64_t lab_sync_sr_delay_ns;   /* x-lab-sync-sr-delay-ns, -1 = off */
++    int64_t lab_sync_ns;            /* virtual time of the last sync step */
++    int64_t lab_sr_due_ns;          /* when the pending shift interrupt is due */
++    bool lab_sr_on_access;
++
+     int data_in_size;
+     int data_in_index;
+     int data_out_index;
+diff --git a/include/hw/misc/macio/macio.h b/include/hw/misc/macio/macio.h
+--- a/include/hw/misc/macio/macio.h
++++ b/include/hw/misc/macio/macio.h
+@@ -99,6 +99,7 @@ struct MACIOIDEState {
+     uint8_t dma_unit;
+     uint64_t dma_completion_delay_ns;
+     bool srst_complete_on_access;
++    uint32_t lab_srst_delay_us;     /* ClassicMac lab build only */
+     QEMUTimer *dma_completion_timer;
+     uint32_t timing_reg;
+     uint32_t irq_reg;

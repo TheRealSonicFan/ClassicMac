@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Reproducible native Copland engine. No guest disks or Apple ROMs are fetched.
+# Built for CLASSICMAC_ARCH (arm64 or x86_64; default: this process's
+# architecture), matching scripts/build-qemu.sh and scripts/bundle-qemu.sh.
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOST_ARCH="$(uname -m)"
-case "$HOST_ARCH" in
-    arm64|x86_64) ;;
-    *) echo "Unsupported macOS host architecture: $HOST_ARCH" >&2; exit 1 ;;
-esac
+# shellcheck source=lib/macos-arch.sh
+. "$ROOT_DIR/scripts/lib/macos-arch.sh"
+TARGET_ARCH="$(classicmac_target_arch)"
 ENGINE="$ROOT_DIR/vendor/dingusppc"
 SDL="$ROOT_DIR/vendor/SDL2"
 ENGINE_COMMIT=8dcac6fb160adfd8860c2252fba321d412b2c8a6
@@ -49,24 +49,18 @@ cp "$ROOT_DIR/copland/host_control.h" "$ENGINE/core/classicmac_control.h"
 cp "$ROOT_DIR/copland/clock_state.h" "$ENGINE/devices/common/classicmac_clock.h"
 cp "$ROOT_DIR/copland/soundserver_silent.cpp" "$ENGINE/devices/sound/soundserver_cubeb.cpp"
 cmake -S "$SDL" -B "$SDL/build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_OSX_ARCHITECTURES="$HOST_ARCH" \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCH" \
     -DSDL_SHARED=OFF -DSDL_STATIC=ON \
     -DSDL_TEST=OFF -DSDL_TESTS=OFF -DCMAKE_INSTALL_PREFIX="$SDL/install"
 cmake --build "$SDL/build" -j "$(sysctl -n hw.ncpu)"
 cmake --install "$SDL/build"
 cmake -S "$ENGINE" -B "$ENGINE/build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_OSX_ARCHITECTURES="$HOST_ARCH" \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCH" \
     -DSDL2_DIR="$SDL/install/lib/cmake/SDL2" \
     -DBUILD_SHARED_LIBS=OFF
 cmake --build "$ENGINE/build" -j "$(sysctl -n hw.ncpu)"
+classicmac_require_archs "$ENGINE/build/bin/dingusppc.app/Contents/MacOS/dingusppc" "$TARGET_ARCH"
 "${CXX:-c++}" -std=c++17 -I"$ENGINE" "$ROOT_DIR/copland/test_serial.cpp" -o "$ENGINE/build/test-copland-serial"
 "$ENGINE/build/test-copland-serial"
 "${CXX:-c++}" -std=c++17 "$ROOT_DIR/copland/test_clock.cpp" -o "$ENGINE/build/test-copland-clock"
-# test_clock intentionally exercises an unwritable RTC path before creating its
-# missing parent and verifying recovery. Capture that expected production
-# warning on success, but print all captured diagnostics if the test fails.
-if ! CLOCK_TEST_OUTPUT="$("$ENGINE/build/test-copland-clock" 2>&1)"; then
-    printf '%s\n' "$CLOCK_TEST_OUTPUT" >&2
-    exit 1
-fi
-printf 'Copland RTC persistence tests passed\n'
+"$ENGINE/build/test-copland-clock"

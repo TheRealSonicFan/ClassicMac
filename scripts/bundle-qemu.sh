@@ -1,20 +1,43 @@
 #!/usr/bin/env bash
 #
 # bundle-qemu.sh - Build the SwiftUI app and assemble a self-contained
-# ClassicMac.app for the current Mac architecture: the app binary, the custom qemu-system-m68k,
+# ClassicMac.app for one macOS architecture (arm64 Apple Silicon or x86_64
+# Intel): the app binary, the custom qemu-system-m68k,
 # qemu-system-ppc and qemu-img, the enhanced framebuffer firmware, the Quadra
 # 800 ROM, the OpenBIOS PPC firmware, and all required dynamic libraries
-# (relocated with dylibbundler), code-signed so QEMU's TCG JIT runs under
-# the hardened runtime on macOS.
+# (relocated with dylibbundler), code-signed with the hardened runtime and the
+# JIT entitlements QEMU's TCG translator needs.
 #
 # Idempotent: the app bundle is rebuilt from scratch on every run.
+#
+# Environment overrides (defaults unchanged):
+#   APP_VERSION / APP_BUILD_VERSION  CFBundleShortVersionString / CFBundleVersion
+#   DIST_DIR                         output directory (default dist/); the app is
+#                                    always DIST_DIR/ClassicMac.app
+#   VENDOR_DIR                       prepared engines and licenses (read in place)
+#   TOOLS_CD_SRC                     Tools CD image (default dist/ClassicMacTools.iso)
+#   SIGN_IDENTITY                    signing identity, "-" for ad-hoc
+#   CLASSICMAC_ARCH                  arm64 or x86_64 (default: this process's
+#                                    architecture); must match the engines
+#   CLASSICMAC_HOMEBREW_PREFIX       Homebrew prefix for CLASSICMAC_ARCH
+#                                    (default /opt/homebrew or /usr/local)
+#
+# Two single-architecture apps can be merged into a universal app with
+# scripts/make-universal-app.sh.
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/macos-arch.sh
+. "$ROOT_DIR/scripts/lib/macos-arch.sh"
+# shellcheck source=lib/sign-app.sh
+. "$ROOT_DIR/scripts/lib/sign-app.sh"
+TARGET_ARCH="$(classicmac_target_arch)"
+BREW_PREFIX="$(classicmac_homebrew_prefix "$TARGET_ARCH")"
 APP_SRC_DIR="$ROOT_DIR/app"
-QEMU_BUILD_DIR="$ROOT_DIR/vendor/qemu/build"
-QEMU_PCBIOS_DIR="$ROOT_DIR/vendor/qemu/pc-bios"
+VENDOR_DIR="${VENDOR_DIR:-$ROOT_DIR/vendor}"
+QEMU_BUILD_DIR="$VENDOR_DIR/qemu/build"
+QEMU_PCBIOS_DIR="$VENDOR_DIR/qemu/pc-bios"
 ROM_SRC="$ROOT_DIR/Resources/Quadra800.rom"
 ICON_PNG="$ROOT_DIR/Resources/AppIcon.png"
 ICON_DOC="$ROOT_DIR/Resources/AppIcon.icon"
@@ -25,15 +48,15 @@ ENTITLEMENTS="$ROOT_DIR/scripts/qemu.entitlements"
 THIRD_PARTY_NOTICES="$ROOT_DIR/THIRD_PARTY_NOTICES.md"
 BROWSER_SRC="$ROOT_DIR/browser"
 
-DIST_DIR="$ROOT_DIR/dist"
+DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
 FINAL_APP="$DIST_DIR/ClassicMac.app"
 BUNDLE_LOCK_DIR="$DIST_DIR/.bundle-qemu.lock"
 BUNDLE_STAGE_DIR=""
 BUNDLE_PREVIOUS_APP=""
 BUNDLE_LOCK_HELD=0
 
-APP_VERSION="${APP_VERSION:-3.2.1}"
-APP_BUILD_VERSION="${APP_BUILD_VERSION:-3.2.1}"
+APP_VERSION="${APP_VERSION:-4.2.0}"
+APP_BUILD_VERSION="${APP_BUILD_VERSION:-4.2.0}"
 BUNDLE_ID="com.classicmac.emulator"
 
 log() { printf '\n==> %s\n' "$*"; }
@@ -106,7 +129,7 @@ HELPERS_DIR="$CONTENTS/Helpers"
 QUADRA_APP="$HELPERS_DIR/Quadra 800.app"
 PPC_APP="$HELPERS_DIR/Power Mac G4.app"
 COPLAND_APP="$HELPERS_DIR/Power Mac 7500.app"
-COPLAND_BIN="$ROOT_DIR/vendor/dingusppc/build/bin/dingusppc.app/Contents/MacOS/dingusppc"
+COPLAND_BIN="$VENDOR_DIR/dingusppc/build/bin/dingusppc.app/Contents/MacOS/dingusppc"
 
 # ---------------------------------------------------------------------------
 # 0. Preconditions
@@ -140,18 +163,27 @@ done
 [ -f "$BROWSER_SRC/novnc/core/rfb.js" ] || die "Bundled noVNC client is missing."
 [ -f "$BROWSER_SRC/novnc/LICENSE.txt" ] || die "Bundled noVNC license is missing."
 [ -f "$BROWSER_SRC/novnc/vendor/pako/LICENSE" ] || die "Bundled pako license is missing."
-[ -f "$ROOT_DIR/vendor/qemu/LICENSE" ] || die "QEMU LICENSE not found. Run scripts/build-qemu.sh first."
-[ -f "$ROOT_DIR/vendor/qemu/COPYING" ] || die "QEMU GPL license not found. Run scripts/build-qemu.sh first."
-[ -f "$ROOT_DIR/vendor/qemu/COPYING.LIB" ] || die "QEMU LGPL license not found. Run scripts/build-qemu.sh first."
+[ -f "$VENDOR_DIR/qemu/LICENSE" ] || die "QEMU LICENSE not found. Run scripts/build-qemu.sh first."
+[ -f "$VENDOR_DIR/qemu/COPYING" ] || die "QEMU GPL license not found. Run scripts/build-qemu.sh first."
+[ -f "$VENDOR_DIR/qemu/COPYING.LIB" ] || die "QEMU LGPL license not found. Run scripts/build-qemu.sh first."
 command -v dylibbundler >/dev/null 2>&1 || die "dylibbundler is required (brew install dylibbundler)."
+[ -d "$BREW_PREFIX/lib" ] || die "Homebrew for $TARGET_ARCH not found at $BREW_PREFIX (set CLASSICMAC_HOMEBREW_PREFIX)."
+# Every engine must be built for the architecture this app is assembled for;
+# a build tree left over from the other architecture is caught here.
+for engine in "$QEMU_BUILD_DIR/qemu-system-m68k" "$QEMU_BUILD_DIR/qemu-system-ppc" \
+              "$QEMU_BUILD_DIR/qemu-img" "$COPLAND_BIN"; do
+  classicmac_require_archs "$engine" "$TARGET_ARCH"
+done
+log "Assembling ClassicMac for $TARGET_ARCH"
 
 # ---------------------------------------------------------------------------
 # 1. Build the SwiftUI app (release)
 # ---------------------------------------------------------------------------
-log "Building ClassicMac app (release)"
-( cd "$APP_SRC_DIR" && swift build -c release )
-APP_BIN="$APP_SRC_DIR/.build/release/ClassicMac"
+log "Building ClassicMac app (release, $TARGET_ARCH)"
+( cd "$APP_SRC_DIR" && swift build -c release --arch "$TARGET_ARCH" )
+APP_BIN="$(cd "$APP_SRC_DIR" && swift build -c release --arch "$TARGET_ARCH" --show-bin-path)/ClassicMac"
 [ -x "$APP_BIN" ] || die "Swift build did not produce the ClassicMac executable."
+classicmac_require_archs "$APP_BIN" "$TARGET_ARCH"
 
 # ---------------------------------------------------------------------------
 # 2. Assemble the .app skeleton in the private staging directory
@@ -240,37 +272,35 @@ cp "$DECLROM_SRC" "$RES_DIR/declrom"
 cp "$NDRVLOADER_SRC" "$RES_DIR/ndrvloader"
 cp "$PRAMSEED_SRC" "$RES_DIR/pram-seed.img"
 cp -R "$BROWSER_SRC" "$RES_DIR/Browser"
+cp -R "$ROOT_DIR/Resources/Iconfactory" "$RES_DIR/Iconfactory"
 
 # Third-party notices and license texts for QEMU, its firmware, and every
 # Homebrew library copied into the self-contained helper apps below.
 LICENSES_DIR="$RES_DIR/Licenses"
 mkdir -p "$LICENSES_DIR"
 cp "$ROOT_DIR/copland/CLI11-LICENSE.txt" "$LICENSES_DIR/CLI11.txt"
-cp "$ROOT_DIR/vendor/dingusppc/LICENSE" "$LICENSES_DIR/DingusPPC-GPL-3.0.txt"
-cp "$ROOT_DIR/vendor/SDL2/LICENSE.txt" "$LICENSES_DIR/SDL2.txt"
-cp "$ROOT_DIR/vendor/dingusppc/thirdparty/capstone/LICENSE.TXT" "$LICENSES_DIR/Capstone.txt"
-cp "$ROOT_DIR/vendor/dingusppc/thirdparty/capstone/LICENSE_LLVM.TXT" "$LICENSES_DIR/Capstone-LLVM.txt"
-cp "$ROOT_DIR/vendor/dingusppc/thirdparty/cubeb/LICENSE" "$LICENSES_DIR/cubeb.txt"
+cp "$ROOT_DIR/platinum/fonts/LICENSE-fonts.txt" "$LICENSES_DIR/Platinum-fonts.txt"
+cp "$ROOT_DIR/platinum/icons/LICENSE-icons.txt" "$LICENSES_DIR/Platinum-icons.txt"
+cp "$ROOT_DIR/platinum/macos-icons/README.txt" "$LICENSES_DIR/MacOS-icons.txt"
+cp "$ROOT_DIR/platinum/macos-icons/manifest.json" "$LICENSES_DIR/MacOS-icon-provenance.json"
+cp "$VENDOR_DIR/dingusppc/LICENSE" "$LICENSES_DIR/DingusPPC-GPL-3.0.txt"
+cp "$VENDOR_DIR/SDL2/LICENSE.txt" "$LICENSES_DIR/SDL2.txt"
+cp "$VENDOR_DIR/dingusppc/thirdparty/capstone/LICENSE.TXT" "$LICENSES_DIR/Capstone.txt"
+cp "$VENDOR_DIR/dingusppc/thirdparty/capstone/LICENSE_LLVM.TXT" "$LICENSES_DIR/Capstone-LLVM.txt"
+cp "$VENDOR_DIR/dingusppc/thirdparty/cubeb/LICENSE" "$LICENSES_DIR/cubeb.txt"
 cp "$THIRD_PARTY_NOTICES" "$RES_DIR/ThirdPartyNotices.md"
-cp "$ROOT_DIR/vendor/qemu/LICENSE" "$LICENSES_DIR/QEMU-LICENSE.txt"
-cp "$ROOT_DIR/vendor/qemu/COPYING" "$LICENSES_DIR/GPL-2.0.txt"
-cp "$ROOT_DIR/vendor/qemu/COPYING.LIB" "$LICENSES_DIR/LGPL-2.1.txt"
+cp "$VENDOR_DIR/qemu/LICENSE" "$LICENSES_DIR/QEMU-LICENSE.txt"
+cp "$VENDOR_DIR/qemu/COPYING" "$LICENSES_DIR/GPL-2.0.txt"
+cp "$VENDOR_DIR/qemu/COPYING.LIB" "$LICENSES_DIR/LGPL-2.1.txt"
 cp "$BROWSER_SRC/novnc/LICENSE.txt" "$LICENSES_DIR/noVNC-MPL-2.0.txt"
 cp "$BROWSER_SRC/novnc/vendor/pako/LICENSE" "$LICENSES_DIR/pako-MIT.txt"
 
 copy_brew_license() {
   local formula="$1" source_name="$2" destination_name="$3"
-  local fallback_path="${4:-}"
   local source_path
-  source_path="$(brew --prefix "$formula")/$source_name"
-  if [ -f "$source_path" ]; then
-    cp "$source_path" "$LICENSES_DIR/$destination_name"
-  elif [ -n "$fallback_path" ] && [ -f "$fallback_path" ]; then
-    log "$formula does not install $source_name; using bundled canonical license text"
-    cp "$fallback_path" "$LICENSES_DIR/$destination_name"
-  else
-    die "$formula license not found at $source_path"
-  fi
+  source_path="$BREW_PREFIX/opt/$formula/$source_name"
+  [ -f "$source_path" ] || die "$formula license not found at $source_path"
+  cp "$source_path" "$LICENSES_DIR/$destination_name"
 }
 
 copy_brew_license pixman COPYING pixman.txt
@@ -278,31 +308,22 @@ copy_brew_license libpng LICENSE libpng.txt
 copy_brew_license zstd LICENSE zstd.txt
 copy_brew_license libslirp LICENSE libslirp.txt
 copy_brew_license libslirp COPYRIGHT libslirp-COPYRIGHT.txt
-# Homebrew's libusb formula declares LGPL-2.1-or-later but its keg does not
-# install the upstream COPYING file. QEMU's bundled COPYING.LIB is the same
-# canonical LGPL 2.1 license text, so use it only when the keg omits COPYING.
-copy_brew_license libusb COPYING libusb.txt "$ROOT_DIR/vendor/qemu/COPYING.LIB"
+copy_brew_license libusb COPYING libusb.txt
 copy_brew_license gettext COPYING gettext.txt
 copy_brew_license pcre2 COPYING pcre2.txt
 
 # Guest additions CD (StuffIt Expander, USB Overdrive, Disk Copy, ...).
 # Built by scripts/build-guest-cd.sh; optional so a plain QEMU rebuild
 # doesn't require network access.
-TOOLS_CD_SRC="$ROOT_DIR/dist/ClassicMacTools.iso"
+TOOLS_CD_SRC="${TOOLS_CD_SRC:-$ROOT_DIR/dist/ClassicMacTools.iso}"
 if [ -f "$TOOLS_CD_SRC" ]; then
-  for guest_artifact in \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetal.bin" \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetalInput.bin" \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetalStartup.bin" \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetalInstaller.bin" \
-      "$ROOT_DIR/gxmetal/guest/bin/GXMetalTest.bin"; do
-    if [ -f "$guest_artifact" ] && [ "$guest_artifact" -nt "$TOOLS_CD_SRC" ]; then
-      die "ClassicMacTools.iso is older than $(basename "$guest_artifact"). Run scripts/build-guest-cd.sh before bundling."
-    fi
-  done
+  # A 3.x Tools CD still carries the removed GXMetal folder.
+  if LC_ALL=C grep -a -F "GXMetal" "$TOOLS_CD_SRC" >/dev/null; then
+    die "$(basename "$TOOLS_CD_SRC") still contains GXMetal. Run scripts/build-guest-cd.sh before bundling."
+  fi
   cp "$TOOLS_CD_SRC" "$RES_DIR/ClassicMacTools.iso"
 else
-  log "WARNING: dist/ClassicMacTools.iso not found; app will lack the Tools CD (run scripts/build-guest-cd.sh)"
+  log "WARNING: $TOOLS_CD_SRC not found; app will lack the Tools CD (run scripts/build-guest-cd.sh)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -427,14 +448,6 @@ write_helper_plist "$QUADRA_APP" "Quadra 800" "com.classicmac.machine.quadra800"
 write_helper_plist "$PPC_APP" "Power Mac G4" "com.classicmac.machine.powermacg4" "qemu-system-ppc"
 write_helper_plist "$COPLAND_APP" "Power Mac 7500" "com.classicmac.machine.powermac7500" "dingusppc"
 
-# Files copied from external/APFS/HFS volumes can carry FinderInfo/resource-fork
-# extended attributes. codesign rejects those even for ad-hoc signatures, and
-# dylibbundler signs rewritten Mach-O files internally before our final signing
-# pass. Strip non-code metadata from the private staged bundle before relocation.
-if command -v xattr >/dev/null 2>&1; then
-  xattr -cr "$APP"
-fi
-
 # ---------------------------------------------------------------------------
 # 4. Relocate dynamic libraries into the helper bundles
 # ---------------------------------------------------------------------------
@@ -446,13 +459,13 @@ dylibbundler -of -b \
   -x "$QUADRA_APP/Contents/MacOS/qemu-img" \
   -d "$QUADRA_APP/Contents/Frameworks" \
   -p "@executable_path/../Frameworks" \
-  -s "$(brew --prefix)/lib"
+  -s "$BREW_PREFIX/lib"
 
 dylibbundler -of -b \
   -x "$PPC_APP/Contents/MacOS/qemu-system-ppc" \
   -d "$PPC_APP/Contents/Frameworks" \
   -p "@executable_path/../Frameworks" \
-  -s "$(brew --prefix)/lib"
+  -s "$BREW_PREFIX/lib"
 
 # dylibbundler rewrites every pre-existing LC_RPATH to the same value, which
 # leaves duplicate LC_RPATH entries that modern dyld refuses to load. Collapse
@@ -478,75 +491,35 @@ dedupe_rpaths "$PPC_APP/Contents/MacOS/qemu-system-ppc"
 # A newer host's Homebrew libraries may require a newer OS than ClassicMac.
 # Replace them with verified, same-version official Sequoia bottles instead
 # of changing Mach-O minimum-version headers or dropping macOS 15 support.
-log "Staging verified macOS 15 runtime libraries"
+# Homebrew no longer publishes Intel bottles for most formulae, so an x86_64
+# build keeps a library from its installed keg when no official bottle exists,
+# after the same macOS 15 minimum-version, architecture and dependency checks
+# (CLASSICMAC_REQUIRE_OFFICIAL_BOTTLES=1 refuses that instead).
+log "Staging verified macOS 15 runtime libraries ($TARGET_ARCH)"
+RELEASE_LIBRARY_ARGS=(--arch "$TARGET_ARCH" --homebrew-prefix "$BREW_PREFIX")
+if [ "$TARGET_ARCH" = x86_64 ] && [ "${CLASSICMAC_REQUIRE_OFFICIAL_BOTTLES:-0}" != "1" ]; then
+  RELEASE_LIBRARY_ARGS+=(--allow-local-kegs)
+fi
 for helper in "$QUADRA_APP" "$PPC_APP"; do
   python3 "$ROOT_DIR/scripts/bundle-release-libraries.py" \
     --frameworks "$helper/Contents/Frameworks" \
-    --cache "$ROOT_DIR/vendor/release-libraries"
+    --cache "$ROOT_DIR/vendor/release-libraries" \
+    "${RELEASE_LIBRARY_ARGS[@]}"
   # Frameworks is a code-only signing location; provenance is bundle data.
   mv "$helper/Contents/Frameworks/release-libraries.json" \
     "$helper/Contents/Resources/release-libraries.json"
 done
 
 # ---------------------------------------------------------------------------
-# 5. Code signing. Sign inner items first, then outward.
+# 5. Code signing. Sign inner items first, then outward (scripts/lib/sign-app.sh).
 #
 # Uses the Developer ID Application certificate when one is present in the
 # keychain (required for notarization / distribution); falls back to ad-hoc
 # signing otherwise. Override with SIGN_IDENTITY=<identity or "-">.
+#
+# 6. Verify: classicmac_sign_app finishes with a strict deep verification.
 # ---------------------------------------------------------------------------
-SIGN_IDENTITY="${SIGN_IDENTITY:-}"
-if [ -z "$SIGN_IDENTITY" ]; then
-  SIGN_IDENTITY="$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/{print $2; exit}')"
-fi
-if [ -z "$SIGN_IDENTITY" ]; then
-  SIGN_IDENTITY="-"
-fi
-
-# Developer ID signatures need a secure timestamp for notarization; ad-hoc
-# signatures cannot get one.
-TIMESTAMP_FLAG="--timestamp"
-if [ "$SIGN_IDENTITY" = "-" ]; then
-  TIMESTAMP_FLAG="--timestamp=none"
-  log "Code signing (ad-hoc)"
-else
-  log "Code signing (identity: $SIGN_IDENTITY)"
-fi
-
-find "$QUADRA_APP/Contents/Frameworks" "$PPC_APP/Contents/Frameworks" -name '*.dylib' -print0 | while IFS= read -r -d '' lib; do
-  codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" "$lib"
-done
-
-# qemu-img is not the helper bundle's main executable, so it needs its own
-# signature (no JIT entitlements required). All executables get the hardened
-# runtime, which notarization requires.
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" \
-  --options runtime \
-  "$QUADRA_APP/Contents/MacOS/qemu-img"
-
-# Sign the helper apps as bundles, then the outer app. Signing a bundle
-# (re-)signs its main executable - the qemu-system binary - so the JIT
-# entitlements MUST be supplied here or this pass would strip them, leaving a
-# hardened-runtime binary that cannot map its JIT buffer ("allocate ... bytes
-# for jit buffer: Invalid argument" at launch).
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" \
-  --options runtime --entitlements "$ENTITLEMENTS" \
-  "$QUADRA_APP"
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" \
-  --options runtime --entitlements "$ENTITLEMENTS" \
-  "$PPC_APP"
-
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" --options runtime "$COPLAND_APP"
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" --options runtime "$MACOS_DIR/ClassicMac"
-
-# Sign the whole bundle last.
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" --options runtime "$APP"
-
-# ---------------------------------------------------------------------------
-# 6. Verify
-# ---------------------------------------------------------------------------
-log "Verifying bundle signature"
-codesign --verify --deep --strict --verbose=2 "$APP" || die "Bundle failed signature verification."
+classicmac_sign_app "$APP" "$ENTITLEMENTS"
 
 # Promote only a completely assembled and verified app. Both moves are
 # same-volume renames. If the second move fails, cleanup_bundle restores the

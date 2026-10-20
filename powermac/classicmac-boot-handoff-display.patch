@@ -194,7 +194,7 @@
  }
 --- a/hw/display/vga-pci.c
 +++ b/hw/display/vga-pci.c
-@@ -519,6 +519,7 @@
+@@ -471,6 +471,7 @@
      }
  
      s->con = graphic_console_init(DEVICE(dev), 0, s->hw_ops, s);
@@ -202,15 +202,15 @@
  
      /* XXX: VGA_RAM_SIZE must be a power of two */
      pci_register_bar(&d->dev, 0, PCI_BASE_ADDRESS_MEM_PREFETCH, &s->vram);
-@@ -626,6 +627,8 @@
+@@ -565,6 +566,8 @@
      DEFINE_PROP_BOOL("host-resize", PCIVGAState, host_resize, false),
      DEFINE_PROP_BOOL("packed-lowbpp", PCIVGAState, vga.packed_lowbpp, false),
      DEFINE_PROP_BOOL("untracked-vram", PCIVGAState, vga.untracked_vram, false),
 +    DEFINE_PROP_BOOL("classicmac-boot-handoff", PCIVGAState,
 +                     vga.classicmac_boot_handoff, false),
      DEFINE_PROP_BOOL("hardware-cursor", PCIVGAState, hardware_cursor, false),
-     DEFINE_PROP_BOOL("gxmetal", PCIVGAState, gxmetal_enabled, false),
      DEFINE_EDID_PROPERTIES(PCIVGAState, edid_info),
+ };
 --- a/hw/display/vga_int.h
 +++ b/hw/display/vga_int.h
 @@ -26,6 +26,7 @@

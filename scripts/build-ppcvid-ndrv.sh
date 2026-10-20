@@ -19,8 +19,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDOR_DIR="$ROOT_DIR/vendor"
 DRIVER_DIR="$ROOT_DIR/ppcvid/driver"
-RETRO68_SRC="$VENDOR_DIR/Retro68"
-RETRO68_BUILD="$VENDOR_DIR/Retro68-build"
+RETRO68_SRC="${RETRO68_SRC:-$VENDOR_DIR/Retro68}"
+# An existing Retro68 build (with the PPC target and Universal Interfaces) can
+# be reused from another checkout with RETRO68_BUILD=/path/to/Retro68-build.
+RETRO68_BUILD="${RETRO68_BUILD:-$VENDOR_DIR/Retro68-build}"
 RETRO68_TOOLCHAIN="$RETRO68_BUILD/toolchain"
 RETRO68_REPO="${RETRO68_REPO:-https://github.com/autc04/Retro68.git}"
 MPW_DIR="$VENDOR_DIR/mpw"
@@ -158,32 +160,19 @@ fi
 # ---------------------------------------------------------------------------
 # 6. Retro68 PPC target runtime (libretrocrt, needed by the gcc driver link)
 # ---------------------------------------------------------------------------
-PPC_RUNTIME="$RETRO68_TOOLCHAIN/powerpc-apple-macos/lib/libretrocrt.a"
-if [ -f "$PPC_RUNTIME" ]; then
+if [ -f "$RETRO68_TOOLCHAIN/powerpc-apple-macos/lib/libretrocrt.a" ]; then
   log "PPC target runtime already present"
 else
   log "Building Retro68 PPC target runtime"
-  PPC_BUILD="$RETRO68_BUILD/build-target-ppc"
-  mkdir -p "$PPC_BUILD"
+  mkdir -p "$RETRO68_BUILD/build-target-ppc"
   (
-    cd "$PPC_BUILD"
+    cd "$RETRO68_BUILD/build-target-ppc"
     cmake "$RETRO68_SRC" \
       -DCMAKE_TOOLCHAIN_FILE=../build-host/cmake/intreeppc.toolchain.cmake \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY
   )
-
-  # ClassicMac only needs libretrocrt for the NDRV/GXMetal links. Building the
-  # generic CMake "install" target first builds every Retro68 PPC sample and
-  # support application, including LaunchAPPLServer. That unrelated application
-  # can exercise an upstream XCOFF linker crash on Intel hosts even though the
-  # runtime archive required by ClassicMac is valid. Build only retrocrt and
-  # install that archive into the target prefix.
-  cmake --build "$PPC_BUILD" --target retrocrt
-  BUILT_RUNTIME="$PPC_BUILD/libretro/libretrocrt.a"
-  [ -f "$BUILT_RUNTIME" ] || die "Retro68 PPC runtime build did not produce libretrocrt.a"
-  mkdir -p "$(dirname "$PPC_RUNTIME")"
-  cp "$BUILT_RUNTIME" "$PPC_RUNTIME"
+  cmake --build "$RETRO68_BUILD/build-target-ppc" --target install
 fi
 
 # ---------------------------------------------------------------------------
@@ -195,8 +184,6 @@ make -C "$DRIVER_DIR"
 
 [ -f "$DRIVER_DIR/bin/qemu_vga.ndrv" ] || die "driver build did not produce bin/qemu_vga.ndrv"
 cp "$DRIVER_DIR/bin/qemu_vga.ndrv" "$ROOT_DIR/ppcvid/qemu_vga.ndrv"
-shasum -a 256 "$ROOT_DIR/gxmetal/protocol/gxmetal_protocol.h" | \
-  awk '{ print $1 }' > "$ROOT_DIR/ppcvid/qemu_vga.ndrv.gxmetal-protocol.sha256"
-log "Installed ppcvid/qemu_vga.ndrv"
+log "Installed ppcvid/qemu_vga.ndrv ($(shasum -a 256 "$ROOT_DIR/ppcvid/qemu_vga.ndrv" | awk '{ print $1 }'))"
 
 log "Done. Rebuild QEMU (scripts/build-qemu.sh) to install the new driver."

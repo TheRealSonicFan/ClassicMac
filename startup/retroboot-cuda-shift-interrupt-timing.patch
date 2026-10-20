@@ -1,0 +1,206 @@
+diff --git a/hw/misc/macio/cuda.c b/hw/misc/macio/cuda.c
+--- a/hw/misc/macio/cuda.c
++++ b/hw/misc/macio/cuda.c
+@@ -95,6 +95,11 @@ static void cuda_set_sr_int(void *opaque)
+     MOS6522State *ms = MOS6522(mcs);
+     qemu_irq irq = qdev_get_gpio_in(DEVICE(ms), SR_INT_BIT);
+ 
++    if (s->sr_int_sync) {
++        /* a sync step's shift completed: see mos6522_cuda_read() */
++        s->sr_int_sync = false;
++        s->sync_sr_unseen = s->sync_sr_hold;
++    }
+     qemu_set_irq(irq, 1);
+ }
+ 
+@@ -103,6 +108,7 @@ static void cuda_delay_set_sr_int(CUDAState *s)
+     int64_t expire;
+ 
+     trace_cuda_delay_set_sr_int();
++    s->sr_int_sync = false;
+ 
+     expire = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->sr_delay_ns;
+     timer_mod(s->sr_delay_timer, expire);
+@@ -118,7 +124,8 @@ static void cuda_update(CUDAState *s)
+ 
+     packet_received = 0;
+     if (!(ms->b & TIP)) {
+-        /* transfer requested from host */
++        /* transfer requested from host (a sync handshake, if any, is over) */
++        s->sync_sr_unseen = false;
+ 
+         if (ms->acr & SR_OUT) {
+             /* data output */
+@@ -157,6 +164,8 @@ static void cuda_update(CUDAState *s)
+                 ms->b = (ms->b & ~TREQ);
+             }
+             cuda_delay_set_sr_int(s);
++            s->sr_int_sync = true;
++            trace_cuda_sync_response(!!(ms->b & TACK));
+         } else {
+             if (!(s->last_b & TIP)) {
+                 /* handle end of host to cuda transfer */
+@@ -501,14 +510,68 @@ static void cuda_receive_packet_from_host(CUDAState *s,
+     }
+ }
+ 
++/*
++ * Shift interrupt timing (RetroBoot).  Cuda raises the VIA shift interrupt
++ * sr_delay_ns after each handshake step.  QEMU's main loop runs that timer,
++ * and on a loaded host it can run milliseconds late while the vCPU polls IFR
++ * (the Mac OS ROM gives up after 15000 polls).  A shift interrupt that is
++ * due is therefore delivered when the guest reads the VIA, as mos6522_read()
++ * already does for the VIA's own timers.
++ *
++ * Sync handshake (RetroBoot).  Before its first command the Mac OS ROM
++ * synchronises with Cuda, polled and with VIA interrupts disabled: with TIP
++ * negated it asserts TACK, waits for TREQ and the shift interrupt, then
++ * negates TACK, waits for TREQ to follow, *reads SR to discard the previous
++ * byte* and only then waits (15000 polls) for the shift interrupt of this
++ * step.  If that interrupt never comes the ROM gives up and halts in a loop
++ * before the Mac OS gray screen ("Cuda not responding").
++ *
++ * Real Cuda changes TREQ first and clocks the byte out afterwards, so the
++ * host always sees TREQ change, and reads SR, before the shift completes.
++ * QEMU changes TREQ at once and completes the shift sr_delay_ns of *host*
++ * time later.  When the vCPU needs longer than that from its TACK write to
++ * its SR read (the host descheduled the vCPU thread, TCG translates this
++ * run-once code, tracing), the shift interrupt is already pending at the SR
++ * read, the read discards it, and the boot hangs (a few percent of cold
++ * boots on a loaded host, 1 of 6 on real hardware; lab report
++ * emulator/reports/pregray-hang-20261011.md).
++ *
++ * So the shift interrupt that answers a sync step survives the first SR
++ * read that comes before the host has seen it in IFR.  Hosts that wait for
++ * the interrupt before reading SR (Linux, the ROM's first step and every
++ * transfer) never notice; the ROM's second step now gets its interrupt
++ * whatever the host's timing.  sr-int-on-access=off and sync-sr-hold=off
++ * restore QEMU's behaviour.
++ */
+ static uint64_t mos6522_cuda_read(void *opaque, hwaddr addr, unsigned size)
+ {
+     CUDAState *s = opaque;
+     MOS6522CUDAState *mcs = &s->mos6522_cuda;
+     MOS6522State *ms = MOS6522(mcs);
++    uint64_t val;
+ 
+     addr = (addr >> 9) & 0xf;
+-    return mos6522_read(ms, addr, size);
++    if (s->sr_int_on_access && timer_pending(s->sr_delay_timer)) {
++        int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++        int64_t due = timer_expire_time_ns(s->sr_delay_timer);
++
++        if (now >= due) {
++            timer_del(s->sr_delay_timer);
++            trace_cuda_sr_int_due(now - due);
++            cuda_set_sr_int(s);
++        }
++    }
++    val = mos6522_read(ms, addr, size);
++    if (s->sync_sr_unseen) {
++        if (addr == VIA_REG_IFR && (val & SR_INT)) {
++            s->sync_sr_unseen = false;
++        } else if (addr == VIA_REG_SR) {
++            s->sync_sr_unseen = false;
++            trace_cuda_sync_sr_kept();
++            qemu_set_irq(qdev_get_gpio_in(DEVICE(ms), SR_INT_BIT), 1);
++        }
++    }
++    return val;
+ }
+ 
+ static void mos6522_cuda_write(void *opaque, hwaddr addr, uint64_t val,
+@@ -519,6 +582,9 @@ static void mos6522_cuda_write(void *opaque, hwaddr addr, uint64_t val,
+     MOS6522State *ms = MOS6522(mcs);
+ 
+     addr = (addr >> 9) & 0xf;
++    if (addr == VIA_REG_IFR && (val & SR_INT)) {
++        s->sync_sr_unseen = false;
++    }
+     mos6522_write(ms, addr, val, size);
+ }
+ 
+@@ -532,6 +598,25 @@ static const MemoryRegionOps mos6522_cuda_ops = {
+     },
+ };
+ 
++static bool vmstate_cuda_sync_needed(void *opaque)
++{
++    CUDAState *s = opaque;
++
++    return s->sr_int_sync || s->sync_sr_unseen;
++}
++
++static const VMStateDescription vmstate_cuda_sync = {
++    .name = "cuda/sync",
++    .version_id = 1,
++    .minimum_version_id = 1,
++    .needed = vmstate_cuda_sync_needed,
++    .fields = (const VMStateField[]) {
++        VMSTATE_BOOL(sr_int_sync, CUDAState),
++        VMSTATE_BOOL(sync_sr_unseen, CUDAState),
++        VMSTATE_END_OF_LIST()
++    }
++};
++
+ static const VMStateDescription vmstate_cuda = {
+     .name = "cuda",
+     .version_id = 7,
+@@ -552,6 +637,10 @@ static const VMStateDescription vmstate_cuda = {
+         VMSTATE_BOOL_V(one_second_first_packet, CUDAState, 7),
+         VMSTATE_TIMER_PTR(sr_delay_timer, CUDAState),
+         VMSTATE_END_OF_LIST()
++    },
++    .subsections = (const VMStateDescription * const []) {
++        &vmstate_cuda_sync,
++        NULL
+     }
+ };
+ 
+@@ -566,6 +655,8 @@ static void cuda_reset(DeviceState *dev)
+     s->last_second_tick = 0;
+     s->one_second_mode = 0;
+     s->one_second_first_packet = true;
++    s->sr_int_sync = false;
++    s->sync_sr_unseen = false;
+ 
+     adb_set_autopoll_enabled(adb_bus, false);
+ }
+@@ -611,6 +702,8 @@ static void cuda_init(Object *obj)
+ 
+ static const Property cuda_properties[] = {
+     DEFINE_PROP_UINT64("timebase-frequency", CUDAState, tb_frequency, 0),
++    DEFINE_PROP_BOOL("sr-int-on-access", CUDAState, sr_int_on_access, true),
++    DEFINE_PROP_BOOL("sync-sr-hold", CUDAState, sync_sr_hold, true),
+ };
+ 
+ static void cuda_class_init(ObjectClass *oc, const void *data)
+diff --git a/hw/misc/macio/trace-events b/hw/misc/macio/trace-events
+--- a/hw/misc/macio/trace-events
++++ b/hw/misc/macio/trace-events
+@@ -9,6 +9,9 @@ cuda_packet_receive(int len) "length %d"
+ cuda_packet_receive_data(int i, const uint8_t data) "[%d] 0x%02x"
+ cuda_packet_send(int len) "length %d"
+ cuda_packet_send_data(int i, const uint8_t data) "[%d] 0x%02x"
++cuda_sync_response(int tack) "TACK=%d with TIP negated: TREQ follows, shift interrupt delayed"
++cuda_sync_sr_kept(void) "SR read before the host saw the sync shift interrupt: interrupt kept"
++cuda_sr_int_due(int64_t late_ns) "shift interrupt due %" PRId64 " ns ago delivered on a VIA read"
+ 
+ # macio.c
+ macio_timer_write(uint64_t addr, unsigned len, uint64_t val) "write addr 0x%"PRIx64 " len %d val 0x%"PRIx64
+diff --git a/include/hw/misc/macio/cuda.h b/include/hw/misc/macio/cuda.h
+--- a/include/hw/misc/macio/cuda.h
++++ b/include/hw/misc/macio/cuda.h
+@@ -95,6 +95,12 @@ struct CUDAState {
+     uint64_t sr_delay_ns;
+     QEMUTimer *sr_delay_timer;
+ 
++    /* Shift interrupt timing vs guest progress, see mos6522_cuda_read() */
++    bool sr_int_on_access;  /* deliver a due shift interrupt when the VIA is read */
++    bool sync_sr_hold;      /* keep an unseen sync shift interrupt over one SR read */
++    bool sr_int_sync;       /* the pending delayed SR_INT answers a sync step */
++    bool sync_sr_unseen;    /* it was raised and the host has not seen it yet */
++
+     int data_in_size;
+     int data_in_index;
+     int data_out_index;

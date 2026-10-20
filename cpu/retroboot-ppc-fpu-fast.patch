@@ -1,0 +1,1471 @@
+diff --git a/target/ppc/cpu.h b/target/ppc/cpu.h
+--- a/target/ppc/cpu.h
++++ b/target/ppc/cpu.h
+@@ -1550,6 +1550,9 @@ struct ArchCPU {
+     PPCHash64Options *hash64_opts;
+     bool rtas_stopped_state;
+     bool mmu_contexts;
++    /* RetroBoot fast FPU paths (fpu_fast.c.inc, translate/fp-impl.c.inc) */
++    bool fast_fpu;
++    uint32_t fast_fpu_mask;
+ 
+     /* Those resources are used only during code translation */
+     /* opcode handlers */
+@@ -3058,6 +3061,12 @@ static inline int fpr_offset(int i)
+     return vsr64_offset(i, true);
+ }
+ 
++/* fast-fpu parts (x-fast-fpu-mask) */
++#define PPC_FAST_FPU_ARITH  0x1   /* one helper per arithmetic instruction */
++#define PPC_FAST_FPU_LDST   0x2   /* lfs/stfs conversions inline */
++#define PPC_FAST_FPU_FSEL   0x4   /* fsel inline */
++#define PPC_FAST_FPU_ALL    0x7
++
+ static inline uint64_t *cpu_fpr_ptr(CPUPPCState *env, int i)
+ {
+     return (uint64_t *)((uintptr_t)env + fpr_offset(i));
+diff --git a/target/ppc/cpu_init.c b/target/ppc/cpu_init.c
+--- a/target/ppc/cpu_init.c
++++ b/target/ppc/cpu_init.c
+@@ -58,6 +58,10 @@ static const Property powerpc_cpu_properties[] = {
+                       rtas_stopped_state, true),
+     /* 32-bit hash MMU: keep translations of recently used address spaces */
+     DEFINE_PROP_BOOL("mmu-contexts", PowerPCCPU, mmu_contexts, true),
++    /* Scalar FPU fast paths, same results and FPSCR as softfloat */
++    DEFINE_PROP_BOOL("fast-fpu", PowerPCCPU, fast_fpu, true),
++    DEFINE_PROP_UINT32("x-fast-fpu-mask", PowerPCCPU, fast_fpu_mask,
++                       PPC_FAST_FPU_ALL),
+ };
+ 
+ static inline void vscr_init(CPUPPCState *env, uint32_t val)
+diff --git a/target/ppc/ff_stats.h b/target/ppc/ff_stats.h
+new file mode 100644
+--- /dev/null
++++ b/target/ppc/ff_stats.h
+@@ -0,0 +1,49 @@
++/*
++ * RetroBoot fast-fpu: optional hit/fallback counters for lab builds
++ * (configure --extra-cflags=-DPPC_FF_STATS).  Printed to stderr at exit.
++ * Compiled out otherwise.
++ */
++#ifndef PPC_FF_STATS_H
++#define PPC_FF_STATS_H
++
++#ifdef PPC_FF_STATS
++typedef struct FFStat {
++    const char *name;
++    uint64_t hit, miss;
++    struct FFStat *next;
++    bool listed;
++} FFStat;
++
++static FFStat *ff_stat_list;
++
++static void ff_stat_dump(void)
++{
++    for (FFStat *s = ff_stat_list; s; s = s->next) {
++        fprintf(stderr, "ff-stats %-16s fast %12" PRIu64 " fallback %12" PRIu64
++                "\n", s->name, s->hit, s->miss);
++    }
++}
++
++static inline void ff_stat(FFStat *s, bool hit)
++{
++    if (unlikely(!s->listed)) {
++        if (!ff_stat_list) {
++            atexit(ff_stat_dump);
++        }
++        s->listed = true;
++        s->next = ff_stat_list;
++        ff_stat_list = s;
++    }
++    if (hit) {
++        s->hit++;
++    } else {
++        s->miss++;
++    }
++}
++#define FF_STAT(NAME, HIT) \
++    do { static FFStat ff_st_ = { .name = NAME }; ff_stat(&ff_st_, HIT); } while (0)
++#else
++#define FF_STAT(NAME, HIT) do { } while (0)
++#endif
++
++#endif
+diff --git a/target/ppc/fpu_fast.c.inc b/target/ppc/fpu_fast.c.inc
+new file mode 100644
+--- /dev/null
++++ b/target/ppc/fpu_fast.c.inc
+@@ -0,0 +1,800 @@
++/*
++ * RetroBoot: fast paths for the PowerPC scalar FPU (-cpu ...,fast-fpu=on).
++ *
++ * QEMU translates every arithmetic FP instruction into four helper calls
++ * (reset_fpstatus, the softfloat operation, compute_fprf_float64,
++ * float_check_status).  With fast-fpu each instruction is one helper that
++ * first tries the host's IEEE arithmetic, and runs exactly the original
++ * sequence whenever it cannot prove that the outcome is the same.
++ *
++ * The fast path is taken only when
++ *   - FPSCR[XE] = 0, so an inexact result never traps, and the rounding
++ *     mode is round-to-nearest-even;
++ *   - no deferred floating-point program exception is pending;
++ *   - the operands are normal numbers or zeros (never NaN, infinity or
++ *     denormal);
++ *   - the result is zero, or a normal number strictly above the smallest
++ *     normal and below overflow, in the precision of the instruction.
++ * Then the only exception condition is "inexact", and it is determined
++ * exactly: error-free transformations for add/subtract (2Sum, which is
++ * exact here since |operands| < 2^1022), an integer test for products and
++ * quotients, and exact 128-bit integer arithmetic for fused multiply-add.
++ * The host must evaluate double precision without excess precision
++ * (FLT_EVAL_METHOD 0) and the C code below never contracts into FMA.
++ *
++ * On the fast path the instruction leaves FPSCR, the softfloat status flags
++ * and the target FPR exactly as the original sequence does: FPRF set from the
++ * result, FI = inexact, XX and FX set when inexact (QEMU sets FX on every
++ * inexact result), FR untouched, nothing else changed.  The fallback writes
++ * the target FPR before float_check_status can raise a deferred exception,
++ * as the original TCG sequence does.
++ */
++
++#include <float.h>
++#include "ff_stats.h"
++
++#if FLT_EVAL_METHOD == 0 && defined(CONFIG_INT128)
++#define FF_ENABLED 1
++#else
++#define FF_ENABLED 0
++#endif
++
++#define FF_SIGN    0x8000000000000000ULL
++#define FF_ABS     0x7fffffffffffffffULL
++#define FF_FRAC    0x000fffffffffffffULL
++#define FF_HIDDEN  0x0010000000000000ULL
++#define FF_MINN    0x0010000000000000ULL    /* 2^-1022 */
++#define FF_INF     0x7ff0000000000000ULL
++#define FF_S_MIN   0x3810000000000000ULL    /* 2^-126 as a double */
++#define FF_S_MAX   0x47efffffe0000000ULL    /* FLT_MAX as a double */
++#define FF_S_LOW   0x1fffffffULL            /* bits below single precision */
++#define FF_S_HALF  0x10000000ULL            /* half an ulp of single */
++
++static inline double ff_d(uint64_t x)
++{
++    double d;
++    memcpy(&d, &x, sizeof(d));
++    return d;
++}
++
++static inline uint64_t ff_u(double d)
++{
++    uint64_t x;
++    memcpy(&x, &d, sizeof(x));
++    return x;
++}
++
++static inline unsigned ff_exp(uint64_t x)
++{
++    return (x >> 52) & 0x7ff;
++}
++
++static inline bool ff_zero(uint64_t x)
++{
++    return !(x & FF_ABS);
++}
++
++/* normal number (no zero, denormal, infinity or NaN) */
++static inline bool ff_normal(uint64_t x)
++{
++    return ff_exp(x) - 1u < 0x7feu;
++}
++
++/* operand of add/subtract: zero, or normal with |x| < 2^1022 */
++static inline bool ff_addend(uint64_t x)
++{
++    return ff_exp(x) - 1u < 0x7fdu || ff_zero(x);
++}
++
++static inline bool ff_normal_or_zero(uint64_t x)
++{
++    return ff_normal(x) || ff_zero(x);
++}
++
++/* double result: normal, above the smallest normal, finite */
++static inline bool ff_res_ok(uint64_t r)
++{
++    uint64_t a = r & FF_ABS;
++    return a > FF_MINN && a < FF_INF;
++}
++
++/* single-precision result in double format: above FLT_MIN, at most FLT_MAX */
++static inline bool ff_res_ok_s(uint64_t r)
++{
++    uint64_t a = r & FF_ABS;
++    return a > FF_S_MIN && a <= FF_S_MAX;
++}
++
++static inline uint64_t ff_sig(uint64_t x)
++{
++    return (x & FF_FRAC) | FF_HIDDEN;
++}
++
++/* is the product of two 53-bit significands representable in 53 bits? */
++static inline bool ff_mul_exact(uint64_t ma, uint64_t mb)
++{
++    uint64_t oa = ma >> ctz64(ma);
++    uint64_t ob = mb >> ctz64(mb);
++    int bits = (64 - clz64(oa)) + (64 - clz64(ob));
++
++    if (bits <= 53) {
++        return true;
++    }
++    if (bits > 54) {
++        return false;
++    }
++    return oa * ob < (1ULL << 53);
++}
++
++static inline unsigned ff_fprf(uint64_t r)
++{
++    if (r & FF_ABS) {
++        return (r >> 63) ? 0x08 : 0x04;     /* -normal, +normal */
++    }
++    return (r >> 63) ? 0x12 : 0x02;         /* -zero, +zero */
++}
++
++static inline bool ff_ok(CPUPPCState *env)
++{
++    return !(env->fpscr & FP_XE) &&
++           get_float_rounding_mode(&env->fp_status) == float_round_nearest_even &&
++           env_cpu(env)->exception_index != POWERPC_EXCP_PROGRAM;
++}
++
++/* the FPSCR and status flags of compute_fprf + float_check_status */
++static inline void ff_done(CPUPPCState *env, uint64_t r, bool inexact)
++{
++    target_ulong f = env->fpscr & ~(target_ulong)(FP_FPRF | FP_FI);
++
++    f |= (target_ulong)ff_fprf(r) << FPSCR_FPRF;
++    if (inexact) {
++        f |= FP_XX | FP_FX | FP_FI;
++    }
++    env->fpscr = f;
++    set_float_exception_flags(inexact ? float_flag_inexact : 0, &env->fp_status);
++}
++
++/* the same without FPRF (conversions to integer) */
++static inline void ff_done_nofprf(CPUPPCState *env, bool inexact)
++{
++    target_ulong f = env->fpscr & ~(target_ulong)FP_FI;
++
++    if (inexact) {
++        f |= FP_XX | FP_FX | FP_FI;
++    }
++    env->fpscr = f;
++    set_float_exception_flags(inexact ? float_flag_inexact : 0, &env->fp_status);
++}
++
++/*
++ * Round a double result s, whose exact value is s + (nonzero if exact53 is
++ * false), to single precision.  RN53 cannot step over a single-precision
++ * midpoint (midpoints are doubles), so RN24(s) is RN24(exact) unless s is
++ * itself a midpoint and the exact value is not s: then give up.
++ */
++static inline bool ff_to_single(double s, bool exact53, uint64_t *res,
++                                bool *inexact)
++{
++    uint64_t rs = ff_u(s);
++    float y;
++    double yd;
++    uint64_t ry;
++
++    if (ff_zero(rs)) {
++        if (!exact53) {
++            return false;
++        }
++        *res = rs;
++        *inexact = false;
++        return true;
++    }
++    if (!exact53 && (rs & FF_S_LOW) == FF_S_HALF) {
++        return false;
++    }
++    y = (float)s;
++    yd = y;
++    ry = ff_u(yd);
++    if (!ff_res_ok_s(ry)) {
++        return false;
++    }
++    *res = ry;
++    *inexact = !exact53 || yd != s;
++    return true;
++}
++
++/* a + b (b already negated for subtraction) */
++static inline bool ff_add(uint64_t a, uint64_t b, bool single, uint64_t *res,
++                          bool *inexact)
++{
++    double da, db, s, bb, err;
++    uint64_t rs;
++
++    if (!ff_addend(a) || !ff_addend(b)) {
++        return false;
++    }
++    da = ff_d(a);
++    db = ff_d(b);
++    s = da + db;
++    /* 2Sum: s + err == a + b exactly */
++    bb = s - da;
++    err = (da - (s - bb)) + (db - bb);
++    if (single) {
++        return ff_to_single(s, err == 0, res, inexact);
++    }
++    rs = ff_u(s);
++    if (!ff_res_ok(rs) && !ff_zero(rs)) {
++        return false;
++    }
++    *res = rs;
++    *inexact = err != 0;
++    return true;
++}
++
++static inline bool ff_mul(uint64_t a, uint64_t b, bool single, uint64_t *res,
++                          bool *inexact)
++{
++    double p;
++    uint64_t rp;
++    bool exact;
++
++    if (!ff_normal_or_zero(a) || !ff_normal_or_zero(b)) {
++        return false;
++    }
++    p = ff_d(a) * ff_d(b);
++    rp = ff_u(p);
++    if (ff_zero(a) || ff_zero(b)) {
++        *res = rp;                              /* signed zero, exact */
++        *inexact = false;
++        return true;
++    }
++    exact = ff_mul_exact(ff_sig(a), ff_sig(b));
++    if (single) {
++        return ff_normal(rp) && ff_to_single(p, exact, res, inexact);
++    }
++    if (!ff_res_ok(rp)) {
++        return false;
++    }
++    *res = rp;
++    *inexact = !exact;
++    return true;
++}
++
++static inline bool ff_div(uint64_t a, uint64_t b, bool single, uint64_t *res,
++                          bool *inexact)
++{
++    double q;
++    uint64_t rq;
++    bool exact;
++
++    /* |a| >= 2^-1021 keeps q * b, which is close to a, out of the denormals */
++    if ((!ff_zero(a) && ff_exp(a) - 2u >= 0x7fdu) || !ff_normal(b)) {
++        return false;
++    }
++    q = ff_d(a) / ff_d(b);
++    rq = ff_u(q);
++    if (ff_zero(a)) {
++        *res = rq;
++        *inexact = false;
++        return true;
++    }
++    if (!ff_res_ok(rq)) {
++        return false;
++    }
++    /* a / b == q exactly iff q * b is exact and equals a */
++    exact = ff_mul_exact(ff_sig(rq), ff_sig(b)) && q * ff_d(b) == ff_d(a);
++    if (single) {
++        return ff_to_single(q, exact, res, inexact);
++    }
++    *res = rq;
++    *inexact = !exact;
++    return true;
++}
++
++#if FF_ENABLED
++typedef unsigned __int128 ff_u128;
++
++static inline int ff_clz128(ff_u128 v)
++{
++    uint64_t hi = v >> 64;
++    return hi ? clz64(hi) : 64 + clz64((uint64_t)v);
++}
++
++/* round a left-normalised exact sum (msb at bit 127) and pack */
++static inline bool ff_round_pack(ff_u128 s, int e, bool sign, bool single,
++                                uint64_t *res, bool *inexact)
++{
++    uint64_t hi = s >> 64, lo = (uint64_t)s;
++    uint64_t sig, rb, st;
++
++    if (single) {
++        sig = hi >> 40;
++        rb = (hi >> 39) & 1;
++        st = (hi & ((1ULL << 39) - 1)) | lo;
++    } else {
++        sig = hi >> 11;
++        rb = (hi >> 10) & 1;
++        st = (hi & 0x3ff) | lo;
++    }
++    if (e < (single ? -126 : -1022)) {
++        return false;                       /* tiny before rounding */
++    }
++    if (rb && (st || (sig & 1))) {
++        sig++;
++        if (sig >> (single ? 24 : 53)) {
++            sig >>= 1;
++            e++;
++        }
++    }
++    if (e > (single ? 127 : 1023)) {
++        return false;                       /* overflow */
++    }
++    if (single) {
++        *res = ((uint64_t)sign << 63) | ((uint64_t)(e + 1023) << 52) |
++               ((sig & 0x7fffff) << 29);
++    } else {
++        *res = ((uint64_t)sign << 63) | ((uint64_t)(e + 1023) << 52) |
++               (sig & FF_FRAC);
++    }
++    *inexact = rb || st;
++    return true;
++}
++
++/*
++ * x * y + z, exact, rounded once to nearest-even at 53 bits (double) or
++ * 24 bits with the single exponent range (single).  x and y normal, z
++ * normal or zero, signs final (fmsub negates z before the call).  Returns
++ * false for an exact zero sum, a tiny or overflowing result.
++ *
++ * The product (106 bits) and z are added exactly in 128 bits: the operand
++ * with the larger weight of its least significant bit is shifted left onto
++ * the other one's, which fits whenever |z| is within 2^-72..2^21 of |x*y|.
++ * Otherwise the smaller operand is shifted right with a sticky bit (it then
++ * lies entirely below the rounding position, see the jam argument in the
++ * report).
++ */
++static bool ff_fma_core(uint64_t x, uint64_t y, uint64_t z, bool single,
++                        uint64_t *res, bool *inexact)
++{
++    bool sp = (x ^ y) >> 63;
++    bool sign = sp;
++    ff_u128 p = (ff_u128)ff_sig(x) * ff_sig(y);     /* [2^104, 2^106) */
++    int wp = (int)ff_exp(x) + (int)ff_exp(y) - 2150; /* weight of bit 0 */
++    ff_u128 s;
++    int w, lz;
++
++    if (ff_zero(z)) {
++        s = p;
++        w = wp;
++    } else {
++        ff_u128 q = ff_sig(z);                      /* [2^52, 2^53) */
++        int wq = (int)ff_exp(z) - 1075;
++        int d = wq - wp;
++        bool sz = z >> 63;
++
++        if (d >= 0 && d <= 74) {
++            q <<= d;                                /* msb <= bit 126 */
++            w = wp;
++        } else if (d < 0 && d >= -21) {
++            p <<= -d;                               /* msb <= bit 126 */
++            w = wq;
++        } else if (d > 74) {
++            /* z dominates: product below z's lsb by 2^22+ */
++            int sh = d - 74;
++            q <<= 74;
++            p = sh >= 127 ? (p != 0)
++                          : (p >> sh) | ((p & (((ff_u128)1 << sh) - 1)) != 0);
++            w = wq - 74;
++        } else {
++            /* product dominates: z below the product's lsb by 2^21+ */
++            int sh = -d - 21;
++            p <<= 21;
++            q = sh >= 127 ? (q != 0)
++                          : (q >> sh) | ((q & (((ff_u128)1 << sh) - 1)) != 0);
++            w = wp - 21;
++        }
++        if (sp == sz) {
++            s = p + q;
++        } else if (p >= q) {
++            s = p - q;
++        } else {
++            s = q - p;
++            sign = sz;
++        }
++        if (s == 0) {
++            return false;
++        }
++    }
++    lz = ff_clz128(s);
++    s <<= lz;
++    return ff_round_pack(s, w + 127 - lz, sign, single, res, inexact);
++}
++
++/*
++ * Single-precision a * c + b when the double product is not exact (operands
++ * that are not singles, e.g. double constants).  s = RN53(RN53(a * c) + b)
++ * differs from the exact x by at most B = ulp(p)/2 + ulp(s)/2, i.e.
++ * 2^(d-1) + 1/2 units of ulp(s) with d = exp(p) - exp(s).  RN24 is constant
++ * between single-precision midpoints, so RN24(s) = RN24(x) when s is more
++ * than B from the nearest midpoint; and x is not a single (inexact) when s
++ * is more than B from the nearest single.  Otherwise give up.
++ */
++static inline bool ff_fma_single_bounded(uint64_t a, uint64_t c, uint64_t b,
++                                         uint64_t *res, bool *inexact)
++{
++    double p = ff_d(a) * ff_d(c);
++    double s;
++    uint64_t rp = ff_u(p), rs, low, mid, grid, need, ry;
++    int d;
++
++    if (ff_exp(rp) - 2u >= 0x7fcu || !ff_addend(b)) {
++        return false;
++    }
++    s = p + ff_d(b);
++    rs = ff_u(s);
++    if (!ff_normal(rs)) {
++        return false;
++    }
++    d = (int)ff_exp(rp) - (int)ff_exp(rs);
++    if (d > 20) {
++        return false;                       /* heavy cancellation */
++    }
++    need = d <= 0 ? 2 : (1ULL << (d - 1)) + 1;
++    low = rs & FF_S_LOW;
++    mid = low > FF_S_HALF ? low - FF_S_HALF : FF_S_HALF - low;
++    grid = low < FF_S_HALF ? low : (FF_S_LOW + 1) - low;
++    if (mid < need || grid < need) {
++        return false;
++    }
++    ry = ff_u((double)(float)s);
++    if (!ff_res_ok_s(ry)) {
++        return false;
++    }
++    *res = ry;
++    *inexact = true;
++    return true;
++}
++
++/* fmadd family: madd_flags as for float64_muladd */
++static bool ff_fma(uint64_t a, uint64_t c, uint64_t b, int madd_flags,
++                   bool single, uint64_t *res, bool *inexact)
++{
++    uint64_t r;
++
++    if (madd_flags & float_muladd_negate_c) {
++        b ^= FF_SIGN;
++    }
++    if (!ff_normal_or_zero(a) || !ff_normal_or_zero(c) ||
++        !ff_normal_or_zero(b)) {
++        return false;
++    }
++    if (ff_zero(a) || ff_zero(c)) {
++        /* zero product: the sum is b, or a signed zero */
++        bool sp = (a ^ c) >> 63;
++        if (ff_zero(b)) {
++            r = (sp && (b >> 63)) ? FF_SIGN : 0;
++            *inexact = false;
++        } else if (single) {
++            if (!ff_to_single(ff_d(b), true, &r, inexact)) {
++                return false;
++            }
++        } else {
++            r = b;
++            *inexact = false;
++        }
++    } else if (ff_mul_exact(ff_sig(a), ff_sig(c)) && ff_addend(b) &&
++               ff_exp(ff_u(ff_d(a) * ff_d(c))) - 2u < 0x7fcu) {
++        /*
++         * exact product: one 2Sum gives the exact sum.  The integer test
++         * only covers the significand: the product must also be normal, so
++         * its exponent must be at least 2 (a product that rounded up to the
++         * smallest normal may have lost a bit to denormalisation).
++         */
++        double p = ff_d(a) * ff_d(c);
++        double db = ff_d(b);
++        double t = p + db;
++        double bb = t - p;
++        double err = (p - (t - bb)) + (db - bb);
++        uint64_t rt = ff_u(t);
++
++        if (single) {
++            if (!ff_to_single(t, err == 0, &r, inexact)) {
++                return false;
++            }
++        } else if (ff_res_ok(rt) || (ff_zero(rt) && err == 0)) {
++            r = rt;
++            *inexact = err != 0;
++        } else {
++            return false;
++        }
++    } else if (single && ff_fma_single_bounded(a, c, b, &r, inexact)) {
++        /* r and inexact set */
++    } else if (!ff_fma_core(a, c, b, single, &r, inexact)) {
++        return false;
++    }
++    if (madd_flags & float_muladd_negate_result) {
++        r ^= FF_SIGN;
++    }
++    *res = r;
++    return true;
++}
++#endif
++
++static inline void ff_set_fpr(CPUPPCState *env, uint32_t frt, uint64_t v)
++{
++    *cpu_fpr_ptr(env, frt) = v;
++}
++
++/* tail of the original sequence: FPR written, then FPRF and status */
++static uint64_t ff_slow_finish(CPUPPCState *env, uint32_t frt, uint64_t r,
++                               uintptr_t ra)
++{
++    ff_set_fpr(env, frt, r);
++    helper_compute_fprf_float64(env, r);
++    do_float_check_status(env, true, ra);
++    return r;
++}
++
++#define FF_BINOP(NAME, SOFT, HANDLER, FAST, NEG, SINGLE)                      \
++uint64_t helper_fast_##NAME(CPUPPCState *env, uint64_t a, uint64_t b,         \
++                            uint32_t frt)                                     \
++{                                                                             \
++    uintptr_t ra = GETPC();                                                   \
++    uint64_t r;                                                               \
++    bool inexact;                                                             \
++                                                                              \
++    if (FF_ENABLED && likely(ff_ok(env)) &&                                   \
++        likely(FAST(a, (NEG) ? b ^ FF_SIGN : b, SINGLE, &r, &inexact))) {     \
++        ff_done(env, r, inexact);                                             \
++        FF_STAT(#NAME, true);                                                 \
++        return r;                                                             \
++    }                                                                         \
++    FF_STAT(#NAME, false);                                                    \
++    set_float_exception_flags(0, &env->fp_status);                            \
++    r = SOFT(a, b, &env->fp_status);                                          \
++    HANDLER(env, get_float_exception_flags(&env->fp_status), ra);             \
++    return ff_slow_finish(env, frt, r, ra);                                   \
++}
++
++FF_BINOP(FADD, float64_add, addsub_flags_handler, ff_add, false, false)
++FF_BINOP(FADDS, float64r32_add, addsub_flags_handler, ff_add, false, true)
++FF_BINOP(FSUB, float64_sub, addsub_flags_handler, ff_add, true, false)
++FF_BINOP(FSUBS, float64r32_sub, addsub_flags_handler, ff_add, true, true)
++FF_BINOP(FMUL, float64_mul, mul_flags_handler, ff_mul, false, false)
++FF_BINOP(FMULS, float64r32_mul, mul_flags_handler, ff_mul, false, true)
++FF_BINOP(FDIV, float64_div, div_flags_handler, ff_div, false, false)
++FF_BINOP(FDIVS, float64r32_div, div_flags_handler, ff_div, false, true)
++
++#if FF_ENABLED
++#define FF_FMA_FAST(a, c, b, fl, s, r, ix) ff_fma(a, c, b, fl, s, r, ix)
++#else
++#define FF_FMA_FAST(a, c, b, fl, s, r, ix) false
++#endif
++
++#define FF_FMA(NAME, FLAGS)                                                   \
++uint64_t helper_fast_##NAME(CPUPPCState *env, uint64_t a, uint64_t c,         \
++                            uint64_t b, uint32_t frt)                         \
++{                                                                             \
++    uintptr_t ra = GETPC();                                                   \
++    uint64_t r;                                                               \
++    bool inexact;                                                             \
++                                                                              \
++    if (likely(ff_ok(env)) &&                                                 \
++        likely(FF_FMA_FAST(a, c, b, FLAGS, false, &r, &inexact))) {           \
++        ff_done(env, r, inexact);                                             \
++        FF_STAT(#NAME, true);                                                 \
++        return r;                                                             \
++    }                                                                         \
++    FF_STAT(#NAME, false);                                                    \
++    set_float_exception_flags(0, &env->fp_status);                            \
++    r = do_fmadd(env, a, c, b, FLAGS, ra);                                    \
++    return ff_slow_finish(env, frt, r, ra);                                   \
++}                                                                             \
++uint64_t helper_fast_##NAME##S(CPUPPCState *env, uint64_t a, uint64_t c,      \
++                               uint64_t b, uint32_t frt)                      \
++{                                                                             \
++    uintptr_t ra = GETPC();                                                   \
++    uint64_t r;                                                               \
++    bool inexact;                                                             \
++                                                                              \
++    if (likely(ff_ok(env)) &&                                                 \
++        likely(FF_FMA_FAST(a, c, b, FLAGS, true, &r, &inexact))) {            \
++        ff_done(env, r, inexact);                                             \
++        FF_STAT(#NAME "S", true);                                             \
++        return r;                                                             \
++    }                                                                         \
++    FF_STAT(#NAME "S", false);                                                \
++    set_float_exception_flags(0, &env->fp_status);                            \
++    r = do_fmadds(env, a, c, b, FLAGS, ra);                                   \
++    return ff_slow_finish(env, frt, r, ra);                                   \
++}
++
++FF_FMA(FMADD, MADD_FLGS)
++FF_FMA(FNMADD, NMADD_FLGS)
++FF_FMA(FMSUB, MSUB_FLGS)
++FF_FMA(FNMSUB, NMSUB_FLGS)
++
++/* fres: 1 / b rounded to single (QEMU computes the estimate exactly) */
++uint64_t helper_fast_FRES(CPUPPCState *env, uint64_t b, uint32_t frt)
++{
++    uintptr_t ra = GETPC();
++    uint64_t r;
++    bool inexact;
++    int flags;
++
++    if (FF_ENABLED && likely(ff_ok(env)) &&
++        likely(ff_div(0x3ff0000000000000ULL, b, true, &r, &inexact))) {
++        ff_done(env, r, inexact);
++        FF_STAT("FRES", true);
++        return r;
++    }
++    FF_STAT("FRES", false);
++    set_float_exception_flags(0, &env->fp_status);
++    r = float64r32_div(float64_one, b, &env->fp_status);
++    flags = get_float_exception_flags(&env->fp_status);
++    if (unlikely(flags & float_flag_invalid_snan)) {
++        float_invalid_op_vxsnan(env, ra);
++    }
++    if (unlikely(flags & float_flag_divbyzero)) {
++        float_zero_divide_excp(env, ra);
++        /* For FPSCR.ZE == 0, the result is 1/2.  */
++        r = float64_set_sign(float64_half, float64_is_neg(b));
++    }
++    return ff_slow_finish(env, frt, r, ra);
++}
++
++/* frsqrte: 1 / sqrt(b), double precision, two roundings as in QEMU */
++uint64_t helper_fast_FRSQRTE(CPUPPCState *env, uint64_t b, uint32_t frt)
++{
++    uintptr_t ra = GETPC();
++    uint64_t r;
++    int flags;
++
++    if (FF_ENABLED && likely(ff_ok(env)) && ff_normal(b) && !(b >> 63)) {
++        double s = __builtin_sqrt(ff_d(b));
++        uint64_t rs = ff_u(s);
++        bool exact_s = ff_mul_exact(ff_sig(rs), ff_sig(rs)) && s * s == ff_d(b);
++        double d = 1.0 / s;
++
++        r = ff_u(d);
++        /* 1 / s is exact iff s is a power of two */
++        ff_done(env, r, !exact_s || (rs & FF_FRAC) != 0);
++        FF_STAT("FRSQRTE", true);
++        return r;
++    }
++    FF_STAT("FRSQRTE", false);
++    set_float_exception_flags(0, &env->fp_status);
++    {
++        float64 rets = float64_sqrt(b, &env->fp_status);
++        r = float64_div(float64_one, rets, &env->fp_status);
++    }
++    flags = get_float_exception_flags(&env->fp_status);
++    if (unlikely(flags & float_flag_invalid)) {
++        float_invalid_op_sqrt(env, flags, 1, ra);
++    }
++    if (unlikely(flags & float_flag_divbyzero)) {
++        /* Reciprocal of (square root of) zero.  */
++        float_zero_divide_excp(env, ra);
++    }
++    return ff_slow_finish(env, frt, r, ra);
++}
++
++/* frsp */
++uint64_t helper_fast_FRSP(CPUPPCState *env, uint64_t b, uint32_t frt)
++{
++    uintptr_t ra = GETPC();
++    uint64_t r;
++    bool inexact;
++
++    if (FF_ENABLED && likely(ff_ok(env)) && ff_normal_or_zero(b) &&
++        ff_to_single(ff_d(b), true, &r, &inexact)) {
++        ff_done(env, r, inexact);
++        FF_STAT("FRSP", true);
++        return r;
++    }
++    FF_STAT("FRSP", false);
++    set_float_exception_flags(0, &env->fp_status);
++    r = do_frsp(env, b, ra);
++    return ff_slow_finish(env, frt, r, ra);
++}
++
++/* fctiw, fctiwz: |b| < 2^31, result within int32 */
++static inline bool ff_cti(uint64_t b, bool trunc, uint64_t *res, bool *inexact)
++{
++    double d, t;
++    int64_t v;
++
++    if (!ff_zero(b) && ff_exp(b) - 1u >= 1023 + 31 - 1) {
++        return false;
++    }
++    d = ff_d(b);
++    if (trunc) {
++        v = (int64_t)d;
++    } else {
++        /* round to nearest even at the units place */
++        t = __builtin_fabs(d);
++        t = (t + 0x1p52) - 0x1p52;
++        v = (int64_t)t;
++        if (b >> 63) {
++            v = -v;
++        }
++    }
++    if (v < INT32_MIN || v > INT32_MAX) {
++        return false;
++    }
++    *res = (uint64_t)(int64_t)(int32_t)v;
++    *inexact = (double)v != d;
++    return true;
++}
++
++#define FF_CTI(NAME, CVT, TRUNC)                                              \
++uint64_t helper_fast_##NAME(CPUPPCState *env, uint64_t b, uint32_t frt)       \
++{                                                                             \
++    uintptr_t ra = GETPC();                                                   \
++    uint64_t r;                                                               \
++    bool inexact;                                                             \
++    int flags;                                                                \
++                                                                              \
++    if (FF_ENABLED && likely(ff_ok(env)) &&                                   \
++        likely(ff_cti(b, TRUNC, &r, &inexact))) {                             \
++        ff_done_nofprf(env, inexact);                                         \
++        FF_STAT(#NAME, true);                                                 \
++        return r;                                                             \
++    }                                                                         \
++    FF_STAT(#NAME, false);                                                    \
++    set_float_exception_flags(0, &env->fp_status);                            \
++    r = float64_to_##CVT(b, &env->fp_status);                                 \
++    flags = get_float_exception_flags(&env->fp_status);                       \
++    if (unlikely(flags & float_flag_invalid)) {                               \
++        r = float_invalid_cvt(env, flags, r, 0x80000000U, 1, ra);             \
++    }                                                                         \
++    ff_set_fpr(env, frt, r);                                                  \
++    do_float_check_status(env, true, ra);                                     \
++    return r;                                                                 \
++}
++
++FF_CTI(FCTIW, int32, false)
++FF_CTI(FCTIWZ, int32_round_to_zero, true)
++
++/* fcmpu, fcmpo: ordered operands only; FI is cleared as by check_status */
++static inline bool ff_cmp(CPUPPCState *env, uint64_t a, uint64_t b,
++                          uint32_t crf)
++{
++    double da, db;
++    uint32_t c;
++
++    if (!ff_normal_or_zero(a) || !ff_normal_or_zero(b)) {
++        return false;
++    }
++    da = ff_d(a);
++    db = ff_d(b);
++    c = da < db ? 0x08 : da > db ? 0x04 : 0x02;
++    env->fpscr = (env->fpscr & ~(target_ulong)(FP_FPCC | FP_FI)) |
++                 ((target_ulong)c << FPSCR_FPCC);
++    env->crf[crf] = c;
++    set_float_exception_flags(0, &env->fp_status);
++    return true;
++}
++
++void helper_fast_FCMPU(CPUPPCState *env, uint64_t a, uint64_t b, uint32_t crf)
++{
++    if (FF_ENABLED && likely(ff_ok(env)) && likely(ff_cmp(env, a, b, crf))) {
++        FF_STAT("FCMPU", true);
++        return;
++    }
++    FF_STAT("FCMPU", false);
++    set_float_exception_flags(0, &env->fp_status);
++    ff_fcmpu(env, a, b, crf, GETPC());
++    do_float_check_status(env, true, GETPC());
++}
++
++void helper_fast_FCMPO(CPUPPCState *env, uint64_t a, uint64_t b, uint32_t crf)
++{
++    if (FF_ENABLED && likely(ff_ok(env)) && likely(ff_cmp(env, a, b, crf))) {
++        FF_STAT("FCMPO", true);
++        return;
++    }
++    FF_STAT("FCMPO", false);
++    set_float_exception_flags(0, &env->fp_status);
++    ff_fcmpo(env, a, b, crf, GETPC());
++    do_float_check_status(env, true, GETPC());
++}
+diff --git a/target/ppc/fpu_helper.c b/target/ppc/fpu_helper.c
+--- a/target/ppc/fpu_helper.c
++++ b/target/ppc/fpu_helper.c
+@@ -871,8 +871,8 @@ uint32_t helper_FTSQRT(uint64_t frb)
+     return 0x8 | (fg_flag ? 4 : 0) | (fe_flag ? 2 : 0);
+ }
+ 
+-void helper_FCMPU(CPUPPCState *env, uint64_t arg1, uint64_t arg2,
+-                  uint32_t crfD)
++static void ff_fcmpu(CPUPPCState *env, uint64_t arg1, uint64_t arg2,
++                     uint32_t crfD, uintptr_t ra)
+ {
+     CPU_DoubleU farg1, farg2;
+     uint32_t ret = 0;
+@@ -898,12 +898,12 @@ void helper_FCMPU(CPUPPCState *env, uint64_t arg1, uint64_t arg2,
+                  && (float64_is_signaling_nan(farg1.d, &env->fp_status) ||
+                      float64_is_signaling_nan(farg2.d, &env->fp_status)))) {
+         /* sNaN comparison */
+-        float_invalid_op_vxsnan(env, GETPC());
++        float_invalid_op_vxsnan(env, ra);
+     }
+ }
+ 
+-void helper_FCMPO(CPUPPCState *env, uint64_t arg1, uint64_t arg2,
+-                  uint32_t crfD)
++static void ff_fcmpo(CPUPPCState *env, uint64_t arg1, uint64_t arg2,
++                     uint32_t crfD, uintptr_t ra)
+ {
+     CPU_DoubleU farg1, farg2;
+     uint32_t ret = 0;
+@@ -926,15 +926,27 @@ void helper_FCMPO(CPUPPCState *env, uint64_t arg1, uint64_t arg2,
+     env->fpscr |= ret << FPSCR_FPCC;
+     env->crf[crfD] = (uint32_t) ret;
+     if (unlikely(ret == 0x01UL)) {
+-        float_invalid_op_vxvc(env, 1, GETPC());
++        float_invalid_op_vxvc(env, 1, ra);
+         if (float64_is_signaling_nan(farg1.d, &env->fp_status) ||
+             float64_is_signaling_nan(farg2.d, &env->fp_status)) {
+             /* sNaN comparison */
+-            float_invalid_op_vxsnan(env, GETPC());
++            float_invalid_op_vxsnan(env, ra);
+         }
+     }
+ }
+ 
++void helper_FCMPU(CPUPPCState *env, uint64_t arg1, uint64_t arg2,
++                  uint32_t crfD)
++{
++    ff_fcmpu(env, arg1, arg2, crfD, GETPC());
++}
++
++void helper_FCMPO(CPUPPCState *env, uint64_t arg1, uint64_t arg2,
++                  uint32_t crfD)
++{
++    ff_fcmpo(env, arg1, arg2, crfD, GETPC());
++}
++
+ /* Single-precision floating-point conversions */
+ static inline uint32_t efscfsi(CPUPPCState *env, uint32_t val)
+ {
+@@ -3657,3 +3669,5 @@ void helper_XVF64GERNN(CPUPPCState *env, ppc_vsr_t *a, ppc_vsr_t *b,
+     vsxger(env, a, b, at, mask, true, true, true, vsxger_mul64,
+            vsxger_muladd64, vsxger_zero64);
+ }
++
++#include "fpu_fast.c.inc"
+diff --git a/target/ppc/helper.h b/target/ppc/helper.h
+--- a/target/ppc/helper.h
++++ b/target/ppc/helper.h
+@@ -139,6 +139,31 @@ DEF_HELPER_2(FRSQRTE, i64, env, i64)
+ DEF_HELPER_2(FRSQRTES, i64, env, i64)
+ DEF_HELPER_FLAGS_3(FSEL, TCG_CALL_NO_RWG_SE, i64, i64, i64, i64)
+ 
++/* RetroBoot fast FPU (fpu_fast.c.inc): one helper per instruction */
++DEF_HELPER_4(fast_FADD, i64, env, i64, i64, i32)
++DEF_HELPER_4(fast_FADDS, i64, env, i64, i64, i32)
++DEF_HELPER_4(fast_FSUB, i64, env, i64, i64, i32)
++DEF_HELPER_4(fast_FSUBS, i64, env, i64, i64, i32)
++DEF_HELPER_4(fast_FMUL, i64, env, i64, i64, i32)
++DEF_HELPER_4(fast_FMULS, i64, env, i64, i64, i32)
++DEF_HELPER_4(fast_FDIV, i64, env, i64, i64, i32)
++DEF_HELPER_4(fast_FDIVS, i64, env, i64, i64, i32)
++DEF_HELPER_5(fast_FMADD, i64, env, i64, i64, i64, i32)
++DEF_HELPER_5(fast_FMADDS, i64, env, i64, i64, i64, i32)
++DEF_HELPER_5(fast_FMSUB, i64, env, i64, i64, i64, i32)
++DEF_HELPER_5(fast_FMSUBS, i64, env, i64, i64, i64, i32)
++DEF_HELPER_5(fast_FNMADD, i64, env, i64, i64, i64, i32)
++DEF_HELPER_5(fast_FNMADDS, i64, env, i64, i64, i64, i32)
++DEF_HELPER_5(fast_FNMSUB, i64, env, i64, i64, i64, i32)
++DEF_HELPER_5(fast_FNMSUBS, i64, env, i64, i64, i64, i32)
++DEF_HELPER_3(fast_FRES, i64, env, i64, i32)
++DEF_HELPER_3(fast_FRSQRTE, i64, env, i64, i32)
++DEF_HELPER_3(fast_FRSP, i64, env, i64, i32)
++DEF_HELPER_3(fast_FCTIW, i64, env, i64, i32)
++DEF_HELPER_3(fast_FCTIWZ, i64, env, i64, i32)
++DEF_HELPER_4(fast_FCMPU, void, env, i64, i64, i32)
++DEF_HELPER_4(fast_FCMPO, void, env, i64, i64, i32)
++
+ DEF_HELPER_FLAGS_2(FTDIV, TCG_CALL_NO_RWG_SE, i32, i64, i64)
+ DEF_HELPER_FLAGS_1(FTSQRT, TCG_CALL_NO_RWG_SE, i32, i64)
+ 
+diff --git a/target/ppc/translate.c b/target/ppc/translate.c
+--- a/target/ppc/translate.c
++++ b/target/ppc/translate.c
+@@ -185,6 +185,7 @@ struct DisasContext {
+     bool has_bhrb;
+ #endif
+     bool fpu_enabled;
++    uint32_t fast_fpu;      /* PPC_FAST_FPU_* parts enabled */
+     bool altivec_enabled;
+     bool vsx_enabled;
+     bool spe_enabled;
+@@ -6615,6 +6616,8 @@ static void ppc_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
+         || env->mmu_model & POWERPC_MMU_64;
+ 
+     ctx->fpu_enabled = (hflags >> HFLAGS_FP) & 1;
++    ctx->fast_fpu = POWERPC_CPU(cs)->fast_fpu ?
++                    POWERPC_CPU(cs)->fast_fpu_mask : 0;
+     ctx->spe_enabled = (hflags >> HFLAGS_SPE) & 1;
+     ctx->altivec_enabled = (hflags >> HFLAGS_VR) & 1;
+     ctx->vsx_enabled = (hflags >> HFLAGS_VSX) & 1;
+diff --git a/target/ppc/translate/fp-impl.c.inc b/target/ppc/translate/fp-impl.c.inc
+--- a/target/ppc/translate/fp-impl.c.inc
++++ b/target/ppc/translate/fp-impl.c.inc
+@@ -30,9 +30,25 @@ static void gen_set_cr1_from_fpscr(DisasContext *ctx)
+ #endif
+ 
+ /***                       Floating-Point arithmetic                       ***/
++
++/*
++ * RetroBoot fast-fpu: one helper (fpu_fast.c.inc) per instruction instead of
++ * reset_fpstatus + operation + compute_fprf + float_check_status.  The
++ * helper writes the target FPR itself before it can raise a deferred
++ * exception; the set_fpr below stores the same value.
++ */
++typedef void ff_gen3(TCGv_i64, TCGv_ptr, TCGv_i64, TCGv_i64, TCGv_i64,
++                     TCGv_i32);
++typedef void ff_gen2(TCGv_i64, TCGv_ptr, TCGv_i64, TCGv_i64, TCGv_i32);
++typedef void ff_gen1(TCGv_i64, TCGv_ptr, TCGv_i64, TCGv_i32);
++
++#define ff_arith(ctx, fast) \
++    ((fast) != NULL && ((ctx)->fast_fpu & PPC_FAST_FPU_ARITH))
++
+ static bool do_helper_acb(DisasContext *ctx, arg_A *a,
+                           void (*helper)(TCGv_i64, TCGv_ptr, TCGv_i64,
+-                                         TCGv_i64, TCGv_i64))
++                                         TCGv_i64, TCGv_i64),
++                          ff_gen3 *fast)
+ {
+     TCGv_i64 t0, t1, t2, t3;
+     REQUIRE_INSNS_FLAGS(ctx, FLOAT);
+@@ -41,13 +57,21 @@ static bool do_helper_acb(DisasContext *ctx, arg_A *a,
+     t1 = tcg_temp_new_i64();
+     t2 = tcg_temp_new_i64();
+     t3 = tcg_temp_new_i64();
+-    gen_reset_fpstatus();
+-    get_fpr(t0, a->fra);
+-    get_fpr(t1, a->frc);
+-    get_fpr(t2, a->frb);
+-    helper(t3, tcg_env, t0, t1, t2);
+-    set_fpr(a->frt, t3);
+-    gen_compute_fprf_float64(t3);
++    if (ff_arith(ctx, fast)) {
++        get_fpr(t0, a->fra);
++        get_fpr(t1, a->frc);
++        get_fpr(t2, a->frb);
++        fast(t3, tcg_env, t0, t1, t2, tcg_constant_i32(a->frt));
++        set_fpr(a->frt, t3);
++    } else {
++        gen_reset_fpstatus();
++        get_fpr(t0, a->fra);
++        get_fpr(t1, a->frc);
++        get_fpr(t2, a->frb);
++        helper(t3, tcg_env, t0, t1, t2);
++        set_fpr(a->frt, t3);
++        gen_compute_fprf_float64(t3);
++    }
+     if (unlikely(a->rc)) {
+         gen_set_cr1_from_fpscr(ctx);
+     }
+@@ -56,7 +80,8 @@ static bool do_helper_acb(DisasContext *ctx, arg_A *a,
+ 
+ static bool do_helper_ab(DisasContext *ctx, arg_A_tab *a,
+                          void (*helper)(TCGv_i64, TCGv_ptr, TCGv_i64,
+-                                        TCGv_i64))
++                                        TCGv_i64),
++                         ff_gen2 *fast)
+ {
+     TCGv_i64 t0, t1, t2;
+     REQUIRE_INSNS_FLAGS(ctx, FLOAT);
+@@ -64,12 +89,19 @@ static bool do_helper_ab(DisasContext *ctx, arg_A_tab *a,
+     t0 = tcg_temp_new_i64();
+     t1 = tcg_temp_new_i64();
+     t2 = tcg_temp_new_i64();
+-    gen_reset_fpstatus();
+-    get_fpr(t0, a->fra);
+-    get_fpr(t1, a->frb);
+-    helper(t2, tcg_env, t0, t1);
+-    set_fpr(a->frt, t2);
+-    gen_compute_fprf_float64(t2);
++    if (ff_arith(ctx, fast)) {
++        get_fpr(t0, a->fra);
++        get_fpr(t1, a->frb);
++        fast(t2, tcg_env, t0, t1, tcg_constant_i32(a->frt));
++        set_fpr(a->frt, t2);
++    } else {
++        gen_reset_fpstatus();
++        get_fpr(t0, a->fra);
++        get_fpr(t1, a->frb);
++        helper(t2, tcg_env, t0, t1);
++        set_fpr(a->frt, t2);
++        gen_compute_fprf_float64(t2);
++    }
+     if (unlikely(a->rc)) {
+         gen_set_cr1_from_fpscr(ctx);
+     }
+@@ -78,7 +110,8 @@ static bool do_helper_ab(DisasContext *ctx, arg_A_tab *a,
+ 
+ static bool do_helper_ac(DisasContext *ctx, arg_A_tac *a,
+                          void (*helper)(TCGv_i64, TCGv_ptr, TCGv_i64,
+-                                        TCGv_i64))
++                                        TCGv_i64),
++                         ff_gen2 *fast)
+ {
+     TCGv_i64 t0, t1, t2;
+     REQUIRE_INSNS_FLAGS(ctx, FLOAT);
+@@ -86,12 +119,19 @@ static bool do_helper_ac(DisasContext *ctx, arg_A_tac *a,
+     t0 = tcg_temp_new_i64();
+     t1 = tcg_temp_new_i64();
+     t2 = tcg_temp_new_i64();
+-    gen_reset_fpstatus();
+-    get_fpr(t0, a->fra);
+-    get_fpr(t1, a->frc);
+-    helper(t2, tcg_env, t0, t1);
+-    set_fpr(a->frt, t2);
+-    gen_compute_fprf_float64(t2);
++    if (ff_arith(ctx, fast)) {
++        get_fpr(t0, a->fra);
++        get_fpr(t1, a->frc);
++        fast(t2, tcg_env, t0, t1, tcg_constant_i32(a->frt));
++        set_fpr(a->frt, t2);
++    } else {
++        gen_reset_fpstatus();
++        get_fpr(t0, a->fra);
++        get_fpr(t1, a->frc);
++        helper(t2, tcg_env, t0, t1);
++        set_fpr(a->frt, t2);
++        gen_compute_fprf_float64(t2);
++    }
+     if (unlikely(a->rc)) {
+         gen_set_cr1_from_fpscr(ctx);
+     }
+@@ -100,20 +140,26 @@ static bool do_helper_ac(DisasContext *ctx, arg_A_tac *a,
+ 
+ static bool do_round_convert(DisasContext *ctx, arg_X_tb_rc *a,
+                              void (*helper)(TCGv_i64, TCGv_env, TCGv_i64),
+-                             bool set_fprf)
++                             bool set_fprf, ff_gen1 *fast)
+ {
+     TCGv_i64 t0, t1;
+     REQUIRE_FPU(ctx);
+     t0 = tcg_temp_new_i64();
+     t1 = tcg_temp_new_i64();
+-    gen_reset_fpstatus();
+-    get_fpr(t0, a->rb);
+-    helper(t1, tcg_env, t0);
+-    set_fpr(a->rt, t1);
+-    if (set_fprf) {
+-        gen_helper_compute_fprf_float64(tcg_env, t1);
++    if (ff_arith(ctx, fast)) {
++        get_fpr(t0, a->rb);
++        fast(t1, tcg_env, t0, tcg_constant_i32(a->rt));
++        set_fpr(a->rt, t1);
++    } else {
++        gen_reset_fpstatus();
++        get_fpr(t0, a->rb);
++        helper(t1, tcg_env, t0);
++        set_fpr(a->rt, t1);
++        if (set_fprf) {
++            gen_helper_compute_fprf_float64(tcg_env, t1);
++        }
++        gen_helper_float_check_status(tcg_env);
+     }
+-    gen_helper_float_check_status(tcg_env);
+     if (unlikely(a->rc)) {
+         gen_set_cr1_from_fpscr(ctx);
+     }
+@@ -121,17 +167,24 @@ static bool do_round_convert(DisasContext *ctx, arg_X_tb_rc *a,
+ }
+ 
+ static bool do_helper_bs(DisasContext *ctx, arg_A_tb *a,
+-                         void (*helper)(TCGv_i64, TCGv_ptr, TCGv_i64))
++                         void (*helper)(TCGv_i64, TCGv_ptr, TCGv_i64),
++                         ff_gen1 *fast)
+ {
+     TCGv_i64 t0, t1;
+     REQUIRE_FPU(ctx);
+     t0 = tcg_temp_new_i64();
+     t1 = tcg_temp_new_i64();
+-    gen_reset_fpstatus();
+-    get_fpr(t0, a->frb);
+-    helper(t1, tcg_env, t0);
+-    set_fpr(a->frt, t1);
+-    gen_compute_fprf_float64(t1);
++    if (ff_arith(ctx, fast)) {
++        get_fpr(t0, a->frb);
++        fast(t1, tcg_env, t0, tcg_constant_i32(a->frt));
++        set_fpr(a->frt, t1);
++    } else {
++        gen_reset_fpstatus();
++        get_fpr(t0, a->frb);
++        helper(t1, tcg_env, t0);
++        set_fpr(a->frt, t1);
++        gen_compute_fprf_float64(t1);
++    }
+     if (unlikely(a->rc)) {
+         gen_set_cr1_from_fpscr(ctx);
+     }
+@@ -153,7 +206,20 @@ static bool trans_FSEL(DisasContext *ctx, arg_A *a)
+     get_fpr(t1, a->frb);
+     get_fpr(t2, a->frc);
+ 
+-    gen_helper_FSEL(t0, t0, t1, t2);
++    if (ctx->fast_fpu & PPC_FAST_FPU_FSEL) {
++        /* C if A >= 0 or A == -0, and A is not a NaN; else B */
++        TCGv_i64 abs = tcg_temp_new_i64();
++        TCGv_i64 key = tcg_temp_new_i64();
++        TCGv_i64 zero = tcg_constant_i64(0);
++
++        tcg_gen_andi_i64(abs, t0, INT64_MAX);
++        tcg_gen_movcond_i64(TCG_COND_EQ, key, abs, zero, zero, t0);
++        tcg_gen_movcond_i64(TCG_COND_GE, t0, key, zero, t2, t1);
++        tcg_gen_movcond_i64(TCG_COND_GTU, t0, abs,
++                            tcg_constant_i64(0x7ff0000000000000ULL), t1, t0);
++    } else {
++        gen_helper_FSEL(t0, t0, t1, t2);
++    }
+     set_fpr(a->frt, t0);
+     if (a->rc) {
+         gen_set_cr1_from_fpscr(ctx);
+@@ -183,54 +249,69 @@ static bool do_helper_fsqrt(DisasContext *ctx, arg_A_tb *a,
+     return true;
+ }
+ 
+-TRANS(FADD, do_helper_ab, gen_helper_FADD);
+-TRANS(FADDS, do_helper_ab, gen_helper_FADDS);
+-TRANS(FSUB, do_helper_ab, gen_helper_FSUB);
+-TRANS(FSUBS, do_helper_ab, gen_helper_FSUBS);
+-TRANS(FDIV, do_helper_ab, gen_helper_FDIV);
+-TRANS(FDIVS, do_helper_ab, gen_helper_FDIVS);
+-TRANS(FMUL, do_helper_ac, gen_helper_FMUL);
+-TRANS(FMULS, do_helper_ac, gen_helper_FMULS);
+-
+-TRANS(FMADD, do_helper_acb, gen_helper_FMADD);
+-TRANS(FMADDS, do_helper_acb, gen_helper_FMADDS);
+-TRANS(FMSUB, do_helper_acb, gen_helper_FMSUB);
+-TRANS(FMSUBS, do_helper_acb, gen_helper_FMSUBS);
+-
+-TRANS(FNMADD, do_helper_acb, gen_helper_FNMADD);
+-TRANS(FNMADDS, do_helper_acb, gen_helper_FNMADDS);
+-TRANS(FNMSUB, do_helper_acb, gen_helper_FNMSUB);
+-TRANS(FNMSUBS, do_helper_acb, gen_helper_FNMSUBS);
+-
+-TRANS_FLAGS(FLOAT_EXT, FRE, do_helper_bs, gen_helper_FRE);
+-TRANS_FLAGS(FLOAT_FRES, FRES, do_helper_bs, gen_helper_FRES);
+-TRANS_FLAGS(FLOAT_FRSQRTE, FRSQRTE, do_helper_bs, gen_helper_FRSQRTE);
+-TRANS_FLAGS(FLOAT_FRSQRTES, FRSQRTES, do_helper_bs, gen_helper_FRSQRTES);
++TRANS(FADD, do_helper_ab, gen_helper_FADD, gen_helper_fast_FADD);
++TRANS(FADDS, do_helper_ab, gen_helper_FADDS, gen_helper_fast_FADDS);
++TRANS(FSUB, do_helper_ab, gen_helper_FSUB, gen_helper_fast_FSUB);
++TRANS(FSUBS, do_helper_ab, gen_helper_FSUBS, gen_helper_fast_FSUBS);
++TRANS(FDIV, do_helper_ab, gen_helper_FDIV, gen_helper_fast_FDIV);
++TRANS(FDIVS, do_helper_ab, gen_helper_FDIVS, gen_helper_fast_FDIVS);
++TRANS(FMUL, do_helper_ac, gen_helper_FMUL, gen_helper_fast_FMUL);
++TRANS(FMULS, do_helper_ac, gen_helper_FMULS, gen_helper_fast_FMULS);
++
++TRANS(FMADD, do_helper_acb, gen_helper_FMADD, gen_helper_fast_FMADD);
++TRANS(FMADDS, do_helper_acb, gen_helper_FMADDS, gen_helper_fast_FMADDS);
++TRANS(FMSUB, do_helper_acb, gen_helper_FMSUB, gen_helper_fast_FMSUB);
++TRANS(FMSUBS, do_helper_acb, gen_helper_FMSUBS, gen_helper_fast_FMSUBS);
++
++TRANS(FNMADD, do_helper_acb, gen_helper_FNMADD, gen_helper_fast_FNMADD);
++TRANS(FNMADDS, do_helper_acb, gen_helper_FNMADDS, gen_helper_fast_FNMADDS);
++TRANS(FNMSUB, do_helper_acb, gen_helper_FNMSUB, gen_helper_fast_FNMSUB);
++TRANS(FNMSUBS, do_helper_acb, gen_helper_FNMSUBS, gen_helper_fast_FNMSUBS);
++
++TRANS_FLAGS(FLOAT_EXT, FRE, do_helper_bs, gen_helper_FRE, NULL);
++TRANS_FLAGS(FLOAT_FRES, FRES, do_helper_bs, gen_helper_FRES,
++            gen_helper_fast_FRES);
++TRANS_FLAGS(FLOAT_FRSQRTE, FRSQRTE, do_helper_bs, gen_helper_FRSQRTE,
++            gen_helper_fast_FRSQRTE);
++TRANS_FLAGS(FLOAT_FRSQRTES, FRSQRTES, do_helper_bs, gen_helper_FRSQRTES, NULL);
+ 
+ TRANS(FSQRT, do_helper_fsqrt, gen_helper_FSQRT);
+ TRANS(FSQRTS, do_helper_fsqrt, gen_helper_FSQRTS);
+ 
+ /***                     Floating-Point round & convert                    ***/
+-TRANS_FLAGS(FLOAT, FRSP, do_round_convert, gen_helper_FRSP, true);
+-TRANS_FLAGS(FLOAT_EXT, FRIN, do_round_convert, gen_helper_FRIN, true);
+-TRANS_FLAGS(FLOAT_EXT, FRIZ, do_round_convert, gen_helper_FRIZ, true);
+-TRANS_FLAGS(FLOAT_EXT, FRIP, do_round_convert, gen_helper_FRIP, true);
+-TRANS_FLAGS(FLOAT_EXT, FRIM, do_round_convert, gen_helper_FRIM, true);
+-
+-TRANS_FLAGS(FLOAT, FCTIW, do_round_convert, gen_helper_FCTIW, false);
+-TRANS_FLAGS2(FP_CVT_ISA206, FCTIWU, do_round_convert, gen_helper_FCTIWU, false);
+-TRANS_FLAGS(FLOAT, FCTIWZ, do_round_convert, gen_helper_FCTIWZ, false);
+-TRANS_FLAGS2(FP_CVT_ISA206, FCTIWUZ, do_round_convert, gen_helper_FCTIWUZ, false);
+-
+-TRANS_FLAGS2(FP_CVT_S64, FCTID, do_round_convert, gen_helper_FCTID, false);
+-TRANS_FLAGS2(FP_CVT_ISA206, FCTIDU, do_round_convert, gen_helper_FCTIDU, false);
+-TRANS_FLAGS2(FP_CVT_S64, FCTIDZ, do_round_convert, gen_helper_FCTIDZ, false);
+-TRANS_FLAGS2(FP_CVT_ISA206, FCTIDUZ, do_round_convert, gen_helper_FCTIDUZ, false);
+-
+-TRANS_FLAGS2(FP_CVT_S64, FCFID, do_round_convert, gen_helper_FCFID, true);
+-TRANS_FLAGS2(FP_CVT_ISA206, FCFIDS, do_round_convert, gen_helper_FCFIDS, false);
+-TRANS_FLAGS2(FP_CVT_ISA206, FCFIDU, do_round_convert, gen_helper_FCFIDU, false);
+-TRANS_FLAGS2(FP_CVT_ISA206, FCFIDUS, do_round_convert, gen_helper_FCFIDUS, false);
++TRANS_FLAGS(FLOAT, FRSP, do_round_convert, gen_helper_FRSP, true,
++            gen_helper_fast_FRSP);
++TRANS_FLAGS(FLOAT_EXT, FRIN, do_round_convert, gen_helper_FRIN, true, NULL);
++TRANS_FLAGS(FLOAT_EXT, FRIZ, do_round_convert, gen_helper_FRIZ, true, NULL);
++TRANS_FLAGS(FLOAT_EXT, FRIP, do_round_convert, gen_helper_FRIP, true, NULL);
++TRANS_FLAGS(FLOAT_EXT, FRIM, do_round_convert, gen_helper_FRIM, true, NULL);
++
++TRANS_FLAGS(FLOAT, FCTIW, do_round_convert, gen_helper_FCTIW, false,
++            gen_helper_fast_FCTIW);
++TRANS_FLAGS2(FP_CVT_ISA206, FCTIWU, do_round_convert, gen_helper_FCTIWU, false,
++             NULL);
++TRANS_FLAGS(FLOAT, FCTIWZ, do_round_convert, gen_helper_FCTIWZ, false,
++            gen_helper_fast_FCTIWZ);
++TRANS_FLAGS2(FP_CVT_ISA206, FCTIWUZ, do_round_convert, gen_helper_FCTIWUZ,
++             false, NULL);
++
++TRANS_FLAGS2(FP_CVT_S64, FCTID, do_round_convert, gen_helper_FCTID, false,
++             NULL);
++TRANS_FLAGS2(FP_CVT_ISA206, FCTIDU, do_round_convert, gen_helper_FCTIDU, false,
++             NULL);
++TRANS_FLAGS2(FP_CVT_S64, FCTIDZ, do_round_convert, gen_helper_FCTIDZ, false,
++             NULL);
++TRANS_FLAGS2(FP_CVT_ISA206, FCTIDUZ, do_round_convert, gen_helper_FCTIDUZ,
++             false, NULL);
++
++TRANS_FLAGS2(FP_CVT_S64, FCFID, do_round_convert, gen_helper_FCFID, true,
++             NULL);
++TRANS_FLAGS2(FP_CVT_ISA206, FCFIDS, do_round_convert, gen_helper_FCFIDS, false,
++             NULL);
++TRANS_FLAGS2(FP_CVT_ISA206, FCFIDU, do_round_convert, gen_helper_FCFIDU, false,
++             NULL);
++TRANS_FLAGS2(FP_CVT_ISA206, FCFIDUS, do_round_convert, gen_helper_FCFIDUS,
++             false, NULL);
+ 
+ static bool trans_FTDIV(DisasContext *ctx, arg_X_bf *a)
+ {
+@@ -259,7 +340,9 @@ static bool trans_FTSQRT(DisasContext *ctx, arg_X_bf_b *a)
+ /***                         Floating-Point compare                        ***/
+ static bool do_helper_cmp(DisasContext *ctx, arg_X_bf *a,
+                           void (*helper)(TCGv_env, TCGv_i64, TCGv_i64,
+-                                         TCGv_i32))
++                                         TCGv_i32),
++                          void (*fast)(TCGv_env, TCGv_i64, TCGv_i64,
++                                       TCGv_i32))
+ {
+     TCGv_i32 crf;
+     TCGv_i64 t0, t1;
+@@ -267,8 +350,14 @@ static bool do_helper_cmp(DisasContext *ctx, arg_X_bf *a,
+     REQUIRE_FPU(ctx);
+     t0 = tcg_temp_new_i64();
+     t1 = tcg_temp_new_i64();
+-    gen_reset_fpstatus();
+     crf = tcg_constant_i32(a->bf);
++    if (ctx->fast_fpu & PPC_FAST_FPU_ARITH) {
++        get_fpr(t0, a->ra);
++        get_fpr(t1, a->rb);
++        fast(tcg_env, t0, t1, crf);
++        return true;
++    }
++    gen_reset_fpstatus();
+     get_fpr(t0, a->ra);
+     get_fpr(t1, a->rb);
+     helper(tcg_env, t0, t1, crf);
+@@ -276,8 +365,8 @@ static bool do_helper_cmp(DisasContext *ctx, arg_X_bf *a,
+     return true;
+ }
+ 
+-TRANS(FCMPU, do_helper_cmp, gen_helper_FCMPU);
+-TRANS(FCMPO, do_helper_cmp, gen_helper_FCMPO);
++TRANS(FCMPU, do_helper_cmp, gen_helper_FCMPU, gen_helper_fast_FCMPU);
++TRANS(FCMPO, do_helper_cmp, gen_helper_FCMPO, gen_helper_fast_FCMPO);
+ 
+ /***                         Floating-point move                           ***/
+ 
+@@ -643,11 +732,66 @@ static void gen_mtfsfi(DisasContext *ctx)
+     gen_helper_fpscr_check_status(tcg_env);
+ }
+ 
++/*
++ * fast-fpu: lfs/stfs convert normal numbers inline and call
++ * helper_todouble/helper_tosingle only for zero, denormal, infinity and NaN
++ * (lfs) or exponents at or below the single range (stfs).
++ */
++static void gen_todouble_inline(TCGv_i64 dest, TCGv_i32 src)
++{
++    TCGLabel *slow = gen_new_label();
++    TCGLabel *done = gen_new_label();
++    TCGv_i32 e = tcg_temp_new_i32();
++    TCGv_i64 t = tcg_temp_new_i64();
++    TCGv_i64 s = tcg_temp_new_i64();
++
++    tcg_gen_extract_i32(e, src, 23, 8);
++    tcg_gen_subi_i32(e, e, 1);
++    tcg_gen_brcondi_i32(TCG_COND_GEU, e, 0xfe, slow);
++    /* normal: exponent + 896, fraction << 29 */
++    tcg_gen_extu_i32_i64(t, src);
++    tcg_gen_andi_i64(s, t, 0x80000000);
++    tcg_gen_andi_i64(t, t, 0x7fffffff);
++    tcg_gen_shli_i64(t, t, 29);
++    tcg_gen_addi_i64(t, t, 896ULL << 52);
++    tcg_gen_shli_i64(s, s, 32);
++    tcg_gen_or_i64(dest, t, s);
++    tcg_gen_br(done);
++    gen_set_label(slow);
++    gen_helper_todouble(dest, src);
++    gen_set_label(done);
++}
++
++static void gen_tosingle_inline(TCGv_i32 dest, TCGv_i64 src)
++{
++    TCGLabel *slow = gen_new_label();
++    TCGLabel *done = gen_new_label();
++    TCGv_i64 e = tcg_temp_new_i64();
++    TCGv_i64 t = tcg_temp_new_i64();
++
++    tcg_gen_extract_i64(e, src, 52, 11);
++    tcg_gen_brcondi_i64(TCG_COND_LEU, e, 896, slow);
++    /* bits 63..62 to 31..30, bits 58..29 to 29..0 */
++    tcg_gen_shri_i64(e, src, 32);
++    tcg_gen_andi_i64(e, e, 0xc0000000);
++    tcg_gen_extract_i64(t, src, 29, 30);
++    tcg_gen_or_i64(e, e, t);
++    tcg_gen_extrl_i64_i32(dest, e);
++    tcg_gen_br(done);
++    gen_set_label(slow);
++    gen_helper_tosingle(dest, src);
++    gen_set_label(done);
++}
++
+ static void gen_qemu_ld32fs(DisasContext *ctx, TCGv_i64 dest, TCGv addr)
+ {
+     TCGv_i32 tmp = tcg_temp_new_i32();
+     tcg_gen_qemu_ld_i32(tmp, addr, ctx->mem_idx, DEF_MEMOP(MO_UL));
+-    gen_helper_todouble(dest, tmp);
++    if (ctx->fast_fpu & PPC_FAST_FPU_LDST) {
++        gen_todouble_inline(dest, tmp);
++    } else {
++        gen_helper_todouble(dest, tmp);
++    }
+ }
+ 
+ /* lfdepx (external PID lfdx) */
+@@ -789,7 +933,11 @@ static void glue(gen_, name##x)(DisasContext *ctx)                            \
+ static void gen_qemu_st32fs(DisasContext *ctx, TCGv_i64 src, TCGv addr)
+ {
+     TCGv_i32 tmp = tcg_temp_new_i32();
+-    gen_helper_tosingle(tmp, src);
++    if (ctx->fast_fpu & PPC_FAST_FPU_LDST) {
++        gen_tosingle_inline(tmp, src);
++    } else {
++        gen_helper_tosingle(tmp, src);
++    }
+     tcg_gen_qemu_st_i32(tmp, addr, ctx->mem_idx, DEF_MEMOP(MO_UL));
+ }
+ 

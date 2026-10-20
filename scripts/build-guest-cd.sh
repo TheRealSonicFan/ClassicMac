@@ -14,19 +14,20 @@
 #
 # This script is idempotent: downloads are cached in vendor/guest-cd and only
 # re-fetched when missing or failing their MD5 check; the image itself is
-# rebuilt from scratch on every run.
+# rebuilt from scratch on every run. It needs hfsutils and unar (Homebrew),
+# not the Retro68 toolchain. TOOLS_CD_OUTPUT overrides the output path.
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$ROOT_DIR/guestcd/manifest.tsv"
 DL_DIR="$ROOT_DIR/vendor/guest-cd/downloads"
-OUT_IMAGE="${GXMETAL_TOOLS_OUTPUT:-$ROOT_DIR/dist/ClassicMacTools.iso}"
+OUT_IMAGE="${TOOLS_CD_OUTPUT:-$ROOT_DIR/dist/ClassicMacTools.iso}"
 OUT_DIR="$(dirname "$OUT_IMAGE")"
 VOLUME_NAME="ClassicMac Tools"
 HFS_COPY="$ROOT_DIR/guestcd/hfs-copy.py"
-GXMETAL_BIN_DIR="$ROOT_DIR/gxmetal/guest/bin"
-GXMETAL_README="$ROOT_DIR/gxmetal/guest/README.txt"
+# ClassicMac Display (guestcd/classicmac-display, MIT, prebuilt with Retro68)
+DISPLAY_BIN_DIR="$ROOT_DIR/guestcd/classicmac-display/bin"
 # 32 MiB: plenty for ~10 MB of expanded tools, and a multiple of the
 # 2048-byte CD sector size.
 IMAGE_BYTES=$((32 * 1024 * 1024))
@@ -37,7 +38,7 @@ die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 [ -f "$MANIFEST" ] || die "manifest not found: $MANIFEST"
 
 # ---------------------------------------------------------------------------
-# 1. Locate hfsutils (Retro68 toolchain build preferred, then PATH)
+# 1. Locate hfsutils (a Retro68 toolchain build if present, then PATH)
 # ---------------------------------------------------------------------------
 RETRO68_BIN="$ROOT_DIR/vendor/Retro68-build/toolchain/bin"
 if [ -x "$RETRO68_BIN/hformat" ]; then
@@ -46,11 +47,6 @@ fi
 for tool in hformat hmount humount hcopy hattrib hmkdir hls; do
   command -v "$tool" >/dev/null 2>&1 || die "hfsutils tool '$tool' not found. Build the Retro68 toolchain (scripts/build-qfb-rom.sh) or 'brew install hfsutils'."
 done
-
-# GXMetal is built from source for every Tools CD so the installer, RAVE
-# engine, and conformance app can never drift apart.
-log "Building GXMetal guest driver and tools"
-"$ROOT_DIR/scripts/build-gxmetal.sh"
 
 PYTHON_BIN="$(command -v python3 || true)"
 [ -n "$PYTHON_BIN" ] || die "python3 is required to write the Apple Partition Map."
@@ -160,14 +156,14 @@ USB Overdrive 1.4  (Power Mac only, Mac OS 8.5 - 9.2)
 On a Quadra (System 7 through Mac OS 8.1), skip USB Overdrive -
 it needs a Power Mac running Mac OS 8.5 or later.
 
-GXMetal 2.3.0  (Power Mac only; tested on Mac OS 9.2.1 and 9.2.2)
-   Host-accelerated QuickDraw 3D RAVE for ClassicMac. Open the
-   GXMetal folder and double-click "Install GXMetal". Restart,
-   look for the puzzle-piece M icon in the startup extension row, then
-   run "GXMetal Test". The test must report PASS before you try a
-   game. Read the GXMetal folder's Read Me for update, uninstall,
-   recovery, fallback, and troubleshooting instructions. Mac OS 8.5
-   and 8.6 validation will resume with updated system images.
+ClassicMac Display  (Power Mac G4 with the ATI Radeon card only)
+   Starts Mac OS at the screen size ClassicMac chose for the
+   ATI Radeon instead of ATI's default 640 x 480. It needs ATI's
+   own Mac OS 9 graphics software (ATI Driver Update and the ATI
+   3D extensions). Open the "ClassicMac Display" folder, drag
+   both items onto the closed System Folder (Mac OS puts them
+   in Extensions), then restart. With the standard graphics
+   card it does nothing.
 EOF
 
 # ---------------------------------------------------------------------------
@@ -231,19 +227,22 @@ hmount "$WORK_IMAGE" >/dev/null
 hcopy -t "$README" ":Read Me"
 hattrib -t TEXT -c ttxt ":Read Me"
 
-# hcopy -m decodes the MacBinary files into native HFS files while retaining
-# the PEF data forks, cfrg resources, and Finder type/creator metadata.
-hmkdir ":GXMetal"
-hcopy -m "$GXMETAL_BIN_DIR/GXMetal.bin" ":GXMetal:GXMetal"
-hcopy -m "$GXMETAL_BIN_DIR/GXMetalInput.bin" ":GXMetal:GXMetal Input"
-hcopy -m "$GXMETAL_BIN_DIR/GXMetalStartup.bin" ":GXMetal:GXMetal Startup"
-hcopy -m "$GXMETAL_BIN_DIR/GXMetalInstaller.bin" ":GXMetal:Install GXMetal"
-hcopy -m "$GXMETAL_BIN_DIR/GXMetalTest.bin" ":GXMetal:GXMetal Test"
-hcopy -m "$GXMETAL_BIN_DIR/GXMetalAGLProbe.bin" ":GXMetal:GXMetal AGL Probe"
-hcopy -m "$GXMETAL_BIN_DIR/GXMetalEngineSelectionProbe.bin" \
-  ":GXMetal:GXMetal RAVE Selection"
-hcopy -t "$GXMETAL_README" ":GXMetal:Read Me"
-hattrib -t TEXT -c ttxt ":GXMetal:Read Me"
+# ClassicMac Display: the startup extension's leading space loads it early in
+# the extension parade. Mac OS never calls an INIT file flagged kHasNoINITs,
+# so the MacBinary Finder flags must be clear (Retro68 writes them clear).
+hmkdir ":ClassicMac Display"
+for item in "ClassicMacDisplayInit.bin= ClassicMac Display Startup" \
+            "ClassicMacDisplay.bin=ClassicMac Display"; do
+  bin="${item%%=*}"
+  mac_name="${item#*=}"
+  [ -f "$DISPLAY_BIN_DIR/$bin" ] || die "missing $DISPLAY_BIN_DIR/$bin"
+  "$PYTHON_BIN" - "$DISPLAY_BIN_DIR/$bin" <<'PYEOF' || die "unexpected Finder flags in $bin"
+import sys
+header = open(sys.argv[1], "rb").read(128)
+sys.exit(0 if header[73] & 0x01 == 0 and header[101] & 0x80 == 0 else 1)
+PYEOF
+  hcopy -m "$DISPLAY_BIN_DIR/$bin" ":ClassicMac Display:$mac_name"
+done
 
 while IFS=$'\t' read -r name handling md5 url; do
   case "$name" in ''|'#'*) continue ;; esac

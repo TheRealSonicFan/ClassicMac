@@ -5,23 +5,32 @@
 <h1 align="center">ClassicMac</h1>
 
 <p align="center">
-  <strong>The whole classic Mac OS era, running natively on modern Macs.</strong><br>
-  A self-contained macOS app that emulates a Motorola 68040 Quadra 800 and a PowerPC Power Mac G4<br>
-  on a custom build of QEMU — no setup, no terminal, nothing to install inside the guest.
+  <strong>The classic Mac OS era on Intel Macs.</strong><br>
+  A self-contained desktop app that emulates a Motorola 68040 Quadra 800 and a PowerPC Power Mac G4<br>
+  on a custom build of QEMU, with the Apple Platinum appearance.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-macOS%20Intel%20x86__64%20only-black" alt="Latest binary release: Intel x86_64 only">
+  <img src="https://img.shields.io/badge/platform-macOS%2015%2B%20(Intel%20x86__64%20only)-black" alt="Platform: macOS 15+, Intel x86_64 only">
   <img src="https://img.shields.io/badge/guests-System%207.1%20–%20Mac%20OS%209.2.2-blueviolet" alt="Guest OS range">
   <img src="https://img.shields.io/badge/QEMU-11.0.2%20(custom)-orange" alt="QEMU">
-  <img src="https://img.shields.io/badge/UI-SwiftUI-blue" alt="SwiftUI">
-  <img src="https://img.shields.io/badge/3D-GXMetal%20(experimental)-6e56cf" alt="GXMetal experimental 3D acceleration">
+  <img src="https://img.shields.io/badge/UI-Apple%20Platinum-lightgrey" alt="Apple Platinum interface">
+  <img src="https://img.shields.io/badge/3D-ATI%20Radeon%20(emulated)-c00" alt="Emulated ATI Radeon 3D">
 </p>
+
+> [!IMPORTANT]
+> **This is an Intel-only build.** It runs on Intel (x86_64) Macs with macOS 15
+> or newer, and is not intended for Apple Silicon Macs. It is derived from
+> [amcchord/ClassicMac](https://github.com/amcchord/ClassicMac) 4.2.0. The DMG is
+> **ad-hoc signed and not notarized**; see
+> [Opening the ad-hoc signed build on another Mac](#opening-the-ad-hoc-signed-build-on-another-mac).
+> The Windows, Linux, iPad and Apple Silicon editions described below come from
+> the upstream project and are not part of this build.
 
 ---
 
 <p align="center">
-  <img src="docs/screenshots/configurator.png" width="720" alt="The ClassicMac configurator with a running Power Mac G4">
+  <img src="docs/screenshots/platinum/running-ati.png" width="720" alt="ClassicMac 4.2 in the Apple Platinum appearance, with Mac OS 9.2.2 Deluxe running on the emulated ATI Radeon">
 </p>
 
 <p align="center">
@@ -29,30 +38,103 @@
   <img src="docs/screenshots/powermacg4-macos92.png" width="410" alt="Mac OS 9.2 on the emulated Power Mac G4">
 </p>
 
-## Latest binary release: 3.2.1 — Intel x86_64
+## New in ClassicMac 4.2
 
-> [!IMPORTANT]
-> The **3.2.1 GitHub binary release is Intel-only**. Its `ClassicMac.app`
-> contains native `x86_64` executables and **does not contain an `arm64`
-> slice**. Apple Silicon remains supported as a source-build target, but no
-> Apple Silicon binary is included in this release.
+- **Original Mac OS 9 icons.** Native Icon Services CD, floppy, folder,
+  clipboard and other artwork replaces the drawn substitutes. Original
+  16/32-pixel strikes and 8-bit alpha are preserved on every desktop.
+- **A closer Platinum VM window.** Native Appearance Manager captures verify
+  full active/inactive/WindowShade frames, held title boxes, resize corners
+  and toolbar button edges at 1× and 2× with zero differing pixels. Compact
+  controls keep narrow VM windows usable. [Fidelity scope](docs/platinum-fidelity-audit.md).
 
-Release artifacts:
+## New in ClassicMac 4.1.1
 
-- **ClassicMac.dmg** — 33,458,741 bytes (31.91 MiB), ad-hoc signed,
-  non-notarized. SHA-256:
-  `eb0042dfa8951603bcd87add321cbc7272c97113f604fd855d4dd93fdc7329fa`
-- **ClassicMacTools.iso** — 33,554,432 bytes (32.00 MiB), Apple Partition Map
-  + **HFS (Mac OS Standard)** guest-additions image. SHA-256:
-  `8c99d6972b365778a51bd986a416ecbbcb91507b53b767463e0c176d78240bc5`
+- **Quake III mouse controls.** Power Macs provide a USB mouse for
+  InputSprocket games. Click the game screen to capture; Control–Option on
+  macOS or Escape on Windows/Linux releases it. Finder keeps seamless input.
+- **Smooth id intro playback.** Radeon startup initializes the synchronization
+  state expected by the classic Mac OpenGL driver, avoiding repeated waits.
+- **Reliable Power Mac audio.** DMA completion follows the sample clock and
+  keeps the guest's sound-buffer interrupts separate.
 
-`ClassicMacTools.iso` mounts within a **Mac OS 9 VM**. It does **not** mount
-directly on modern macOS because the image uses HFS (Mac OS Standard), which
-modern macOS no longer supports for mounting. The image contains GXMetal 2.3.0
-and the classic-Mac utilities used by the guest additions.
+## New in ClassicMac 4.1
 
-See the [3.2.1 Intel release notes](docs/releases/3.2.1-intel.md) for hashes,
-guest-additions contents, signing details, and verification results.
+- **Windows and Linux desktop editions.** Native x64 QEMU runtimes and a shared
+  Platinum desktop front end, with `.classic` machine creation/import,
+  settings, CD/floppy images, power controls and an authenticated local display.
+- **The Library on every desktop.** Ready-to-run Mac OS 9 editions download
+  with pause/resume, exact size/SHA-256 checks and bounded archive extraction.
+- **Paste Text on every desktop.** Review plain text before typing it with the
+  Mac US keyboard layout; unsupported characters are rejected before typing.
+- **Linux folder sharing.** A selected host folder mounts through classicvirtio
+  9p. Windows does not provide this QEMU backend; Copland remains Mac-only.
+- **Reference-tested Platinum controls.** The Mac appearance corrects system
+  font widths, raw grays, pressed/disabled controls, popup arrows and title-box
+  artwork. [The audit](docs/platinum-fidelity-audit.md) documents the 32 control
+  references and 95 system glyphs, and the remaining whole-app fidelity gaps.
+
+| Download | Host | Install |
+| --- | --- | --- |
+| `ClassicMac-4.2.0-x86_64.dmg` (this build) | Intel Mac (x86_64) only, macOS 15+ | Run `Open ClassicMac.sh` from the disk image, or see [Opening the ad-hoc signed build](#opening-the-ad-hoc-signed-build-on-another-mac) |
+
+This Intel build is ad-hoc signed, not Developer ID signed or notarized. The
+Windows and Linux desktop editions described under *New in ClassicMac 4.1* are
+published by the upstream project
+in its [releases](https://github.com/amcchord/ClassicMac/releases), together
+with the corresponding engine sources; see the upstream
+[desktop build and platform support guide](desktop/README.md).
+
+<p align="center">
+  <img src="docs/screenshots/desktop/windows.png" width="410" alt="ClassicMac on Windows 11">
+  <img src="docs/screenshots/desktop/linux.png" width="410" alt="ClassicMac on Linux">
+</p>
+
+## New in ClassicMac 4.0
+
+- **Apple Platinum, top to bottom.** Every ClassicMac window is now drawn in
+  the Mac OS 8/9 Platinum appearance it runs: pinstriped title bars with
+  close, zoom and WindowShade boxes, a grow box, movable modal dialogs, the
+  default-button ring that flashes when you press Return, beeping caution
+  alerts, Platinum pop-up menus that open with the current item under the
+  pointer, lavender lists and scroll bars, and the barber-pole progress bar.
+  Control artwork uses one point per Mac pixel and is tested at 1× and
+  2×. Some SwiftUI text and other states still need fidelity work. The look, fonts and icons are shared with RetroBoot through the
+  new `PlatinumKit` module, which also builds for iPad.
+- **Your Mac in a Platinum window.** Each running Mac's screen now appears
+  in a ClassicMac Platinum window instead of QEMU's: sharp whole-number
+  scaling, a close box that shuts Mac OS down safely, zoom and WindowShade,
+  a Standard-card screen that follows the window's size, and a toolbar with
+  Shut Down, Restart, Pause, Media, Paste Text and Full Screen. From
+  power-on it shows the classic gray checkerboard with a startup Mac until
+  Mac OS draws its own screen, so firmware black and OpenBIOS yellow never
+  appear. QEMU hands its screen over through the new `-display classicmac`
+  backend, ported from RetroBoot (see [`display/README.md`](display/README.md)).
+- **The Mac OS Library.** **File → Mac OS Library…** (⇧⌘L) lists every
+  ready-to-run Mac with what is inside it: Mac OS 9.2.2 SuperDeluxe (54
+  games, ClarisWorks, Home Page), Deluxe (16 games, After Dark, music,
+  benchmarks), a clean Mac OS 9.2.1 and Copland. Downloads resume, verify and
+  show a classic copy-progress dialog.
+- **3D through an emulated ATI Radeon, with no custom drivers.** Power Macs
+  can use an emulated ATI Radeon (R100, PCI "Radeon Mac Edition") that Mac OS
+  9's own ATI software drives, so QuickDraw 3D RAVE and OpenGL games render on
+  your Mac's GPU. The Library's Deluxe Macs start on it. GXMetal is retired.
+- **Get Info** replaces Settings, with General, Display and Sharing panes;
+  **About This Mac** in the main window shows the GPU drawing a running Mac's
+  3D.
+- **Classic icons by The Iconfactory.** The Power Mac G4, Quadra 800 and
+  Power Mac 7500 use Iconfactory artwork included with permission. No extra
+  download is needed. **ClassicMac → Iconfactory Icons…** credits the artists
+  and lets you add more collections from your own copies.
+
+<p align="center">
+  <img src="docs/screenshots/platinum/guest-window.png" width="720" alt="Mac OS 9.2.2 Deluxe in ClassicMac's Platinum window with the toolbar along the bottom">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/platinum/library.png" width="410" alt="The Mac OS Library">
+  <img src="docs/screenshots/platinum/get-info-display.png" width="410" alt="Get Info, Display pane with the graphics card choice">
+</p>
 
 ## Copland preview
 
@@ -97,68 +179,39 @@ Classic Mac OS setup flow.
 
 The iPad build uses UTM SE's App Store-compatible QEMU threaded-code
 interpreter because iPadOS cannot launch the macOS app's bundled emulator
-processes. That makes it slower than the native Mac build. This first
+processes. That makes it slower than the Mac builds. This first
 beta also uses upstream UTM display hardware, so ClassicMac's GXMetal renderer
 and custom `nubus-qfb` display device are not included yet. See
 [`ios/README.md`](ios/README.md) for the pinned build and TestFlight workflow.
 
-## GXMetal: Mac OS 9 3D accelerated by Metal
+## 3D games: the emulated ATI Radeon
 
-GXMetal is ClassicMac's experimental paravirtualized 3D stack for PowerPC Mac
-OS 9. It accelerates QuickDraw 3D RAVE and a growing ATI-era OpenGL/AGL
-compatibility path with the Mac's Metal GPU—without pretending to be a
-specific period 3D card. The one-click guest installer and matching host
-renderer are bundled with ClassicMac; a standalone package is also available
-for custom [QEMU and UTM builds](#standalone-gxmetal-for-qemu-and-utm).
+`Mac OS 9 game → ATI's own Mac OS 9 drivers → emulated Radeon R100 in QEMU → OpenGL on your Mac's GPU`
 
-<p align="center">
-  <img src="docs/screenshots/gxmetal/quake3-arena.png" width="640" alt="Quake III Arena Q3DM1 rendered through GXMetal">
-</p>
+Choose **Get Info → Display → ATI Radeon (3D acceleration)** for a Power
+Mac, or download a Deluxe Mac from the Library, which starts on it. The card
+is QEMU's `ati-vga` with RetroBoot's R100 model: register file, display
+modes and EDID, command processor, 2D engine and a 3D engine whose draws run
+on a host OpenGL 4.1 thread (Apple's OpenGL over Metal). Mac OS 9's stock
+*ATI Driver Update*, *ATI Radeon 3D Accelerator*, *ATI Resource Manager* and
+*OpenGLRendererATI* do the rest; nothing is installed from ClassicMac. On
+Intel Macs the 3D engine uses the Mac's Intel, AMD or NVIDIA GPU through the
+same OpenGL 4.1 path (verified on Intel UHD Graphics 630); frame rates depend on
+the CPU and GPU.
 
-<p align="center"><strong>Quake III Arena</strong> — five distinct Q3DM1 views retained complete textured geometry, depth, and HUD rendering.</p>
+- Mac OS starts at 640 × 480 and switches to the size you chose (640 × 480
+  up to 1920 × 1440) during startup through RetroBoot Display (in the
+  Library's Macs) or ClassicMac Display (on the Tools disk). The size stays
+  fixed while the Mac runs; colors are 256, Thousands or Millions.
+- A Mac without ATI's software still starts on the card, at 640 × 480 with
+  no 3D. Installer and CD starts always use the Standard card.
+- The Standard card remains the default: any size, live window resizing and
+  every color depth.
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/gxmetal/cromag-rally.png" width="400" alt="Cro-Mag Rally running an accelerated desert race through GXMetal"><br>
-      <strong>Cro-Mag Rally</strong> — accelerated 640×480 Practice/Desert gameplay, with steering and acceleration verified.
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/gxmetal/oni.png" width="400" alt="Oni warehouse gameplay rendered through GXMetal"><br>
-      <strong>Oni</strong> — warehouse gameplay with relative-look input and a clean two-process quit/relaunch route.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/gxmetal/dark-vengeance.png" width="400" alt="Dark Vengeance gameplay rendered through GXMetal"><br>
-      <strong>Dark Vengeance</strong> — a five-minute packaged rendering soak held a coherent textured combat scene with direct presentation and zero fallback frames.
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/gxmetal/conformance.png" width="400" alt="GXMetal Test reporting a passed RAVE conformance run on Mac OS 9"><br>
-      <strong>GXMetal Test</strong> — the advertised RAVE contract passed before game testing, including textures, blending, depth, clipping, and framebuffer access.
-    </td>
-  </tr>
-</table>
-
-### How it works
-
-`Mac OS 9 game → GXMetal guest driver → custom QEMU PCI device → macOS Metal`
-
-1. The guest RAVE engine and ATI compatibility layer collect geometry,
-   textures, render state, and presentation commands into batches.
-2. GXMetal's custom QEMU device validates the queue metadata and transports
-   those batches and shared resources to the host instead of emulating a
-   historical GPU instruction by instruction.
-3. The macOS backend translates the work into Metal pipelines and command
-   buffers, then presents completed frames directly. Unsupported contexts stay
-   on Apple's software renderer rather than being claimed as accelerated.
-
-The screenshots above are unedited frames captured by the automated harness
-on clean Mac OS 9 VM clones. See the evidence-backed
-[compatibility report](docs/gxmetal-ten-game-compatibility.md) for exact builds,
-routes, telemetry, verified behavior, and open gaps. GXMetal remains
-experimental; the report is the source of truth for what each run does—and
-does not—prove.
+See the [engine report](docs/engine-4.0-ati.md) for the design, provenance,
+argument sets and test evidence. GXMetal, the 3.x paravirtual renderer,
+remains in the history of the
+[v3.2.1 release](https://github.com/amcchord/ClassicMac/releases/tag/v3.2.1).
 
 ## What it is
 
@@ -177,6 +230,7 @@ You bring your own Mac OS installation media: every classic Mac OS version is av
 
 ClassicMac exists because of years of brilliant work by other engineers. The patches and drivers that make it possible deserve top billing:
 
+- [amcchord/ClassicMac](https://github.com/amcchord/ClassicMac) — the original ClassicMac app, engine patches, Platinum interface and Mac OS Library. **This Intel-only build is derived from its 4.2.0 release** (tag `v4.2.0`, commit `9ca105f`); the Intel changes are limited to the build, packaging, ad-hoc signing and verification scripts, documented in [macOS architectures](docs/macos-architectures.md).
 - [QEMU](https://www.qemu.org/) and the m68k / q800 maintainers (incl. the `nubus-virtio-mmio` transport) — the emulation core underneath everything.
 - [SolraBizna/qemu](https://github.com/SolraBizna/qemu) for the `nubus-qfb` paravirtualized framebuffer (ported here onto QEMU 11.0.2) that gives the Quadra arbitrary resolutions and rich color.
 - [elliotnunn/classicvirtio](https://github.com/elliotnunn/classicvirtio) for the classic Mac OS virtio drivers used for folder sharing and Quadra floppy images (68k card firmware and the PowerPC ndrvloader), and for the ndrv link recipe used to build the Power Mac video driver.
@@ -184,7 +238,6 @@ ClassicMac exists because of years of brilliant work by other engineers. The pat
 - [mcayland/qemu](https://github.com/mcayland/qemu/tree/screamer) for the screamer (AWACS) PPC audio device and screamer-aware OpenBIOS (ported here onto QEMU 11.0.2).
 - [Retro68](https://github.com/autc04/Retro68) for the 68k and PPC classic Mac OS cross toolchain.
 - [noVNC](https://github.com/novnc/noVNC) for the browser-native VNC client used by the private local display page.
-- [amcchord/ClassicMac](https://github.com/amcchord/ClassicMac) for source of ClassicMac.
 
 ## Features
 
@@ -196,66 +249,54 @@ ClassicMac exists because of years of brilliant work by other engineers. The pat
 - **Clean, working sound.** The Quadra's Apple Sound Chip is patched to feed silence when idle (no more idle buzz), and the Power Mac gets the screamer (AWACS) device with a screamer-aware OpenBIOS.
 - **Self-contained `.classic` machine documents.** Each VM is a single Finder package holding its config, disk, and PRAM. Keep it anywhere, double-click to boot, move it between Macs.
 - **Classic input helpers.** Secondary click opens contextual menus as Control+click, and the scroll wheel becomes arrow-key taps. Turn both off in machine settings for guests with real drivers (e.g. USB Overdrive).
-- **A guest-additions Tools volume** (StuffIt Expander, Disk Copy, USB Overdrive, Transmit, Lido, patched HD SC Setup...) built from `guestcd/manifest.tsv`. On Power Macs it mounts automatically at startup as a read-only Virtio disk, using the same guest-driver path as folder sharing instead of unreliable OS 9 IDE hot-plug. Everything is pre-expanded and ready to run. The separately downloadable `ClassicMacTools.iso` uses HFS (Mac OS Standard): it mounts in a Mac OS 9 VM, but modern macOS does not mount this HFS image directly.
-- **Experimental GXMetal 3D acceleration on Mac OS 9.** The Tools CD carries a
-  one-click installer for a PowerPC QuickDraw 3D RAVE engine. It batches guest
-  drawing commands to the host, renders them with Metal, and safely leaves
-  unsupported contexts to Apple's software renderer. The included GXMetal
-  Test verifies the advertised RAVE contract and measures both engines before
-  a game is launched. GXMetal AGL Probe separately verifies accelerated Apple
-  OpenGL context creation, triangle and quad rendering, RGBA textures,
-  independent primary MIN/MAG and mip selection plus the advertised unit-1
-  binding and trilinear path when its ARB entry points are available,
-  source-alpha blending, depth ordering, readback, resource deletion, and
-  teardown. Protocol 1.24 supports mutable dirty-rectangle draw-buffer access,
-  exact complex-region clipping, deep-Z
-  contexts, public RGB24 and private RGBA uploads, and the ATI/OpenGL filled
-  triangle, strip, fan, quad, quad-strip, polygon, and clipped-fan paths
-  exercised by Cro-Mag Rally and Oni. The ATI compatibility layer synchronizes
-  OpenGL alpha, blend, depth, fog, channel-mask, clear, and texture sampling
-  state before those draws. A classic
-  puzzle-piece M appears in the startup extension row when GXMetal's companion
-  loads.
+- **A guest-additions Tools volume** (StuffIt Expander, Disk Copy, USB Overdrive, Transmit, Lido, patched HD SC Setup...) built from `guestcd/manifest.tsv`. On Power Macs it mounts automatically at startup as a read-only Virtio disk, using the same guest-driver path as folder sharing instead of unreliable OS 9 IDE hot-plug. Everything is pre-expanded and ready to run.
+- **3D on the emulated ATI Radeon.** Mac OS 9's own ATI drivers drive an
+  emulated Radeon R100 whose 3D engine renders through your Mac's GPU, so RAVE
+  and OpenGL games such as Quake III, Nanosaur and Cro-Mag Rally run
+  accelerated with nothing installed from ClassicMac.
+- **An Apple Platinum interface.** Pixel-exact Mac OS 8/9 windows, controls,
+  menus, dialogs and alerts, with original MIT fonts and icons shared with
+  RetroBoot.
+- **The Mac OS Library.** Ready-to-run Macs with games and classic software,
+  described edition by edition, downloaded with resume and integrity checks.
 - **Native machine control.** Pause / Resume, Restart, and Shut Down from the app, live screen previews in the library, a visible browser URL, and a "Match Display" button that chooses a screen-sized boot resolution.
 - **Safe, faster shutdown cycles.** The app's Shut Down command presses the
   virtual Mac's Power key and confirms Mac OS's own dialog, allowing HFS/HFS+
   to unmount cleanly so the next boot does not pay the recovery penalty.
-- **Release signing options.** Developer ID builds can be signed, notarized, and stapled for Gatekeeper. The current 3.2.1 Intel binary release is instead ad-hoc signed and non-notarized; the local self-signing procedure is documented below.
+- **Ad-hoc signed DMG for Intel Macs** — the app keeps its hardened runtime and JIT entitlements, and the included `Open ClassicMac.sh` installs and opens it on another Mac without a Developer ID or notarization (see below).
 
 ## Getting started
 
-1. On an **Intel Mac**, grab **ClassicMac.dmg** from the [latest release](../../releases/latest), drag ClassicMac to Applications, and launch it. The 3.2.1 binary release is `x86_64` only; Apple Silicon users should either refer to the upstream of this repository for the respective binary release ([amcchord/ClassicMac](https://github.com/amcchord/ClassicMac)) or build the native `arm64` app from source.
-2. Choose **File → New Machine** (⌘N) and continue with the recommended
-   **Download a Mac** option. Name your Mac, choose its location, and
-   download it. The image is hosted on mcchord.net and contains Mac OS 9.2.1
-   with GXMetal 2.3.0 already installed. **File → Download a Mac** also
-   opens the download directly.
-3. Click **Start Mac**. The Mac opens in a native window. To use your browser,
-   enable **View in browser** in **Settings → Display** before startup.
-4. Use **Media** to attach discs, or **Settings → Sharing** to select a shared
-   folder. The shared folder appears in the guest as a writable disk.
-5. On the downloaded Mac, open **ClassicMac Utilities** on Macintosh HD and
-   run **GXMetal Test**. The compact GXMetal menu shows activity and guidance.
+1. On an Intel Mac, open **ClassicMac-4.2.0-x86_64.dmg** and run
+   `bash "/Volumes/ClassicMac/Open ClassicMac.sh"` in Terminal. It copies
+   ClassicMac to Applications and launches it (details in
+   [Opening the ad-hoc signed build](#opening-the-ad-hoc-signed-build-on-another-mac)).
+2. In the welcome panel choose **The Mac OS Library**, or open it later with
+   **File → Mac OS Library…** (⇧⌘L). Pick a Mac (SuperDeluxe and Deluxe come
+   with games and classic software and start on the ATI Radeon card), name
+   it, and click **Download**.
+3. Select your Mac and click **Start Up** (⌘R). Its screen opens in a
+   Platinum window with a toolbar for common commands; **Show Mac** brings it
+   forward. Every key, Command combinations included, goes to the Mac while
+   its screen has focus; Control-Command-F toggles full screen, and games
+   that capture the mouse release it with Control-Option. To use your browser instead, turn on
+   **Get Info → Display → Show the Mac in a web browser** before startup.
+4. Use **Media…** to attach discs and **Get Info** (⌘I) for memory, display,
+   graphics card and a shared folder, which appears in the guest as a
+   writable disk.
 
-For a manual installation, choose **New Machine → Install from your own
-disc** and choose a Quadra 800
-(System 7.1–8.1) or Power Mac G4 (Mac OS 8.5–9.2.2), RAM, and a virtual disk up
-to 120 GB. Attach your Mac OS install CD image through **Media**, choose it as
-the startup disc, and start the Mac. You can also attach a raw floppy image to
-a Quadra.
+For a manual installation, choose **File → New Mac…** (⌘N): a Quadra 800
+(System 7.1–8.1) or Power Mac G4 (Mac OS 8.5–9.2.2), memory, a virtual disk up
+to 120 GB and your Mac OS CD image. The Mac starts from the CD; once Mac OS is
+installed it starts from its hard disk by itself. To use the ATI Radeon card
+on a Mac you installed yourself, install ATI's Mac OS 9 drivers from your
+Mac OS 9.2 CD and ClassicMac Display from the Tools disk.
 
 New Power Mac disks default to 32 GB. New disks use sparse storage: their
 capacity is available to the classic Mac, while the file on your modern Mac
-starts small and grows as data is written. The download screen shows the
-download size, virtual disk capacity, and initial storage separately. Existing
+starts small and grows as data is written. The Library shows the download
+size, virtual disk capacity, and free space needed separately. Existing
 machines keep their current disk sizes.
-
-To add GXMetal to a manually installed Mac OS 9 machine, open the automatically
-mounted **ClassicMac Tools** disk, then open **GXMetal**,
-   run **Install GXMetal**, restart, and run **GXMetal Test**. Proceed to a RAVE
-   game only after the test reports a pass; moving both GXMetal and GXMetal
-   Startup out of Extensions and restarting restores the normal Apple software
-   path.
 
 > [!IMPORTANT]
 > **Installing Mac OS 9?** Initialize the destination with Drive Setup from
@@ -273,51 +314,44 @@ mounted **ClassicMac Tools** disk, then open **GXMetal**,
 
 New machines are created as `.classic` documents (default `~/Documents/ClassicMac/`). Double-click one in Finder to boot it.
 
-Requirements: macOS 15 or newer. **The 3.2.1 downloadable binary release requires an Intel (`x86_64`) Mac and contains no arm64 binary.** The source tree supports native builds on both Apple Silicon (`arm64`) and Intel (`x86_64`).
+Requirements: an **Intel (x86_64) Mac running macOS 15 or newer**. This build is Intel-only: the app, both QEMU engines, the Copland engine and every bundled library are x86_64. Apple Silicon Macs should use the upstream [amcchord/ClassicMac releases](https://github.com/amcchord/ClassicMac/releases). See [macOS architectures](docs/macos-architectures.md) for how the Intel build was made and validated.
 
-### Ad-hoc/community builds
+## Opening the ad-hoc signed build on another Mac
 
-A Developer ID certificate is not required to build and package ClassicMac for
-local testing or community distribution. To force ad-hoc signing for both the
-app and DMG:
+This build is **ad-hoc signed** (valid code signature, hardened runtime, QEMU
+JIT entitlements) but has no Developer ID and is **not notarized**. macOS
+therefore blocks a downloaded copy ("cannot be opened because the developer
+cannot be verified"). Two scripts handle this:
 
-```bash
-SIGN_IDENTITY=- ./scripts/bundle-qemu.sh
-SIGN_IDENTITY=- ./scripts/make-dmg.sh
-```
+| Script | Who runs it | What it does |
+| --- | --- | --- |
+| [`scripts/make-adhoc-dmg.sh`](scripts/make-adhoc-dmg.sh) | The builder | Packages the ad-hoc signed `dist/ClassicMac.app` into `ClassicMac-<version>-x86_64.dmg`. The image also holds `Open ClassicMac.sh` and a `Read Me First.txt` |
+| [`scripts/open-adhoc-build.sh`](scripts/open-adhoc-build.sh) (`Open ClassicMac.sh` in the DMG) | The recipient | Checks the Mac is Intel and runs macOS 15+, removes the download quarantine flag, copies ClassicMac to `/Applications`, verifies the ad-hoc signature (re-signing it ad hoc with the JIT entitlements if it is damaged, or with `--resign`) and opens it |
 
-The resulting `dist/ClassicMac.dmg` is code-signed but **not notarized or
-Gatekeeper-trusted**. Ad-hoc signing establishes local code integrity; it does
-not establish a developer identity.
-
-If you downloaded an ad-hoc ClassicMac DMG from a source you trust, first drag
-`ClassicMac.app` to Applications, then remove downloaded-file metadata and
-apply a fresh local ad-hoc signature:
+On the receiving Intel Mac:
 
 ```bash
-APP="/Applications/ClassicMac.app"
+# With the disk image open in Finder:
+bash "/Volumes/ClassicMac/Open ClassicMac.sh"
 
-xattr -cr "$APP"
-codesign --force --deep --sign - \
-  --preserve-metadata=entitlements,requirements,flags,runtime \
-  "$APP"
+# Or point the script at the downloaded image (eject it in Finder first):
+bash open-adhoc-build.sh ~/Downloads/ClassicMac-4.2.0-x86_64.dmg
 
-codesign --verify --deep --strict --verbose=2 "$APP"
-open "$APP"
+# Options: --dest ~/Applications (install elsewhere), --resign, --no-open
 ```
 
-The metadata-preserving re-sign is important because the nested QEMU helper
-apps carry JIT entitlements required by TCG. Clearing quarantine/xattrs bypasses
-normal Gatekeeper provenance checks, so only use these commands for a build you
-compiled yourself or obtained from a source you independently trust. Official
-Developer ID releases should use the normal notarized flow instead.
+Run the script with `bash` so the script itself is not blocked. Without the
+script, drag ClassicMac to Applications, then Control-click it and choose
+**Open**, or click **Open Anyway** in **System Settings → Privacy & Security**
+after the first attempt. Only remove quarantine from a build you got from a
+source you trust.
 
 ## Display & sound notes
 
 - The resolution you pick is the *boot* resolution and the depth is the *deepest available* mode; classic Mac OS chooses the active depth at startup (a fresh system comes up in B&W until you pick Thousands/Millions once in Monitors — it's remembered per machine).
 - Machines use the native window by default. The per-machine **View in browser** toggle is available under **Settings → Display** and takes effect on the next start.
 - The browser's **Fit** mode prefers the largest whole-number scale that fits the tab and uses sharp nearest-neighbor edges when it must shrink the image. Choose **Actual Size** for one guest pixel per browser pixel, and use the page's **Fullscreen** button to enter or leave browser fullscreen.
-- The browser toolbar provides sticky Command, Option, and Control modifiers plus a dedicated Escape button, which makes host-reserved key combinations practical. Games using GXMetal Input automatically reveal a **Capture game mouse** control for relative movement; press Escape to leave pointer lock.
+- The browser toolbar provides sticky Command, Option, and Control modifiers plus a dedicated Escape button, which makes host-reserved key combinations practical. Games that ask for relative mouse movement reveal a **Capture game mouse** control; press Escape to leave pointer lock.
 - Power Mac widths snap down to a multiple of 8 (a VGA hardware constraint).
 - The Power Mac's packed low-bpp patch adds Black & White, 4 and 16 colors to the Monitors panel alongside 256/thousands/millions.
 - Mac OS 9 wants **less than 1 GB of RAM** for stable sound, so the app's presets stop at 896 MB.
@@ -325,62 +359,45 @@ Developer ID releases should use the normal notarized flow instead.
 
 ## Building from source
 
-Build on the target Mac architecture. The same scripts produce a native
-`arm64` release on Apple Silicon or a native `x86_64` release on Intel,
-while keeping the macOS 15 deployment target. QEMU remains TCG-based on both.
-
 ```bash
 # 1. Build the emulator (clones mainline QEMU 11.0.2, applies the ClassicMac
-#    patch set, compiles qemu-system-m68k + qemu-system-ppc)
+#    patch set and the ATI Radeon R100 last, compiles qemu-system-m68k +
+#    qemu-system-ppc, and checks the host OpenGL path) and the Copland engine
 ./scripts/build-qemu.sh
 ./scripts/build-copland.sh
 
-# 2. Build the guest-additions Tools CD (cached downloads). This must precede
-#    app bundling so the exact GXMetal driver and installer enter the release.
+# 2. Build the guest-additions Tools CD (cached downloads, hfsutils/unar),
+#    including ClassicMac Display for the ATI card
 ./scripts/build-guest-cd.sh
 
-# Optional: clone a user-supplied Mac OS 9.2.1 CD and integrate GXMetal,
-# USB Overdrive, StuffIt/DropStuff, and Transmit into the regular OS installer.
-./scripts/build-os9-921-installer-cd.sh /path/to/macos_921_ppc.iso
+# 3. Build the app and bundle QEMU + firmware + dylibs into
+#    dist/ClassicMac.app (code-signed; ad hoc without a Developer ID
+#    certificate). APP_VERSION, APP_BUILD_VERSION and DIST_DIR override the
+#    version and output folder.
+APP_VERSION=4.2.0 APP_BUILD_VERSION=4.2.0 ./scripts/bundle-qemu.sh
 
-# 3. Build the SwiftUI app and bundle QEMU + firmware + dylibs into
-#    dist/ClassicMac.app. With no Developer ID certificate, bundle-qemu.sh
-#    falls back to an ad-hoc app signature.
-./scripts/bundle-qemu.sh
+# 4. Package the ad-hoc signed app into dist/ClassicMac-4.2.0-x86_64.dmg
+#    (with Open ClassicMac.sh). With a Developer ID certificate and notary
+#    credentials, ./scripts/make-dmg.sh produces a notarized DMG instead.
+./scripts/make-adhoc-dmg.sh
 
-# 4a. Developer ID release: notarize, staple, and package the DMG.
-./scripts/make-dmg.sh
-
-# 4b. Or, without an Apple Developer certificate, make an explicitly ad-hoc
-#     signed DMG. This skips notarization/stapling and Gatekeeper trust checks.
-SIGN_IDENTITY=- ./scripts/make-dmg.sh
-
-# 5a. Developer ID releases: verify signatures, notarization/Gatekeeper,
-#     architecture, bundled libraries, Tools CD, and GXMetal integration.
-./scripts/verify-release.sh dist/ClassicMac.dmg 3.2.1 3.2.1
-
-# 5b. Ad-hoc releases: perform the same structural/runtime verification but
-#     explicitly skip notarization and Gatekeeper trust assertions.
-SIGN_IDENTITY=- ./scripts/verify-release.sh dist/ClassicMac.dmg 3.2.1 3.2.1
+# 5. Verify the app: x86_64 everywhere, versions, the bundled Tools CD and
+#    both Power Mac display cards (the Developer ID check needs a Developer ID
+#    signed app)
+EXPECTED_ARCHS=x86_64 ./scripts/verify-release.sh dist/ClassicMac.app 4.2.0 4.2.0
 ```
 
-All scripts are idempotent and safe to re-run. Building needs the Xcode command line tools and [Homebrew](https://brew.sh).
+All scripts are idempotent and safe to re-run. Building needs an Intel Mac
+with macOS 15, the Xcode command line tools and an Intel
+[Homebrew](https://brew.sh) in `/usr/local`. The scripts build x86_64 on an
+Intel Mac. Homebrew no longer publishes Intel bottles for most formulae, so
+the bundled libraries come from official Intel bottles where they exist and
+otherwise from the locally built Homebrew kegs, after macOS 15 and x86_64
+checks. See [macOS architectures](docs/macos-architectures.md).
 
-### Standalone GXMetal for QEMU and UTM
-
-GXMetal can also be packaged independently of the ClassicMac app. The
-standalone release includes a mountable HFS guest image, prebuilt MacBinary
-components, the matching Power Mac video NDRV, complete source, and a minimal
-patch for pristine QEMU 11.0.2:
-
-```bash
-./scripts/package-gxmetal-release.sh
-```
-
-This produces `dist/GXMetal-2.3.0.tar.gz`, a ZIP variant, checksums, and
-`dist/GXMetal-Guest.iso`. See
-[`gxmetal/standalone/README.md`](gxmetal/standalone/README.md) for QEMU build
-arguments, the UTM custom-QEMU rebuild path, installation, and limitations.
+The Platinum fonts and icons are generated from the MIT sources in
+`platinum/` with `python3 platinum/tools/build_platinum_swift.py`; see
+[`platinum/README.md`](platinum/README.md).
 
 The guest-side binaries are committed, so a normal build needs no cross toolchain. If you change them, rebuild with:
 
@@ -394,7 +411,8 @@ The guest-side binaries are committed, so a normal build needs no cross toolchai
 # Classicvirtio Quadra card firmware and Power Mac NDRV loader
 ./scripts/build-classicvirtio-floppy.sh  # -> shared/declrom + shared/ndrvloader
 
-# Power Mac OpenBIOS firmware (uses the OpenBIOS Linux builder container)
+# Power Mac OpenBIOS firmware with the ATI Radeon node and the sound-objects
+# fix (uses the OpenBIOS Linux builder container)
 ./scripts/build-openbios.sh               # -> screamer/openbios-ppc
 ```
 
@@ -402,7 +420,10 @@ The guest-side binaries are committed, so a normal build needs no cross toolchai
 
 ```
 ClassicMac/
-  app/                      # SwiftUI configurator / launcher (SwiftPM package)
+  app/                      # the ClassicMac app and PlatinumKit (SwiftPM package)
+  display/                  # -display classicmac: QEMU hands its screen to the app
+  platinum/                 # MIT Platinum fonts, icons and asset generators
+  ati/                      # emulated ATI Radeon R100: QEMU, macOS GL and OpenBIOS patches
   browser/                  # branded loopback-only noVNC display client
   Resources/                # app icon, machine icon, bundled firmware
   qfb/                      # nubus-qfb enhanced framebuffer device + 68k driver
@@ -418,7 +439,7 @@ ClassicMac/
   audio/                    # CoreAudio backend patch
   ide/                      # PPC MacIO IDE/DBDMA timing fix + tracepoints
   guestcd/                  # Tools CD manifest + HFS copy tooling
-  scripts/                  # build-qemu, bundle-qemu, build-guest-cd, make-dmg, notarize...
+  scripts/                  # build-qemu, bundle-qemu, build-guest-cd, make-adhoc-dmg, open-adhoc-build, make-dmg, notarize...
 ```
 
 > Mac OS installation media is **not** committed; download the version you want from the [WinWorld operating system library](https://winworldpc.com/library/operating-systems) (Mac OS 8.5, 8.6, 9.2.1, and the [9.2.2 Universal Install CD](https://macintoshgarden.org/apps/mac-os-922-universal) are supported) and import it through the app.
@@ -428,10 +449,12 @@ ClassicMac/
 - **Optional browser display** — when enabled for a machine, its run gets an HTTP server and QEMU VNC WebSocket bound only to `127.0.0.1`. The bundled noVNC client renders the framebuffer, sends keyboard and pointer input, scales it to the tab, reconnects across Power Mac restarts, and understands QEMU's relative-pointer extension for games. Otherwise QEMU uses ClassicMac's native Cocoa window.
 - **Quadra video** — `nubus-qfb`, a paravirtualized NuBus framebuffer (ported from [SolraBizna/qemu](https://github.com/SolraBizna/qemu) onto QEMU 11.0.2) with 68k card firmware and a driver built with Retro68.
 - **Power Mac video** — QEMU's std VGA gains packed low-color and optimized framebuffer paths. The bundled `qemu_vga.ndrv` supplies the full classic Mac display-mode set without a guest installation.
+- **ATI Radeon 3D** — `ati-vga,model=r100` (from RetroBoot) emulates the card Mac OS 9's ATI drivers expect, down to its command processor and 3D engine. 3D draws run on a separate thread through Apple's OpenGL 4.1 (loaded at run time, so QEMU never links OpenGL); finished frames return to the card's VRAM for display. OpenBIOS names the card `ATY,Rage6p` and programs its boot mode, and the emulated monitor's EDID offers exactly the screen size you chose.
+- **Platinum interface** — `PlatinumKit` draws every control from measured Mac OS 8.1 pixel tables with a one-Mac-pixel-per-point painter, uses bitmap fonts compiled to pixel-square TrueType, and hosts SwiftUI content in borderless windows with their own pinstriped frames, WindowShade and modal dialog handling.
 - **Restart and installer handoff** — both models exit and relaunch cleanly at a reset boundary. This works around QEMU's broken in-place `mac99` reset and gives ClassicMac a safe point to recognize a newly blessed hard disk before the next boot.
 - **Sound** — the ASC is patched to output silence when idle (`qfb/asc-silence.patch`); the Power Mac uses Mark Cave-Ayland's screamer device with a screamer-aware OpenBIOS build.
 - **Power Mac storage** — MacIO IDE/DBDMA holds the final DMA descriptor for 1 ms before publishing completion. Real hardware cannot finish in the same scheduling window in which the driver starts an operation; without this small latency, cached host I/O can beat Mac OS 9's synchronous-wait setup and lose its wakeup, freezing Installer mid-copy. Focused MacIO/DBDMA tracepoints remain available for regression runs.
 - **Mac OS 9 hard-disk startup** — hard-disk boots use a startup-only accounted instruction clock, zero-delay cached IDE completion, and PowerPC TCG fast paths so Mac OS 9's hardware and timebase polling does not sleep on the host. QEMU recognizes Finder's menu bar directly in guest VRAM—even headless and at arbitrary supported resolutions—then atomically returns the virtual clock and 25 MHz PowerPC timebase to real time before applications run. A 15-second app fallback covers unusual themes; installer-CD boots retain normal timing and the 1 ms IDE race safeguard. Six 512 MB cold boots of the 1920×1080 OS 9.2.2 test machine reached the automatic handoff in 9.92–10.22 seconds, including a reboot after verified clean shutdown, versus roughly 18.5 seconds on the former real-time-only path; exact results vary with host load and guest configuration.
 - **Power Mac Mac OS 8 startup** — the machine uses a CUDA/G3 profile with an original-iMac OpenBIOS identity and classic Mac NVRAM/RTAS services. During CD startup, a read-only Virtio mirror lets the Mac OS 8.5/8.6 ROM read the selected disc before its IDE driver is active; the ordinary IDE CD stays present for Installer and Finder.
 - **Quadra floppy storage** — a removable `virtio-blk-device` rides on the existing classicvirtio NuBus transport. A small extension to the 68k block driver adds writes, flushes, media-change events, and a host/guest eject handshake so Finder owns the unmount before QEMU removes the raw image.
-- **Emulation speed** — both machines run on QEMU's TCG JIT. Performance varies by host CPU; release builds run natively on Intel Mac.
+- **Emulation speed** — both machines run on QEMU's TCG JIT natively on x86_64. On a 2018 Mac mini (Core i7-8700B) the Library's Mac OS 9.2.1 machine cold-boots to the Finder in about 34 seconds and then runs faster than the original hardware.

@@ -1,27 +1,27 @@
-# Copland Activities — 3.2.1 published
+# ClassicMac 4.2.0 — final release checks
 
-ClassicMac [v3.2.1](https://github.com/amcchord/ClassicMac/releases/tag/v3.2.1)
-is public with notarized/stapled DMG and ZIP, corresponding engine source and
-checksums. [PR #21](https://github.com/amcchord/ClassicMac/pull/21) merged as
-`cf39faf566b0325e036acaed45ff365a9f9dfd25`; runtime source is `f3627cd`.
-The root `codex/ipad-parity` checkout remains untouched.
+User authorized native classic Mac OS icons, running-VM Platinum fidelity,
+merge and stable release; specifically requested Mac OS 9 Icon Services/alpha.
+Task worktree native-platinum-icons, branch codex/native-platinum-icons, PR #31.
+Baseline main ecdda03 / stable v4.1.1; unrelated root gxmetal remains untouched.
 
-The mcchord.net catalog selects **Copland D11E4 Activities**, a 512 MiB disk with
-Anarcho text editing, MineSweeper, Solitaire, GXSlidemaster, original experiment
-guides and a notebook. Existing machines and the OS 9 entry are preserved.
-Persistent RTC fixes repeat-boot directory-date assertions; startup Caps Lock
-releases on real input; a narrowly pinned clipboard patch enables text saves.
-Classic app Quit and some Control Panels remain unstable.
+Native Mac OS 9 Icon Services supplies the original colour/alpha families.
+32 native 16/32-pixel strikes export reproducibly; independent decode/alpha
+checks pass. Native Appearance Manager full document frames, toolbar button
+states, held widgets and grow box compare with zero differing pixels at 1×/2×.
+The composed view preserves the grow corner above guest content. Real signed
+Mac screenshots cover SuperDeluxe boot, narrow controls and WindowShade.
 
-110 Swift tests pass, plus actual production import and signed-helper lifecycle
-checks. A saved mixed-case document survived restart; card movement, mine reveal/
-flag/new game, and live graphics slides work. The final public archive booted and
-restarted with zero debugger continuations. Corresponding runtime sources rebuilt.
-A fresh GitHub DMG download passed the full mounted-release/signature checks.
-See `docs/3.2.1-validation.md` and `docs/operations/classicmac-downloads.md` for
-hashes, backups, limitations and rollback. Evidence is under `output/3.2.1`.
+Mac app/DMG signed, notarized, stapled and fully verified. Final native Linux
+39267103833 and Windows 39267099712 both pass boot/display, restart/shutdown
+and actual toolbar geometry. All 54 packaged source/assets match on each.
+Qualified files are staged in a private draft; stable v4.2.0 is not published.
 
-The host was locked, so real guest framebuffer/input and app-manager tests were
-used. Physical macOS 15 execution was not tested. macOS 27's read-only fsck_hfs
-attempt terminated with SIGTRAP; no fsck pass is claimed. All task emulators are
-stopped, no user machines were changed, and no release action remains.
+Reference guest and screenshot guests stopped normally; task source mounts
+detached. Notary private key existed only in a mode-600 temporary file, removed
+after completion. User guests, VMs, worktrees, Library catalog and infrastructure
+remain unchanged.
+
+Next: merge PR #31, consolidated root checks once, tag exact source and publish stable Latest with all ten assets.
+Verify fresh public downloads and merge final release evidence. Retain 4.1.1
+for rollback. See docs/4.2.0-validation.md for current results and scope.

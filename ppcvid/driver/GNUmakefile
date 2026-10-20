@@ -11,9 +11,10 @@ HOST_CC ?= cc
 
 # TYPE_BOOL settles a dispute between MacTypes.h and stdbool.h; the driver
 # sources predate C99 so build them as gnu99.
+# src/GXMetalRegistry.h is the vendored, now dormant GXMetal handoff record
+# (ClassicMac 4.0 has no GXMetal device; see that header).
 CDEFS := -DTYPE_BOOL -Dbool=_Bool -Dtrue=1 -Dfalse=0 -std=gnu99 \
-         -Wall -Wno-multichar -Wno-unused-variable \
-         -I../../gxmetal/guest/include -I../../gxmetal/protocol
+         -Wall -Wno-multichar -Wno-unused-variable
 
 # Uncomment to build with the debug logger (needs a debug console).
 # CDEFS += -DDEBUG_OSI

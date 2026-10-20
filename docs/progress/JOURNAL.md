@@ -298,3 +298,329 @@
 - All task-owned emulators are stopped. User library and root iPad checkout are
   unchanged. Follow-up complete; further OS/control-panel compatibility remains
   experimental, with D7 full boot not yet qualified.
+
+## October 17 — ClassicMac 4.0 Preview 1 (ATI Radeon, Library, Platinum)
+
+- Scope: port RetroBoot's ATI Radeon R100 and drop GXMetal, bring over the
+  Library of OS images, and rebuild the UI in Apple Platinum. Two worktrees:
+  `claude/4.0-engine` (engine agent: GXMetal removal `0004bcd`, ATI with a
+  CGL/OpenGL 4.1 back end and OpenBIOS node `273ebc7`, script overrides
+  `5f2c378`, ClassicMac Display `c5701c9`, faster PPC `74275dd`, harness
+  `90a7e4c`, report `ab0d314`) and `claude/4.0-platinum` (PlatinumKit
+  `f813b2d`, Platinum app/Library/graphics card `8c946a2`, tests `d5b3d4d`,
+  iPad build `f9b09a1`). Integrated on `claude/4.0` (`6b29ac7` onward): ATI
+  launch arguments and 3D status `e143884`, OpenBIOS sound-objects fix
+  `88e9c39` (firmware `f1cd3599…`, built under a temporary Rosetta colima
+  profile that was deleted; the 3.x firmware still reproduces), Iconfactory
+  support `4c220c3`.
+- The user asked to use The Iconfactory's freeware icons. Their license is
+  personal desktop use only, no redistribution, so ClassicMac reads the
+  person's own downloaded collections from Application Support and keeps
+  its MIT icons as the default; nothing Iconfactory is committed.
+- Verification: 117 Swift tests; build gates incl. host GL; Deluxe v6 ATI
+  boots (harness ×2 and bundled-app smoke test with the Cocoa window, 3D on
+  Apple M5 Max, clean app Shut Down); engine evidence in
+  `worktrees/4.0-engine/output/4.0-engine/` and `docs/engine-4.0-ati.md`.
+- Release: 4.0.0 Preview 1 bundled, notarized (app `31625b34…`, DMG
+  `b208a142…`), stapled, `verify-release.sh` passed; DMG SHA-256 `afb6b04a…`.
+  Not published. No production, catalog or GitHub changes; the user's
+  library and machines were not touched (UI runs used a scratch home).
+- Next: user testing of the Preview DMG, then the CPU-commit and publication
+  decisions.
+
+## October 17 — ClassicMac 4.0 Preview 2 (Platinum guest window)
+
+- The user found QEMU's Cocoa guest window (black at boot, OpenBIOS yellow)
+  unacceptable and asked for a Platinum window with a lower toolbar.
+- `claude/4.0-display` (display agent): `-display classicmac`, RetroBoot's
+  presenter backend ported to macOS (stream socket, mmap'd shared buffer,
+  damage tiles, CURSOR/MOUSE) `c00bbc4`, ARGB hardware-cursor fix `efa8f35`.
+  Yellow came only from unpatched firmware; the staged firmware is black on
+  both cards. Merged as `335cc9e`.
+- `claude/4.0`: GuestDisplaySession/GuestScreenView/GuestWindows and the
+  startup curtain `8f55c43`, safe shutdown on Quit `05fe98b`, window-size
+  re-assertion and display refresh `1690b06`, dither margins `485a447`;
+  `verify-release.sh` requires `classicmac` in 4.x.
+- Preview 2 bundled, notarized (app `c39a82ca…`, DMG `c50c13be…`), stapled,
+  verified; DMG SHA-256 `80eabae0…`. Smoke test of the notarized app:
+  Deluxe v6 ATI Finder in the Platinum window, clean shutdown.
+- A parallel VIA-timer session's stress soak briefly saturated the host
+  (36 busy loops); it finished on its own.
+- No pushes, publication or catalog changes; user machines untouched.
+
+## October 18 — startup-race fixes merged; 4.0 to main
+
+- Merged `claude/4.0-via-timers` (VIA timer-2 calibration fixes, `d199dcd`)
+  and the stacked Cuda sync / IDE soft-reset fixes (`392cf73`, branch
+  `claude/charming-blackburn-59de84`) into `claude/4.0` (`a6d171c`;
+  `build-qemu.sh` conflicts resolved by keeping both display and timer
+  sections). All build gates pass, including the new VIA, Cuda and IDE
+  gates; both Macs boot to the Finder through the app's Platinum window.
+- The fix sessions' soaks: 12/12 responsive Finders each for Deluxe ATI,
+  9.2.1 VGA and Deluxe ATI under 36 busy host processes.
+- Screen snapshots were blank because the display slept (display link
+  paused); guest screens now draw their latest frame when visible again.
+- Preview 3 bundle signed; notarization waits for an unlocked session
+  (notary keychain profile unreadable while locked).
+- At the user's request `claude/4.0` was pushed and merged into `main`
+  through a PR; local `main` fast-forwarded. No release published.
+
+## October 18 — 4.0 Preview 3 published as a pre-release
+
+- PR #22 merged into `main` as `6dab4a6` at the user's request; root `main`
+  fast-forwarded (an untracked, ignored-era `gxmetal/` build folder remains
+  locally and was left alone).
+- After the user unlocked the Mac, Preview 3 was notarized (app `4926df73…`,
+  DMG `72576009…`), stapled and verified; the notarized app booted Deluxe v6
+  on the ATI card to the Finder in its Platinum window and shut down cleanly.
+- Published GitHub pre-release `v4.0.0-preview.3` (DMG, ZIP, Copland source,
+  SHA256SUMS). Fresh download: checksum OK, staple valid, Gatekeeper
+  accepted. v3.2.1 stays the latest release; catalog unchanged.
+
+
+## October 18 — stable 4.0.0 artwork and packaging
+
+- User confirmed Iconfactory permission and explicitly authorized a stable
+  release, then a Windows version. Created `codex/4.0-stable-release` under
+  `worktrees/4.0-stable-release`, preserving root untracked gxmetal files.
+- Extracted unmodified icns resources from read-only Downloads DMGs; bundled
+  G4 Side List View, 800/8000 and 7200+series/G3 Desktop, original attribution,
+  licenses/readmes and hashes. Built-ins are default; imports still override.
+- 118 Swift tests pass with three fixture-dependent skips; packaged signature,
+  runtime, artwork, ATI and display checks pass. Disposable Deluxe ATI boot
+  reaches Finder and displays included icons. Evidence `output/4.0.0`.
+- Stable notarization/publication pending existing notary keychain access;
+  user asked to unlock the session/profile. No release/catalog changes yet.
+
+## October 18 — Platinum screenshot audit
+
+- User requested pixel accuracy before wrapping the release. Added a Retro68
+  guest reference utility calling native Appearance Manager; collected raw
+  OS9.2.1 control captures and ten original OS8.1 archive screenshots with
+  source hashes. All VM work used disposable disk copies.
+- `codex/platinum-pixel-audit` corrects system ASCII glyphs/advances, raw gray
+  levels, button/default/checkbox/radio states, paired popup arrows, title-box
+  gradient/widgets, determinate progress and frame details. Window titles now
+  draw through non-antialiased Core Text.
+- Added zero-tolerance image comparisons for 32 states/patterns at both 1×/2×
+  and a 95-glyph atlas/advance test. Whole-app fidelity is not certified;
+  menus, scrollbars, other fonts, SwiftUI text and window states need more
+  coverage. See the audit report and reference lab.
+- Stable release not yet published. Release API credentials verified without
+  exposing or persisting them; the earlier keychain question is obsolete.
+  Windows native build reached packaging, then the real desktop smoke found
+  missing DES cipher support for authenticated VNC; libgcrypt rebuild running.
+
+## October 18 — stable 4.0.0 shipped; native Windows prototype passes
+
+- Merged artwork PR #23 (`7960abd`) and screenshot audit PR #25 (`cee04d0`).
+  Final release source/tag is `cee04d02994314e5345d2f1c6608e4721f580687`.
+  Consolidated integration suite: 122 tests, two fixture-dependent skips,
+  zero failures. Signed package, macOS 15 runtime, ATI/OpenGL and native
+  display reconnect gates pass. Final disposable ATI/Standard Macs boot to
+  Finder with the included icons and finish normal shutdown.
+- App notary `1998d59e-e3e3-4983-8ae5-30ef3bd23b12` and DMG notary
+  `28c34264-d0df-4883-84a1-14a0f2a5d61f` accepted; both stapled. Published
+  v4.0.0 as stable Latest with DMG, ZIP, Copland corresponding source and
+  SHA256SUMS. Fresh public DMG checksum/staple/Gatekeeper/package checks pass.
+  DMG SHA256 `c367d659dc5d412c31550a97d3831426dc33b51a7ecea2aff055dbbe376e18eb`.
+  Previous stable/Preview 3 remain available for rollback; catalog unchanged.
+- Native Windows CI 39143255474 at `3b2d435` passes the packaged-desktop
+  boot/display/pause/resume/reset/reconnect/clean-shutdown smoke. Reviewed the
+  Windows screenshot: OS9 Finder is visible. Explicit libgcrypt fixes VNC
+  authentication; reset-exit handling fixes the Windows lifecycle race.
+  Six JS tests pass; native QEMU devices/optional WGL realization pass.
+- Windows unsigned prototype ZIP retained at `output/windows/2026-10-18/`,
+  SHA256 `ae7b408dbd47472b0e11409a2fed87077e76887d65c13fb61b9a1e4619980db7`.
+  PR #24 remains draft: Copland/catalog/paste/sharing and hardware/audio/game
+  qualification remain. No Windows release was published. Pixel-perfect
+  certification is explicitly limited to the covered Mac components.
+- Release API credentials existed only in a protected temporary file, removed
+  after notarization. Task-mounted source DMGs ejected. User machines and
+  unrelated gxmetal files untouched. Worktrees/evidence preserved.
+
+## October 18 — 4.1.0 cross-platform work authorized
+
+- User asked to use AustinLand/Proxmox for feature parity testing, add Linux,
+  update GitHub screenshots and publish all results as a new release.
+- Reused the contained Windows worktree/PR #24. Renamed the reusable frontend
+  to desktop/, added native Linux QEMU/Electron tar.gz/deb packaging, and
+  started native Linux/Windows CI. Linux compiled both engines and realized
+  EGL/GLES 3.2 with Mesa; a Mac-specific renderer-string assertion needs a
+  Linux API expectation. Windows full build runs.
+- Added the Library downloader (range validation, SHA256, bounded flat-tar
+  extraction and safe import), US/MacRoman paste, Linux 9p sharing and missing
+  media/settings controls. 12 focused tests pass; real-VM tests still pending.
+- Created dedicated Proxmox test VMs 170 (Debian13) and 171 (Win11) on SazProx
+  via AustinLand. Windows creation returned 500 for a start warning despite
+  the VM running; inspected before retrying, completed post-setup through
+  the existing AustinLand helper, avoiding a duplicate VM. Secrets are never
+  logged or committed. Unrelated VMs/templates and user machines untouched.
+
+## October 18 — 4.1 real-host qualification and restart correction
+
+- Dedicated AustinLand/Proxmox Debian13 and Windows11 hosts imported the real
+  current 32GB Library archive with interrupted/resumed download, exact size,
+  SHA256 and bounded extraction. Final native OS9 input probe shows ASCII and
+  accented MacRoman text; Linux reads a host file and writes a verified reply.
+  Both hosts boot Quadra/MacOS8.1 CD and complete normal shutdown.
+- Real tests found QEMU's System32/en-US keyboard-map collision, early QMP
+  commands during restart, and hard resets leaving HFS dirty. Fixed runtime
+  CWD and readiness; desktop Restart now completes guest shutdown before
+  relaunch. Final runs require actual menu-title pixels and finish without
+  dismissing a disk-check dialog. Strict CI caught an empty startup menu being
+  misclassified; its detector now excludes borders, Apple icon and clock.
+- Mac 4.1 metadata/notices build signed/notarized; app notary
+  19512f97-9c95-425a-8f82-8e24ea2d6bda and DMG notary
+  70419b9f-a438-4773-b705-42dd68036c67 accepted. Package, Gatekeeper, ATI and
+  native display reconnect gates pass. Refreshed direct Mac screenshots.
+- Final packaged CI and integration/publication pending. No new stable tag
+  published in this entry. VM secrets remain in protected ignored output;
+  no unrelated VM, template or user machine changed.
+
+## October 18 — 4.1.0 stable release published and verified
+
+- Merged PR #24 as a6922db and tagged that exact source v4.1.0. Main-checkout
+  consolidation passes 122 Swift tests (two Copland fixture skips) and all
+  12 Node tests. Native Windows 39158984879 and Linux 39158930105 pass strict
+  Finder/clean-restart/shutdown package gates; captures reviewed.
+- The exact CI Windows ZIP and Linux DEB were installed/run again on the
+  dedicated Proxmox hosts. Final extended checks pass, including native
+  accented input and Linux host-read/guest-write 9p. Reports retained in
+  docs/evidence/4.1.0; fresh direct screenshots are on main.
+- Published GitHub v4.1.0 as stable Latest with all three host platforms,
+  corresponding QEMU/Copland source and SHA256SUMS (ten assets). Fresh public
+  downloads match all nine archive hashes. The public Mac DMG again passes
+  staple/Gatekeeper/release verification. SHA256
+  3d2b266b66d57c0b467c788e320cf2d0248a335c5927c56fac8ba3fe9eacef8c.
+- Windows test auto-login disabled and its registry password removed. QA
+  host shutdown requested; VMs retained, not deleted. Notary API key existed
+  only in a protected temporary file and was removed after use. Prior release
+  assets and Library catalog remain unchanged; no unrelated systems touched.
+- Remaining measured limits: unsigned Windows, Mac-only Copland, no Windows
+  9p backend, physical GPU/audio/game and Internet tests outside VM proof;
+  whole-app/CSS pixel fidelity remains outside the component audit. No pending
+  release action. See docs/4.1.0-validation.md for source, gates and rollback.
+
+
+## 2026-10-19 — Quake III input and cinematic fixes, release qualification
+
+Task branch `codex/q3-input-cinematic`, PR #28, implementation `2d01ad2`,
+Windows source-line-ending/test follow-ups `b240a16`, `892b1d0`. User confirmed
+macOS and authorized a new stable release. Baseline is main `11a4c61` and stable
+v4.1.0. Root's unrelated gxmetal work and the user's running guest are preserved.
+
+A verified fresh public SuperDeluxe v2 fixture reproduced missing mouse input.
+Standard USB HID fixes InputSprocket without guest changes. ATI's driver parks
+its enabled cursor offscreen, so routing includes cursor position and restores
+Finder's tablet on exit. Native trackpad motion preserves fractional deltas;
+Mac/browser/desktop game buttons bypass Finder helpers and capture is exposed.
+
+The intro's ~3 fps was isolated to the Mac OpenGL glFinish retry loop, not host
+GPU throughput. GDB-timed finishes take ~150 ms with WAIT_UNTIL zero. Changing
+only its idle-clean mask to 0x30000 restores 30 uploads/s in the same guest;
+clearing it restores the slowdown. Radeon reset/handoff now initializes that
+mask. Sound restart was a confounded diagnostic because it reinitializes video.
+No guest code or preferences are patched. Unsuccessful CPU nap, input heartbeat,
+Cuda, sample-clock-only and WAIT-zero experiments were removed.
+
+Pinned upstream Screamer patches separately correct codec volume order, paced
+DMA/continuous clock, buffer lead and interrupt separation. Actual-device
+synthetic checks pass: clock-paused halves remain pending, stamps differ by
+512 frames, half completions are separate, sample rate stays within 0.5%, and
+unserviced interrupts apply bounded backpressure. Independent QEMU preparation
+and native display/GL gates pass. Signed Mac package passes fresh first intro
+(203 uploads/8s), replay (183/6s), menu click, camera, fire and seamless Finder
+return; WAV qualification has 481 active 10 ms soundtrack bins. Detailed local
+artifacts stay under ignored output/4.1.1; guest media/audio are not release assets.
+
+Packaging/notarization and native Windows/Linux CI are in progress. First
+Windows attempt failed before compilation because copied Screamer sources had
+CRLF; .gitattributes now preserves their LF bytes. Dedicated existing Proxmox
+QA VMs were started for package tests; Windows QA auto-login must be removed
+afterward. No release/tag has been published. Next: finish packages/QA, merge,
+consolidated root checks, publish and verify stable 4.1.1. Retain 4.1.0 for rollback.
+
+## 2026-10-19 — 4.1.1 stable release published and verified
+
+- Merged Quake III fixes in PR #28 (`daf8c31`) and desktop capture/focus follow-up
+  PR #29. Stable tag `v4.1.1` points to source
+  `dfdf4c1ad2b7206b385c1b787d72aa9af5385c2b`. Final native packaged CI used
+  `ff49110` with the identical source tree
+  `8ed4cfc21d1aefef83bc78b6a5a66350dc2817d3`.
+- Root integration validation passes 125 Swift tests (two optional Copland
+  fixture skips) and 12 desktop tests. Capture focus passes syntax and desktop
+  checks after integration. Native Linux 39247028650 and Windows 39247576540
+  both pass packaged CI; exact final DEB/ZIP also pass dedicated Proxmox
+  create/import/config, boot/display, pause/resume, restart/new-engine/reconnect,
+  native paste and normal shutdown. Linux additionally passes 9p host read and
+  guest write. Source freshness and engine hashes match the final archives.
+- Signed Mac package passes fresh SuperDeluxe first launch (203 uploads/8 s),
+  replay (183/6 s), menu motion/click, camera/fire and Finder restoration.
+  Separate soundtrack WAV and actual-device synthetic Screamer DMA checks
+  pass. Input was simulated through the native protocol; physical trackpad and
+  speaker recording were not exercised. No guest disk/software changes ship.
+- App notary `ad6f8966-8246-475d-a34d-55592f0bd221` and DMG notary
+  `13701bca-7b81-46b6-b7a8-3fea5e7dc1c8` accepted. Signatures, staples,
+  Gatekeeper, macOS 15 library deployment targets and full package verification
+  pass. Protected temporary notarization credentials were removed after use.
+- Published stable Latest v4.1.1 with all ten assets. Fresh anonymous downloads
+  match all nine archive SHA256 values; public API confirms neither draft nor
+  prerelease. DMG SHA256:
+  `55149b6a260762596a338386a832d3726e4f0a14c3782275a5e392ecdad1404b`.
+  Public DMG staple and Gatekeeper checks pass. Reports, source links, exact
+  manifest and cleanup state are in `docs/4.1.1-validation.md` and
+  `docs/evidence/4.1.1/`.
+- QA VMs 170/171 are verified stopped and retained. Windows auto-login disabled,
+  stored registry password removed, scheduled test task unregistered. Read-only
+  SuperDeluxe source mount detached. User gxmetal work, running guest and
+  unrelated worktrees preserved. No catalog, DNS or Apache changes.
+- Stable v4.1.0 assets remain for rollback; promote it with
+  `gh release edit v4.1.0 --latest` and record the reason in 4.1.1 notes.
+  No pending release action. Retain task worktree and ignored qualification
+  output for support; physical Windows/Linux GPU/audio testing remains outside
+  VM qualification, Windows remains unsigned and Copland remains Mac-only.
+
+## 2026-10-19 — native Mac OS 9 icons and VM frame qualification
+
+- User authorized original system icons, running-VM Platinum fidelity, merge
+  and a new stable release; then requested Mac OS 9 Icon Services/alpha.
+  Contained branch codex/native-platinum-icons starts at ecdda03. Root gxmetal
+  work, user machines and other worktrees are preserved.
+- Native Icon Services in a disposable public OS9 fixture exports the original
+  small/large families through GetIconRef/IconRefToIconFamily. This supplies
+  32-bit colour and 8-bit alpha absent from flat System resources. Added
+  original resources for remaining artwork. Source/family/member hashes and
+  copyright distinguish Apple assets from MIT drawings and Iconfactory art.
+  32 strikes export deterministically; independent ICNS decode/alpha checks pass.
+- Extended the guest Appearance Manager lab to capture whole document frames,
+  native small bevel buttons and held widgets. Corrected top/content offset,
+  stripe/box positions, shadow ends, inactive palette, held feedback and the
+  diagonal grow corner, including its notch and visibility above guest content.
+  New full-frame/control comparisons pass at 1×/2× with zero differing pixels;
+  original component/font gates still pass. Owning-window/application focus
+  controls active state. Narrow VM controls use a compact icon layout.
+- Signed Mac package boots a private SuperDeluxe clone to the Finder with
+  native toolbar/Media icons. Native Windows/Linux builds run; Linux packaged
+  CI 39263262485 passes. Mac notarization and additional narrow/WindowShade
+  screenshots are in progress. No stable release/tag is published yet; a
+  hidden draft stages unchanged matching engine sources. 4.1.1 is retained
+  for rollback. No production catalog, DNS or Apache changes.
+- The diagnostic reference guest was normally shut down; source mounts are
+  detached. Temporary notarization credentials are obtained from AustinLand
+  into a mode-600 temporary file and removed by the wrapper on completion.
+
+## 2026-10-19 — 4.2 package and layout gates complete
+
+- Final desktop source 2e86a5c; native Windows 39267099712 and Linux 39267103833
+  pass packaged boot/display, pause/resume, restart and clean shutdown. New
+  geometry checks require one-line labels, horizontal fit and toolbar visibility.
+  They caught Windows clamping the window to a small host work area; reserving
+  preview space and wrapping whole controls fixes the actual captured layout.
+- Every packaged source/UI asset (54 per platform) matches the branch; native
+  icon attribution/provenance and qualified Tools CD match too. Refreshed both
+  desktop screenshots. Mac source tree 1ef81587d51e8beebac6ff06f9600e221b3feba6
+  is unchanged after signing/notarization and real SuperDeluxe/WindowShade checks.
+- Private draft 417348832 stages qualified assets. No public tag/release yet.
+  Next: merge PR #31, consolidated integration tests, tag/publish stable Latest,
+  fresh anonymous download verification and final release evidence.

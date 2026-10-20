@@ -22,8 +22,8 @@ QEMU emulator as a whole is licensed under the GNU General Public License,
 version 2. Individual source and firmware files may carry compatible licenses,
 as described by QEMU's `LICENSE` file and their source headers.
 
-The exact corresponding source is reproducible from the ClassicMac 3.2.0
-source at <https://github.com/amcchord/ClassicMac/tree/v3.2.0>. The repository's
+The exact corresponding source is reproducible from the ClassicMac 4.2.0
+source at <https://github.com/amcchord/ClassicMac/tree/v4.2.0>. The repository's
 `scripts/build-qemu.sh` retrieves the pinned upstream QEMU 11.0.2 source and
 applies every ClassicMac modification stored in the repository.
 
@@ -49,11 +49,8 @@ linked libraries:
 - PCRE2 — BSD-3-Clause
 
 Their license texts are copied from the exact Homebrew installations used to
-produce the release when the formula installs them. For standardized licenses
-that a formula omits from its keg (currently libusb's LGPL-2.1 text), the
-bundle uses the same canonical license text already carried by another bundled
-upstream component. Source code is available from each project's upstream site
-and through Homebrew's corresponding formula source archives.
+produce the release. Source code is available from each project's upstream
+site and through Homebrew's corresponding formula source archives.
 
 ## noVNC
 
@@ -90,3 +87,59 @@ under `Contents/Resources/Licenses`. The corresponding DingusPPC, SDL2 and pinne
 submodule sources are supplied in the Copland source archive beside the release;
 ClassicMac's own source and build patches are in the release's tagged repository.
 Apple's guest software and ROM are separate from these open-source components.
+
+## The Iconfactory
+
+The bundled classic Macintosh machine icons are copyright The Iconfactory,
+Inc. and are included under separate permission confirmed by Austin McChord
+on October 18, 2026. The G4 Side List View is from G4 v2; the 800/8000 series
+and 7200+series/G3 Desktop icons are from the Apple Desktop Collection.
+The original, unmodified icns resources, collection licenses and readmes
+are in `Resources/Iconfactory`. This permission does not relicense the
+artwork or grant downstream redistribution rights.
+
+Artist and collections: <https://freeware.iconfactory.com>
+
+## Platinum appearance
+
+PlatinumKit includes MIT-licensed fonts, icons and control tables shared
+with RetroBoot. Their notices are in `platinum/fonts/LICENSE-fonts.txt`
+and `platinum/icons/LICENSE-icons.txt`. System 12 printable ASCII uses the
+M5Tab-Macintosh screenshot-traced pixel recreation; the original Apple font
+program is not included. Iconfactory artwork has its own
+terms as described above.
+
+## Windows and Linux desktop distributions
+
+The shared desktop front end uses Electron (MIT), Chromium and Node.js.
+Their license notices and Electron's third-party license inventory accompany
+its runtime. QEMU corresponding-source archives accompany each platform's
+release. The Windows runtime stages its MSYS2 dependency license notices;
+the Linux runtime includes distribution copyright notices for its copied
+shared libraries. Linux glibc, graphics/audio drivers and EGL/GLES libraries
+are supplied by the host distribution. Linux builds target Ubuntu 24.04's
+glibc baseline; the Linux ATI backend uses EGL and OpenGL ES 3.
+
+Upstream Electron: <https://github.com/electron/electron>
+Upstream Node.js: <https://github.com/nodejs/node>
+Distribution library sources are available from the matching Ubuntu/MSYS2
+source-package repositories, identified by the bundled notices. Contact the
+ClassicMac maintainer for the corresponding library sources under the terms
+of those licenses. The application contains no additional guest OS disk.
+
+## RetroBoot Power Mac sound timing
+
+The Screamer timing patches in `screamer/patches/` and their device-level test
+are from RetroBoot commit `1860881266449ca2575061e0bd4055c1265cf217`.
+The patches are GPL-2.0-or-later, matching the modified QEMU integration.
+Original source notices are retained; provenance and hashes are in
+`screamer/README.md`. Corresponding prepared engine sources accompany releases.
+
+## Original Mac OS icons
+
+The CD, floppy, folder, clipboard, display, alert and other system artwork
+identified in `platinum/macos-icons/manifest.json` is copyright Apple Computer,
+Inc. Original Mac OS 9 resource members are preserved, including native
+32-bit colour and 8-bit alpha masks where available. These assets are separate
+from the MIT-licensed Platinum drawings and Iconfactory artwork. Provenance
+and attribution accompany every desktop package in its Licenses directory.

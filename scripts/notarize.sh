@@ -14,18 +14,23 @@
 #         --apple-id <apple-id> --team-id <team-id> --password <app-password>
 #
 # Idempotent: safe to re-run; the zip is rebuilt and the app re-stapled.
+#
+# Environment overrides (defaults unchanged): DIST_DIR (default dist/, holding
+# ClassicMac.app) and DIST_NAME (default ClassicMac: DIST_DIR/DIST_NAME.zip).
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="$ROOT_DIR/dist/ClassicMac.app"
-ZIP="$ROOT_DIR/dist/ClassicMac.zip"
+DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
+DIST_NAME="${DIST_NAME:-ClassicMac}"
+APP="$DIST_DIR/ClassicMac.app"
+ZIP="$DIST_DIR/$DIST_NAME.zip"
 PROFILE="${NOTARY_PROFILE:-classicmac-notary}"
 
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
-[ -d "$APP" ] || die "dist/ClassicMac.app not found. Run scripts/bundle-qemu.sh first."
+[ -d "$APP" ] || die "$APP not found. Run scripts/bundle-qemu.sh first."
 
 # Notary credentials: use an explicitly supplied API key first, then the
 # keychain profile, then Apple ID credentials. This keeps automation from
