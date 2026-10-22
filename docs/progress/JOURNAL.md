@@ -801,3 +801,17 @@ consolidated root checks, publish and verify stable 4.1.1. Retain 4.1.0 for roll
   NDRV and no retired transport files. Current public Deluxe/SuperDeluxe
   disks have no retired files. Removed five now-unused GXMetal screenshots.
   Final Windows 39814128066 checks remain pending; no public 4.4 tag/release.
+
+## 2026-10-22 — native Windows gates pass; release scope frozen
+
+- Final native Windows 39814128066 at 92b977d passes all 21 desktop tests,
+  packaged standard-card boot/pause/restart/reconnect/normal shutdown/toolbar
+  checks and both first-run routes. Real public ATI v4 download supports
+  pause/resume, verifies/imports, reaches first Finder boot and shuts down
+  normally. Completed logs and uploaded reports prove the results despite
+  stale GitHub status projections. Native Linux gates also pass.
+- Both packaged source/UI trees and NDRV match; all nine archives are staged
+  with corresponding prepared source. Mac signatures/notarization/staples,
+  final native wizard/import/Finder/clean shutdown and exact verifier pass.
+  Next: PR #34 integration, consolidated root validation, tag/publish stable
+  Latest 4.4.0, then fresh anonymous verification. No public 4.4 release yet.
