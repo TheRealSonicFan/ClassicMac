@@ -13,17 +13,32 @@ async function availablePort() {
   return port;
 }
 class Engine extends EventEmitter {
-  constructor(machine, resources, binary) {
+  constructor(machine, resources, binary, launchProcess = spawn) {
     super(); this.machine = machine; this.resources = resources; this.binary = binary;
+    this.launchProcess = launchProcess;
     this.pending = new Map(); this.sequence = 0; this.paused = false; this.log = ''; this.stopping = false;
   }
   async start() {
+    this.starting = true;
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        this.exited = false; this.log = ''; this.initialized = false;
+        try { return await this.launch(); }
+        catch (error) {
+          // A port can be claimed between the availability probe and QEMU's
+          // bind. Retry only that pre-boot failure, with fresh display ports.
+          if (attempt === 2 || !/Failed to find an available port: Address already in use/.test(this.log)) throw error;
+        }
+      }
+    } finally { this.starting = false; }
+  }
+  async launch() {
     this.endpoint = { vncPort: await availablePort(), webSocketPort: await availablePort() };
     this.password = randomBytes(6).toString('base64').slice(0, 8);
     const args = argumentsFor(this.machine, this.resources, this.endpoint).map(value =>
       process.env.CLASSICMAC_TEST_HOME && process.env.CLASSICMAC_TEST_TOOLS_IMAGE
         ? value.replace(require('node:path').join(this.resources,'ClassicMacTools.iso'), process.env.CLASSICMAC_TEST_TOOLS_IMAGE) : value);
-    this.child = spawn(this.binary, args, { cwd: require('node:path').join(this.resources, 'bin'), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    this.child = this.launchProcess(this.binary, args, { cwd: require('node:path').join(this.resources, 'bin'), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const ready = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('The emulation engine did not start. ' + this.log)), 15000);
       this.once('ready', () => { clearTimeout(timer); resolve(); });
@@ -53,14 +68,20 @@ class Engine extends EventEmitter {
       for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('The Mac has stopped. ' + JSON.stringify({ code, signal, reason: this.shutdownReason }) + ' ' + this.log)); }
       this.pending.clear();
       if (process.env.CLASSICMAC_TEST_HOME) console.error('Engine exit', JSON.stringify({ code, signal, reason: this.shutdownReason, log: this.log }));
-      this.emit('exit', { code, signal, restart: (this.restarting && this.shutdownReason === 'guest-shutdown') || (!this.stopping && ['guest-reset', 'host-qmp-system-reset'].includes(this.shutdownReason)) });
+      if (!this.starting) this.emit('exit', { code, signal, restart: (this.restarting && this.shutdownReason === 'guest-shutdown') || (!this.stopping && ['guest-reset', 'host-qmp-system-reset'].includes(this.shutdownReason)) });
     });
     try {
       await ready;
       await this.command('qmp_capabilities');
       await this.command('set_password', { protocol: 'vnc', password: this.password });
       this.initialized = true;
-    } catch (error) { this.child.kill(); throw error; }
+    } catch (error) {
+      if (!this.exited) {
+        const closed = new Promise(resolve => this.child.once('close', resolve));
+        this.child.kill(); await closed;
+      }
+      throw error;
+    }
     return { ...this.endpoint, password: this.password };
   }
   command(execute, args = {}) {
