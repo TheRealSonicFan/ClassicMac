@@ -1,0 +1,125 @@
+{
+  "id": 420962069,
+  "tag_name": "v4.4.0",
+  "draft": false,
+  "prerelease": false,
+  "html_url": "https://github.com/amcchord/ClassicMac/releases/tag/v4.4.0",
+  "published_at": "2026-10-22T16:43:25Z",
+  "target_commitish": "15240410d2164a69f6af35765cf27ff102ae318d",
+  "assets": [
+    {
+      "name": "ClassicMac-4.4.0-linux-amd64.deb",
+      "size": 119650572,
+      "digest": "sha256:0cd508acd0da20c4be740193646c0c5733d9c49e9689d666fe10e52b992d29ac",
+      "browser_download_url": "https://github.com/amcchord/ClassicMac/releases/download/v4.4.0/ClassicMac-4.4.0-linux-amd64.deb"
+    },
+    {
+      "name": "ClassicMac-4.4.0-linux-x64.tar.gz",
+      "size": 141330770,
+      "digest": "sha256:4a855ddcd08972bab3d7dae70ca9f3832dcad0bb108a840bd6e38afc2b448443",
+      "browser_download_url": "https://github.com/amcchord/ClassicMac/releases/download/v4.4.0/ClassicMac-4.4.0-linux-x64.tar.gz"
+    },
+    {
+      "name": "ClassicMac-4.4.0-win-x64.zip",
+      "size": 174276785,
+      "digest": "sha256:2190651e6065eb8931ff87a4cf9287709cd92e8c2fdfcd548365fff66ddf714a",
+      "browser_download_url": "https://github.com/amcchord/ClassicMac/releases/download/v4.4.0/ClassicMac-4.4.0-win-x64.zip"
+    },
+    {
+      "name": "ClassicMac-4.4.0.dmg",
+      "size": 47872176,
+      "digest": "sha256:2c0ce8cae79f1d3c04e52ac639c953621aef4d0e822fb047b3da2dff267d7671",
+      "browser_download_url": "https://github.com/amcchord/ClassicMac/releases/download/v4.4.0/ClassicMac-4.4.0.dmg"
+    },
+    {
+      "name": "ClassicMac-4.4.0.zip",
+      "size": 42513017,
+      "digest": "sha256:74fdd98ffddf0dced956a524547c6e5715898158551971f4e3b7fd41175bfbba",
+      "browser_download_url": "https://github.com/amcchord/ClassicMac/releases/download/v4.4.0/ClassicMac-4.4.0.zip"
+    },
+    {
+      "name": "ClassicMac-Copland-source.tar.gz",
+      "size": 16898942,
+      "digest": "sha256:4dc2545d184c8898338be726ad6e9521f4a8bae2ec48859d2996adb46e0f164b",
+      "browser_download_url": "https://github.com/amcchord/ClassicMac/releases/download/v4.4.0/ClassicMac-Copland-source.tar.gz"
+    },
+    {
+      "name": "ClassicMac-Linux-QEMU-source.tar.gz",
+      "size": 42348552,
+      "digest": "sha256:8063316c2ec574b1ed9754659f866561c89105cfecbc03eb5d7df6a9f2f1aa12",
+      "browser_download_url": "https://github.com/amcchord/ClassicMac/releases/download/v4.4.0/ClassicMac-Linux-QEMU-source.tar.gz"
+    },
+    {
+      "name": "ClassicMac-macOS-QEMU-source.tar.gz",
+      "size": 42048721,
+      "digest": "sha256:9e4834516f9252c939420634b747e805178c75999b56302ee1f9d0334bf13e6b",
+      "browser_download_url": "https://github.com/amcchord/ClassicMac/releases/download/v4.4.0/ClassicMac-macOS-QEMU-source.tar.gz"
+    },
+    {
+      "name": "ClassicMac-Windows-QEMU-source.tar.gz",
+      "size": 41535953,
+      "digest": "sha256:e671b44bd04fb9a3d46b61ff65aa4f320a1a2b44c73733808ca3bf8f3ca1a93a",
+      "browser_download_url": "https://github.com/amcchord/ClassicMac/releases/download/v4.4.0/ClassicMac-Windows-QEMU-source.tar.gz"
+    },
+    {
+      "name": "SHA256SUMS",
+      "size": 875,
+      "digest": "sha256:2a9f8e41c9965704194e82113f4d6e5704815eec42c2208a01dfbbcfcf6272b1",
+      "browser_download_url": "https://github.com/amcchord/ClassicMac/releases/download/v4.4.0/SHA256SUMS"
+    }
+  ],
+  "verification": {
+    "anonymous_fresh_downloads": true,
+    "all_nine_archive_sha256_match": true,
+    "manifest_matches_qualified_files": true,
+    "archives": [
+      {
+        "name": "ClassicMac-4.4.0-linux-amd64.deb",
+        "bytes": 119650572,
+        "sha256": "0cd508acd0da20c4be740193646c0c5733d9c49e9689d666fe10e52b992d29ac"
+      },
+      {
+        "name": "ClassicMac-4.4.0-linux-x64.tar.gz",
+        "bytes": 141330770,
+        "sha256": "4a855ddcd08972bab3d7dae70ca9f3832dcad0bb108a840bd6e38afc2b448443"
+      },
+      {
+        "name": "ClassicMac-4.4.0-win-x64.zip",
+        "bytes": 174276785,
+        "sha256": "2190651e6065eb8931ff87a4cf9287709cd92e8c2fdfcd548365fff66ddf714a"
+      },
+      {
+        "name": "ClassicMac-4.4.0.dmg",
+        "bytes": 47872176,
+        "sha256": "2c0ce8cae79f1d3c04e52ac639c953621aef4d0e822fb047b3da2dff267d7671"
+      },
+      {
+        "name": "ClassicMac-4.4.0.zip",
+        "bytes": 42513017,
+        "sha256": "74fdd98ffddf0dced956a524547c6e5715898158551971f4e3b7fd41175bfbba"
+      },
+      {
+        "name": "ClassicMac-Copland-source.tar.gz",
+        "bytes": 16898942,
+        "sha256": "4dc2545d184c8898338be726ad6e9521f4a8bae2ec48859d2996adb46e0f164b"
+      },
+      {
+        "name": "ClassicMac-Linux-QEMU-source.tar.gz",
+        "bytes": 42348552,
+        "sha256": "8063316c2ec574b1ed9754659f866561c89105cfecbc03eb5d7df6a9f2f1aa12"
+      },
+      {
+        "name": "ClassicMac-Windows-QEMU-source.tar.gz",
+        "bytes": 41535953,
+        "sha256": "e671b44bd04fb9a3d46b61ff65aa4f320a1a2b44c73733808ca3bf8f3ca1a93a"
+      },
+      {
+        "name": "ClassicMac-macOS-QEMU-source.tar.gz",
+        "bytes": 42048721,
+        "sha256": "9e4834516f9252c939420634b747e805178c75999b56302ee1f9d0334bf13e6b"
+      }
+    ],
+    "public_mac_dmg_full_verifier": true,
+    "public_mac_dmg_gatekeeper_and_staples": true
+  }
+}

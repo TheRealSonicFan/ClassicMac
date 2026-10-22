@@ -815,3 +815,36 @@ consolidated root checks, publish and verify stable 4.1.1. Retain 4.1.0 for roll
   final native wizard/import/Finder/clean shutdown and exact verifier pass.
   Next: PR #34 integration, consolidated root validation, tag/publish stable
   Latest 4.4.0, then fresh anonymous verification. No public 4.4 release yet.
+
+## 2026-10-22 — ClassicMac 4.4.0 stable release published and verified
+
+- Merged PR #34 as 15240410d2164a69f6af35765cf27ff102ae318d and tagged that
+  exact source v4.4.0. The merge tree exactly matches the qualified branch.
+  Consolidated root validation passes 131 Swift tests (two optional Copland
+  fixture skips), all 21 desktop tests with signed qemu-img, 15 Python tests
+  and both NDRV mode/gamma contracts. Sources are unchanged after these gates.
+- Native Windows 39814128066 / Linux 39813549507 at 92b977d pass both setup
+  routes, real public ATI v4 download/pause/resume/hash/import/first Finder
+  boot/normal shutdown, and standard-card boot/restart/reconnect/layout checks.
+  Completed logs/reports are authoritative during stale GitHub projections.
+  All 57 source/UI assets and NDRV match; Linux DEB/TAR ASARs match. All three
+  prepared QEMU source archives include current NDRV and no retired files.
+- Final notarized Mac app natively downloads/imports public v4, reaches Finder
+  without a disk-check dialog, reports host ATI 3D and mounts Tools. Normal
+  toolbar shutdown after Finder settles exits with HFS+ marked clean.
+  All four Mac engine code images match public 4.3.0. Final app notary
+  e4fef133-0d11-4792-b1b6-a137980e6e97 and DMG notary
+  7d290755-da73-449e-83ea-eed41b9cd515 are Accepted; signatures/staples,
+  Gatekeeper and exact verification pass.
+- Published stable Latest v4.4.0 with all ten assets. All nine fresh anonymous
+  downloads match the public manifest; public API confirms neither draft nor
+  prerelease. Downloaded DMG passes full verification, Gatekeeper and staples.
+  DMG SHA256: 2c0ce8cae79f1d3c04e52ac639c953621aef4d0e822fb047b3da2dff267d7671.
+- Qualified clean image v4, catalog hashes/backups, withdrawal of the initial
+  v3 candidate and edition audits are recorded in docs/evidence/4.4.0. No
+  existing user machine or historical immutable archive was overwritten.
+  No DNS/configuration change or service restart. Task guests are stopped and
+  mounts detached; no temporary private key was created. User local build
+  artifacts and unrelated worktrees are preserved; task checkout/output are
+  retained for support. No pending release action. Rollback retains v4.3.0
+  plus the checked original catalog; promotion changes no installed machine.

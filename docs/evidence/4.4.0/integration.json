@@ -1,0 +1,26 @@
+{
+  "source": "15240410d2164a69f6af35765cf27ff102ae318d",
+  "checkout": "project root control checkout",
+  "swift": {
+    "tests": 131,
+    "skips": 2,
+    "failures": 0,
+    "skips_reason": "Optional Copland lifecycle/archive fixtures unavailable"
+  },
+  "desktop": {
+    "tests": 21,
+    "skips": 0,
+    "failures": 0,
+    "image_tool": "Real signed 4.4.0 bundled qemu-img"
+  },
+  "python": {
+    "tests": 15,
+    "failures": 0
+  },
+  "ndrv": {
+    "mode_contract": "pass",
+    "gamma_contract": "pass"
+  },
+  "app_tree": "ea1be6e285b9be703e893a8160574b34ba1823cd",
+  "desktop_tree": "c52eeb4f94842f9291fda55021b4917b35c4b2ec"
+}
