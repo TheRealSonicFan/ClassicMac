@@ -72,6 +72,8 @@ jobs:
           sudo chmod 4755 output/desktop/packages/linux-unpacked/chrome-sandbox
       - name: Smoke test packaged Linux application
         run: xvfb-run -a node desktop/tests/smoke-desktop.cjs output/desktop/packages/linux-unpacked/classicmac output/desktop/smoke
+      - name: Test first-run setup through the packaged application
+        run: xvfb-run -a node desktop/tests/setup-smoke.cjs output/desktop/packages/linux-unpacked/classicmac output/desktop/setup-smoke
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -80,4 +82,7 @@ jobs:
             output/desktop/smoke/desktop.png*
             output/desktop/smoke/desktop.log
             output/desktop/smoke/isolated-home/guest.ppm
+            output/desktop/setup-smoke/*/*.png
+            output/desktop/setup-smoke/*/*.json
+            output/desktop/setup-smoke/*/desktop.log
           retention-days: 30

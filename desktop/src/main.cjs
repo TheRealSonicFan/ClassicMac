@@ -234,6 +234,11 @@ async function serve() {
 if (process.env.CLASSICMAC_TEST_HOME) app.setPath('userData', process.env.CLASSICMAC_TEST_HOME);
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.whenReady().then(async () => {
+  if (process.env.CLASSICMAC_TEST_SETUP) {
+    if (!process.env.CLASSICMAC_TEST_HOME) throw new Error('Setup qualification requires an isolated home.');
+    const documents = path.join(app.getPath('userData'), 'Documents');
+    await fs.mkdir(documents, { recursive: true }); app.setPath('documents', documents);
+  }
   await fs.mkdir(app.getPath('userData'), { recursive: true });
   let folders = [];
   try { folders = JSON.parse(await fs.readFile(indexFile(), 'utf8')); } catch { /* First launch. */ }
@@ -257,6 +262,10 @@ else app.whenReady().then(async () => {
   });
   app.on('second-instance', () => { window.show(); window.focus(); });
   await window.loadURL(`${origin}/${token}/index.html`);
+  if (process.env.CLASSICMAC_TEST_SETUP) {
+    await require('./setup-qualification.cjs').qualify({ window, dialog, engines, home: app.getPath('userData'), route: process.env.CLASSICMAC_TEST_SETUP });
+    app.quit(); return;
+  }
   if (process.env.CLASSICMAC_TEST_START) await start(process.env.CLASSICMAC_TEST_START);
   if (process.env.CLASSICMAC_TEST_CYCLE && process.env.CLASSICMAC_TEST_START) {
     const id = process.env.CLASSICMAC_TEST_START, engine = engines.get(id);
