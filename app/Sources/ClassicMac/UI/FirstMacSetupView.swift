@@ -10,6 +10,7 @@ struct FirstMacSetupView: View {
     enum Source: Hashable { case download, installer }
 
     let onFinish: () -> Void
+    @ObservedObject private var store = VMStore.shared
     @StateObject private var download = MachineDownloadModel()
     @State private var step = Step.welcome
     @State private var source = Source.download
@@ -68,6 +69,15 @@ struct FirstMacSetupView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onChange(of: selected?.id) { _, _ in
             if let selected { name = selected.title }
+        }
+        .onChange(of: store.vms.map(\.id)) { _, _ in
+            // File > Open and Finder opens can arrive while setup is showing.
+            // Creation/download callbacks set their own ready screen first.
+            guard created == nil, !busy,
+                  let vm = store.vms.first(where: { $0.id == store.selectedID }) else { return }
+            source = .download
+            created = vm
+            step = .ready
         }
         .task(id: directory) {
             AppPaths.ensureDirectory(directory)
