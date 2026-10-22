@@ -94,20 +94,19 @@ def main():
     parser.add_argument("--output", type=Path, required=True, help="New .tar.gz archive")
     parser.add_argument("--catalog-output", type=Path, required=True, help="New catalog JSON")
     parser.add_argument("--archive-url", type=secure_url, required=True)
-    parser.add_argument("--id", required=True, help="Immutable template version, e.g. mac-os-9.2.1-gxmetal-2.3.0-v1")
+    parser.add_argument("--id", required=True, help="Immutable template version, e.g. mac-os-9.2.1-ati-32gb-v3")
     parser.add_argument("--name", default="Mac OS 9")
     parser.add_argument("--summary")
     parser.add_argument("--os-version", required=True)
-    parser.add_argument("--gxmetal-version", required=True)
-    parser.add_argument("--minimum-app-version", default="3.0.0")
+    parser.add_argument("--minimum-app-version", default="4.4.0")
     parser.add_argument("--include-preview", action="store_true", help="Include the scrubbed machine's preview.png")
     args = parser.parse_args()
-    args.summary = args.summary or f"{args.os_version} with GXMetal installed and ready to start."
+    args.summary = args.summary or f"{args.os_version} ready to start."
     if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,99}", args.id):
         parser.error("id must be 1–100 lowercase letters, digits, dots, hyphens, or underscores")
     if not re.fullmatch(r"[0-9]{1,6}\.[0-9]{1,6}(\.[0-9]{1,6})?", args.minimum_app_version):
         parser.error("minimum-app-version must be a numeric release such as 3.0.0")
-    for text, maximum in [(args.name, 100), (args.summary, 1000), (args.os_version, 80), (args.gxmetal_version, 80)]:
+    for text, maximum in [(args.name, 100), (args.summary, 1000), (args.os_version, 80)]:
         if not text.strip() or len(text) > maximum or any(ord(c) < 32 and c != "\n" for c in text):
             parser.error("Invalid or overly long catalog text")
     bundle = args.bundle.resolve(strict=True)
@@ -125,6 +124,9 @@ def main():
         source = json.load(file)
     if source.get("machineFamily") not in ("powerMacG4", "powerMac7500") or source.get("diskImageName", "disk.img") != "disk.img":
         parser.error("Only Power Mac templates with disk.img are supported")
+
+    if source.get("graphicsCard", "standard") not in ("standard", "atiRadeon"):
+        parser.error("Unsupported graphics card")
 
     copland = source.get("machineFamily") == "powerMac7500"
     if copland:
@@ -144,7 +146,7 @@ def main():
     # Persist known hardware settings only. No developer paths or mounted media
     # are copied to the downloadable config; import sanitizes these again.
     allowed = {"ramMB", "diskSizeGB", "width", "height", "depth", "customResolution",
-               "networking", "sound", "useG4CPU", "tabletInput", "classicInputHelpers"}
+               "networking", "sound", "useG4CPU", "tabletInput", "classicInputHelpers", "graphicsCard"}
     config = {key: value for key, value in source.items() if key in allowed}
     config.update(id="00000000-0000-0000-0000-000000000000", name=args.name,
                   machineFamily=source["machineFamily"], diskImageName="disk.img", pramImageName="pram.img",
@@ -195,7 +197,7 @@ def main():
             for chunk in iter(lambda: file.read(1_048_576), b""):
                 digest.update(chunk)
         entry = dict(id=args.id, name=args.name, summary=args.summary, osVersion=args.os_version,
-                     gxMetalVersion=args.gxmetal_version, minimumAppVersion=args.minimum_app_version,
+                     minimumAppVersion=args.minimum_app_version,
                      archiveURL=args.archive_url, archiveBytes=staged.stat().st_size,
                      installedBytes=installed_bytes, diskCapacityBytes=disk_capacity_bytes,
                      requiredStorageBytes=required_storage_bytes, sha256=digest.hexdigest())

@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.4.0 — 2026-10-22
+
+- Retire the remaining GXMetal catalog/provenance fields and dormant PowerPC
+  video-driver transport. The emulated ATI Radeon uses Apple's Mac OS drivers.
+- Replace the clean OS 9 Library image with an ATI-ready image containing no
+  GXMetal extensions, startup items or diagnostics. Existing machines and
+  immutable historical archives are preserved.
+- Update current documentation and packaging instructions; remove obsolete
+  GXMetal installation/status/compatibility guides.
+
 ## 4.3.0 — 2026-10-22
 
 - A guided first-run wizard on macOS, Windows and Linux, from an empty library

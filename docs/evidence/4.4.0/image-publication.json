@@ -1,0 +1,15 @@
+{
+  "date": "2026-10-22",
+  "archive": "https://mcchord.net/classicmac/mac-os-9.2.1-ati-32gb-v3.tar.gz",
+  "archive_sha256": "9ec5b9e999dbf908a4a3cedb458e8b29f4792ce26239223af0e51e7b080d0e2d",
+  "archive_bytes": 82965064,
+  "retired_files": 0,
+  "raw_disk_retired_byte_strings": 0,
+  "apple_ati_components_verified": 14,
+  "boot": "Finder at 1024x768 with Apple ATI driver and ClassicMac Display; normal guest shutdown",
+  "catalog_before_sha256": "9ebccbc1925ca9a75f146f8108bd4c534785482c99243875ffd2b32e5f4e21f2",
+  "catalog_after_sha256": "1fac3c804157a04cc24c620857b21ee703b38bab5ca6777d069eb95d14f670bf",
+  "rollback_catalog": "/root/classicmac-catalog-backups/pre-4.4.0-20261022.json",
+  "historical_archives": "retained unchanged",
+  "compatibility": "Live schema-1 catalog retains an Unavailable legacy version marker for older app decoders; 4.4 ignores it and writes no retired graphics metadata."
+}

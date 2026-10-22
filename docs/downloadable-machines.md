@@ -15,28 +15,26 @@ only while idle or paused; Cancel remains available, and Escape closes an idle
 sheet. A running transfer must first be paused or cancelled.
 
 `VMTemplateMetadata.load(from: config.folder)` reads the imported template's OS
-and GXMetal version. This records what was initially supplied, not whether the
-guest driver is currently installed, loaded or accelerating a game.
+version and archive checksum. This records what was initially supplied.
 
 ## Publishing a template
 
 Prepare and shut down a clean Power Mac `.classic` package first. Remove private
 guest files, recent documents, network credentials, aliases to host folders and
 other preparation-machine state inside the guest. Qualify boot, input, sound and
-GXMetal on that stopped disk. Packaging does not inspect or scrub HFS contents.
+ATI graphics on that stopped disk. Packaging does not inspect or scrub HFS contents.
 
 ```sh
 python3 scripts/package-machine-template.py \
   --bundle /absolute/path/Mac-OS-9.classic \
-  --output /absolute/path/mac-os-9.2.1-gxmetal-v1.tar.gz \
+  --output /absolute/path/mac-os-9.2.1-ati-32gb-v3.tar.gz \
   --catalog-output /absolute/path/catalog.json \
-  --archive-url https://mcchord.net/classicmac/mac-os-9.2.1-gxmetal-v1.tar.gz \
-  --id mac-os-9.2.1-gxmetal-v1 \
-  --os-version 'Mac OS 9.2.1' \
-  --gxmetal-version 2.3.0
+  --archive-url https://mcchord.net/classicmac/mac-os-9.2.1-ati-32gb-v3.tar.gz \
+  --id mac-os-9.2.1-ati-32gb-v3 \
+  --os-version 'Mac OS 9.2.1'
 ```
 
-Use the actual bundled GXMetal version. Add `--include-preview` only for a
+For ATI-ready images, save `graphicsCard: "atiRadeon"` in the source config. Add `--include-preview` only for a
 reviewed preview image. The helper creates new files, sanitizes host paths and
 IDs in `config.json`, reads the source without modifying it, and reports exact
 download size, expanded size, guest capacity, initial host storage bound and
@@ -55,7 +53,7 @@ exposing the download action in a release.
 ## Format and bounds
 
 Schema 1 contains `machines`, an array of up to 50 unique entries. Each entry has
-`id`, `name`, `summary`, `osVersion`, `gxMetalVersion`, `minimumAppVersion`,
+`id`, `name`, `summary`, `osVersion`, `minimumAppVersion`,
 `archiveURL`, `archiveBytes`, `installedBytes`, and lowercase hex `sha256`.
 `installedBytes` is exactly the sum of the expanded file sizes, excluding tar
 headers and padding, including every zero byte in a sparse raw disk. Numeric
@@ -89,8 +87,8 @@ download size, guest capacity and initial host use; the raw disk grows on the
 host as the guest writes files, up to its capacity. Guest deletion does not
 promise to reclaim host allocation.
 
-Archives retain the original flat regular tar format, so the packager's default
-`minimumAppVersion` stays `3.0.0`. ClassicMac 3.0 ignores the optional fields and
+Archives retain the original flat regular tar format, but newly generated catalog entries
+require ClassicMac `4.4.0` by default. ClassicMac 3.0 ignores the optional fields and
 can import a 32 GiB disk, but still requires enough free space for the full
 expanded size. Accurate smaller storage guidance and the enforced sparse
 allocation contract require 3.0.1.
@@ -121,4 +119,5 @@ to a unique name. External media/shared-folder paths and boot-from-CD settings
 are cleared. Cancellation or failure removes staging; existing machines are
 never replaced. The completed archive is removed after a successful import.
 The app's bundled ClassicMac Tools volume remains enabled for first startup,
-matching the normal Power Mac defaults and providing guest diagnostics/repair.
+matching the normal Power Mac defaults and providing disk utilities and the
+ClassicMac Display startup helper.

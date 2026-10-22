@@ -51,7 +51,7 @@ async function qualify({ window, dialog, engines, home, route }) {
   } else {
     await js('document.getElementById("setup-next").click()');
     await until('document.getElementById("setup-edition").options.length > 0');
-    await js('document.getElementById("setup-edition").value = "mac-os-9.2.1-gxmetal-2.3.0-32gb-v2"; document.getElementById("setup-edition").dispatchEvent(new Event("change"))');
+    await js('document.getElementById("setup-edition").value = "mac-os-9.2.1-ati-32gb-v3"; document.getElementById("setup-edition").dispatchEvent(new Event("change"))');
     await shot('download');
     await js('document.getElementById("setup-next").click()');
     await until('!document.getElementById("setup-progress").hidden && document.getElementById("setup-activity").textContent.includes("Downloading")');
@@ -61,6 +61,8 @@ async function qualify({ window, dialog, engines, home, route }) {
     await until('window.classicmacEvidence().setup.step === "ready"', 360000);
     await shot('download-ready');
     const rows = await js('window.classicmac.state()'); assert.equal(rows.length, 1);
+    const config = JSON.parse(await fs.readFile(path.join(rows[0].folder, 'config.json')));
+    assert.equal(config.graphicsCard, 'atiRadeon');
     await js('document.getElementById("setup-next").click()');
     await until('window.classicmacEvidence().setup.active === false');
     const engine = engines.get(rows[0].id); assert(engine);

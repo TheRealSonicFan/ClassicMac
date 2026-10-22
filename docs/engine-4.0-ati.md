@@ -1,5 +1,9 @@
 # ClassicMac 4.0 engine: the ATI Radeon R100 replaces GXMetal
 
+> Historical qualification record. For the current graphics setup, use
+> the [ATI guide](../ati/README.md) and [machine downloads](downloadable-machines.md).
+
+
 Branch `claude/4.0-engine`, cut from main `3e24594`. Engine-only: no `app/`
 change. Evidence is under `output/4.0-engine/` in the worktree (ignored by Git).
 

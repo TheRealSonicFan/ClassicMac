@@ -29,6 +29,23 @@
   <img src="docs/screenshots/powermacg4-macos92.png" width="410" alt="Mac OS 9.2 on the emulated Power Mac G4">
 </p>
 
+## New in ClassicMac 4.4
+
+- **Apple's graphics drivers on emulated ATI hardware.** The clean Mac OS 9
+  download now includes Apple's ATI Radeon software and starts on the emulated
+  Radeon R100, like Deluxe and SuperDeluxe. RAVE and OpenGL games use the
+  native Mac OS drivers.
+- **A clean graphics stack.** Retired GXMetal components, catalog metadata and
+  driver handoff are removed. New downloads use a freshly built image;
+  existing machines keep their files and settings.
+
+## New in ClassicMac 4.3
+
+- **Guided first launch.** A four-step wizard covers software licenses,
+  a pre-installed download or your own CD, preparation, and first startup.
+- **Reliable first boot.** Windows and Linux can start without sound for the
+  session when the host has no usable audio output.
+
 ## New in ClassicMac 4.2
 
 - **Original Mac OS 9 icons.** Native Icon Services CD, floppy, folder,
@@ -110,7 +127,7 @@ See the [desktop build and platform support guide](desktop/README.md).
 - **3D through an emulated ATI Radeon, with no custom drivers.** Power Macs
   can use an emulated ATI Radeon (R100, PCI "Radeon Mac Edition") that Mac OS
   9's own ATI software drives, so QuickDraw 3D RAVE and OpenGL games render on
-  your Mac's GPU. The Library's Deluxe Macs start on it. GXMetal is retired.
+  your Mac's GPU. The Library's OS 9 Macs start on it.
 - **Get Info** replaces Settings, with General, Display and Sharing panes;
   **About This Mac** in the main window shows the GPU drawing a running Mac's
   3D.
@@ -145,13 +162,11 @@ unavailable. See [Copland setup, controls and source credits](copland/README.md)
 
 - **Download a ready-to-run Mac OS 9.** Choose **File → New Machine** and
   the recommended **Download a Mac** option
-  for a clean Mac OS 9.2.1 machine with GXMetal 2.3.0 already installed.
+  for a clean Mac OS 9.2.1 machine ready to start.
   Downloads support pause/resume, integrity checks, and a choice of name and
   save location. Each download creates its own independent machine.
 - **A simpler machine home.** Start or return to your Mac from its preview;
   hardware, display, and sharing options live in a separate Settings window.
-- **Compact GXMetal status.** A toolbar icon opens current graphics activity
-  and test/repair guidance. The native guest window also has **View → GXMetal**.
 - **Paste Text into Mac.** Review and edit text before typing it into the
   guest, with progress and cancellation. Available from the app, native guest
   menu, and browser toolbar; requires the guest's US keyboard layout.
@@ -159,8 +174,7 @@ unavailable. See [Copland setup, controls and source credits](copland/README.md)
   from the library or guest. Power Mac changes are saved for the next startup;
   Quadra floppy eject waits for the guest to finish its writes.
 
-See the [3.0 validation report](docs/3.0-validation.md) for test results and
-known limits, or the [numbered roadmap](docs/polish-roadmap.md) for future ideas.
+See the [3.0 validation report](docs/3.0-validation.md) for historical test results and known limits.
 
 ## iPad beta
 
@@ -172,8 +186,7 @@ Classic Mac OS setup flow.
 The iPad build uses UTM SE's App Store-compatible QEMU threaded-code
 interpreter because iPadOS cannot launch the macOS app's bundled emulator
 processes. That makes it slower than the Apple Silicon Mac build. This first
-beta also uses upstream UTM display hardware, so ClassicMac's GXMetal renderer
-and custom `nubus-qfb` display device are not included yet. See
+beta also uses upstream UTM display hardware, so the emulated ATI Radeon and custom `nubus-qfb` display device are unavailable. See
 [`ios/README.md`](ios/README.md) for the pinned build and TestFlight workflow.
 
 ## 3D games: the emulated ATI Radeon
@@ -199,9 +212,8 @@ Apple M5 Max the Quake III Arena demo runs at about 150 frames per second.
   every color depth.
 
 See the [engine report](docs/engine-4.0-ati.md) for the design, provenance,
-argument sets and test evidence. GXMetal, the 3.x paravirtual renderer,
-remains in the history of the
-[v3.2.1 release](https://github.com/amcchord/ClassicMac/releases/tag/v3.2.1).
+argument sets and test evidence. Earlier graphics implementations remain
+available in Git history and older releases.
 
 ## What it is
 
@@ -331,7 +343,7 @@ Requirements: an Apple Silicon Mac (M1 or later) running macOS 15 or newer.
 # 3. Build the app and bundle QEMU + firmware + dylibs into
 #    dist/ClassicMac.app (code-signed). APP_VERSION, APP_BUILD_VERSION and
 #    DIST_DIR override the version and output folder.
-APP_VERSION=4.3.0 APP_BUILD_VERSION=4.3.0 ./scripts/bundle-qemu.sh
+APP_VERSION=4.4.0 APP_BUILD_VERSION=4.4.0 ./scripts/bundle-qemu.sh
 
 # 4. Notarize and package a distributable disk image (DIST_NAME and
 #    DMG_VOLUME_NAME name the outputs)
@@ -339,7 +351,7 @@ APP_VERSION=4.3.0 APP_BUILD_VERSION=4.3.0 ./scripts/bundle-qemu.sh
 
 # 5. Verify the exact signed/stapled artifact, including versions, Gatekeeper,
 #    the bundled Tools CD and both Power Mac display cards
-./scripts/verify-release.sh dist/ClassicMac.dmg 4.3.0 4.3.0
+./scripts/verify-release.sh dist/ClassicMac.dmg 4.4.0 4.4.0
 ```
 
 All scripts are idempotent and safe to re-run. Building needs the Xcode command line tools and [Homebrew](https://brew.sh).

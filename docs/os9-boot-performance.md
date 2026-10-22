@@ -8,7 +8,7 @@ trim is possible, but its measured benefit is much smaller.
 ## Controlled result
 
 The test used the same Mac OS 9.2 disk, PowerPC 7400, 512 MiB of RAM,
-1024 x 768 Thousands-color display, GXMetal transport, ClassicMac Tools,
+1024 x 768 Thousands-color display, ClassicMac Tools,
 Virtio tablet, shared folder, and Sungem network device. Every run cloned the
 source image before QEMU opened it. Finder readiness was detected from QEMU's
 normal framebuffer through HMP `screendump`; the test never booted the source
@@ -82,5 +82,5 @@ straightforward.
 
 Keep the networking extensions (`Apple Enet`, Open Transport, DNS), core sound
 and QuickTime components, CarbonLib, InputSprocket/DrawSprocket, QuickDraw 3D,
-RAVE, and every GXMetal component. They support devices or games ClassicMac
+RAVE, and the ATI graphics components when using the emulated Radeon. They support devices or games ClassicMac
 actually runs.

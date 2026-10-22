@@ -744,3 +744,25 @@ consolidated root checks, publish and verify stable 4.1.1. Retain 4.1.0 for roll
   worktrees preserved. No Library catalog, DNS, hosting or infrastructure
   changes. Task worktree/ignored output retained. Stable 4.2.0 remains for
   rollback by promotion to Latest. No pending release action.
+
+## 2026-10-22 — retire remaining GXMetal surfaces for 4.4.0
+
+- User authorized retirement from app, images and documentation, all task
+  commits, main integration and stable release 4.4.0. Contained task branch
+  codex/4.4-retire-gxmetal starts at 547448b. Existing local GXMetal build
+  artifacts, user machines and unrelated worktrees are preserved.
+- Removed required catalog/provenance version fields and dormant PowerPC NDRV
+  transport/header. Rebuilt NDRV; mode/gamma contracts pass. Clean Library
+  revisions select ATI hardware on Mac/Windows/Linux. Removed obsolete driver
+  installation/status/game guides and updated current ATI documentation.
+- Rebuilt clean 9.2.1 on a fresh filesystem, copying neither source free space
+  nor preferences/documents and filtering retired files before writing. Added
+  fourteen verified Apple/ATI graphics components plus ClassicMac Display.
+  Finder at 1024x768 and normal shutdown pass. Read-only filesystem and full
+  raw-disk audits find zero retired files/byte strings. Published immutable
+  82,965,064-byte archive 9ec5b9e9…0e2d, then atomically promoted the catalog
+  after saving its checked mode-600 backup. Other catalog editions are intact.
+- Mac app uses verified public 4.3 runtime with fresh Swift binary and NDRV.
+  App and DMG notarization/staples/Gatekeeper/exact verifier pass. Native
+  packaging, final source checks and consolidated integration remain pending;
+  no public 4.4 release/tag yet. Rollback retains 4.3 and the old catalog.

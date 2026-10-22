@@ -1,0 +1,119 @@
+{
+  "osVersion": "9.2.1",
+  "sourceFilesystemNotCloned": true,
+  "copiedSystemItems": [
+    "System Folder/Appearance",
+    "System Folder/Application Support",
+    "System Folder/ColorSync Profiles",
+    "System Folder/Contextual Menu Items",
+    "System Folder/Control Panels",
+    "System Folder/Control Strip Modules",
+    "System Folder/Extensions",
+    "System Folder/Finder",
+    "System Folder/Fonts",
+    "System Folder/Help",
+    "System Folder/Internet Search Sites",
+    "System Folder/Language & Region Support",
+    "System Folder/Launcher Items",
+    "System Folder/Login",
+    "System Folder/Mac OS ROM",
+    "System Folder/MacTCP DNR",
+    "System Folder/Panels",
+    "System Folder/Scripting Additions",
+    "System Folder/Scripts",
+    "System Folder/System",
+    "System Folder/System Resources",
+    "System Folder/Text Encodings",
+    "System Folder/Apple Menu Items/Apple System Profiler",
+    "System Folder/Apple Menu Items/Calculator",
+    "System Folder/Apple Menu Items/Chooser",
+    "System Folder/Apple Menu Items/Control Panels",
+    "System Folder/Apple Menu Items/Key Caps",
+    "System Folder/Apple Menu Items/Network Browser",
+    "System Folder/Apple Menu Items/Sherlock 2",
+    "System Folder/Apple Menu Items/Stickies",
+    "Applications (Mac OS 9)/SimpleText",
+    "Applications (Mac OS 9)/Graphing Calculator"
+  ],
+  "systemFolderCNID": 21,
+  "preferencesCopied": false,
+  "documentsCopied": false,
+  "sourceFreeSpaceCopied": false,
+  "retiredGraphicsExcludedBeforeCopy": true,
+  "graphicsCard": "atiRadeon",
+  "diskCapacityBytes": 34359738368,
+  "allocatedBytes": 140566528,
+  "hfsPlusCapacityBytes": 34354298880,
+  "appleGraphicsComponents": [
+    {
+      "name": "QuickDraw\u2122 3D",
+      "dataSHA256": "0cf8e2836daeb45b51570541f29ae114efdca5b4a673e0768fdc900b9af097a8",
+      "resourceSHA256": "d69da8322c21ed8d1e70da91205870fba45cd9a0763850c7f1dcd11ba6374092"
+    },
+    {
+      "name": "QuickDraw\u2122 3D IR",
+      "dataSHA256": "1f6ca7792047a8d447b75db31be676962578b0bfa1cd9e5696bf589aef783a82",
+      "resourceSHA256": "44232146786fcdc375959651b61bf99aadba1619c7f4acedaa74c2bfbe086bf2"
+    },
+    {
+      "name": "QuickDraw\u2122 3D RAVE",
+      "dataSHA256": "6235615ffcb662583da1c337063bf4549d0e32c2e07b97a89bc4c9f012379587",
+      "resourceSHA256": "54799161d3cf690932b0bd11cd2ae1c819b8e4183d620b5da63da5a2ea99bf5c"
+    },
+    {
+      "name": "QuickDraw\u2122 3D Viewer",
+      "dataSHA256": "930ac9e9305eeda7da84090ba1153bc1daa487fadf7d98fec4952e7dd5c2a2c1",
+      "resourceSHA256": "f61e612b858279276232bfae77da872c557f89ea3274cea4263565a54a9af73d"
+    },
+    {
+      "name": "QD3DCustomElements",
+      "dataSHA256": "5cd5a63029890e0decd062e14e256f7c2d32259448aee9bc008f56aeb9b30015",
+      "resourceSHA256": "9e8c1e2d391be52b92046f993081486a4563bec65c5d116205ebe7d601e7a3a7"
+    },
+    {
+      "name": "OpenGLEngine",
+      "dataSHA256": "df4dbb7d3dcfa1fafd53308af4632a9096d0b1b2e02ed07fce75df43466bad7f",
+      "resourceSHA256": "8000beaff857f3a58e6efbfd5aa72539d5c14948dc32f93ef8c2b4504829ccd8"
+    },
+    {
+      "name": "OpenGLLibrary",
+      "dataSHA256": "cea05c5980ac6e98164af5e71334cf4b2576128182b655076553ff154d8c0d13",
+      "resourceSHA256": "7e7022a2e9f0cbccf98826e13b1ba499a00764eba84f72aae8af55fedef4bc00"
+    },
+    {
+      "name": "OpenGLMemory",
+      "dataSHA256": "9650ce61caf1e99e0d7071437ae8ce6dadbaa815bedc260a1a4a55c9073bbfb6",
+      "resourceSHA256": "5d165488f607c9ce1faee74473bca27f11f21f63359fb6eb9729f15bb07c2f54"
+    },
+    {
+      "name": "OpenGLRenderer",
+      "dataSHA256": "679d3cd4e01f45dfb777e1158c05910be80de3f98400c061ebefc4ac1fcc70d6",
+      "resourceSHA256": "f629da2f196d22b47b296721ee243ba19c51dd04f564f51be41923aca44d430d"
+    },
+    {
+      "name": "OpenGLUtility",
+      "dataSHA256": "d92c1f944bba93adbe944b5d2c2e9dcf0f58ccf7ee95b50fd1d985695889a3a8",
+      "resourceSHA256": "3978a209eb334ba216bd1a4d64a0cc2e1332eb18a561afbed1c778304a1704b4"
+    },
+    {
+      "name": "ATI Driver Update",
+      "dataSHA256": "023babc9131114653e3b550fd2a6048eece974f7d4c29b21ea91c4950d43f51d",
+      "resourceSHA256": "9dfc858dcca6a45bdae558a77f49d1ffa40f0ad22adc13e124a2cbe14007bd2f"
+    },
+    {
+      "name": "ATI Radeon 3D Accelerator",
+      "dataSHA256": "f2c845a64268c48480a2c53e608d9a172b658288c231bf305fd06e26e3813801",
+      "resourceSHA256": "ccde94eebed9e412fe4aa9f055be7c28bbbf0efe3456365c6b4dac32545dba18"
+    },
+    {
+      "name": "ATI Resource Manager",
+      "dataSHA256": "dc2532471ca7377646953b2d0f673b3608bae3e2ca4185c9795cc2fe3d87ac80",
+      "resourceSHA256": "5de761ebb3af32b21d30c89eea29ee69d05263fd9d9145a5f868f51f1e5aa499"
+    },
+    {
+      "name": "OpenGLRendererATI",
+      "dataSHA256": "3c221f957e40f2f76d4e989a1ce4154526be1382ec23cdc633b228713ca3705e",
+      "resourceSHA256": "05b4c1a05e1b3ad0e1262959921d7ab165ea0e9e4fd319b8d4030201be289dc4"
+    }
+  ]
+}
