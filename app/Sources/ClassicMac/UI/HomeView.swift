@@ -17,11 +17,13 @@ extension MachineFamily {
 struct HomeView: View {
     @ObservedObject private var store = VMStore.shared
     @ObservedObject private var manager = QEMUManager.shared
+    @State private var settingUp = VMStore.shared.vms.isEmpty
 
     var body: some View {
         Group {
-            if store.vms.isEmpty {
-                WelcomeView()
+            if settingUp || store.vms.isEmpty {
+                FirstMacSetupView { settingUp = false }
+                    .onAppear { settingUp = true }
             } else {
                 HStack(alignment: .top, spacing: 14) {
                     machineColumn
@@ -404,60 +406,5 @@ struct ScreenPreview: View {
         .onTapGesture(perform: onActivate)
         .help(running ? "Show this Mac" : "")
         .accessibilityLabel(running ? "Screen of \(vm.name). Click to show the Mac." : "Last screen of \(vm.name)")
-    }
-}
-
-/// The first-run panel, in the spirit of RetroBoot Setup.
-struct WelcomeView: View {
-    enum Source: Hashable { case library, cd, existing }
-    @State private var source: Source = .library
-
-    var body: some View {
-        VStack {
-            Spacer(minLength: 0)
-            HStack(alignment: .top, spacing: 18) {
-                PlatinumIcon("powermac_g4", size: 32, scale: 2)
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Welcome to ClassicMac").platinumText(.large)
-                    Text("ClassicMac runs the classic Mac OS, from System 7 to Mac OS 9, right on this computer. Your first Mac needs a Mac OS system to start. Choose where to get one.")
-                        .platinumText(.body)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(alignment: .top, spacing: 10) {
-                        Text("Get a Mac from:").platinumText(.emphasis)
-                        PlatinumRadioGroup(selection: $source, options: [
-                            (Source.library, "The Mac OS Library (download)"),
-                            (Source.cd, "A Mac OS CD image"),
-                            (Source.existing, "A Mac I already have"),
-                        ])
-                    }
-                    Text(explanation).platinumText(.small)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(height: 30, alignment: .topLeading)
-                    HStack {
-                        Spacer()
-                        PlatinumButton("Continue", role: .default, minWidth: 80, action: proceed)
-                    }
-                }
-                .frame(width: 440)
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var explanation: String {
-        switch source {
-        case .library: return "Choose a ready-to-run Mac OS 9 with games and classic software, or Apple's unreleased Copland."
-        case .cd: return "Create a Power Mac G4 or Quadra 800 and install Mac OS from your own CD image."
-        case .existing: return "Open a .classic Mac made by ClassicMac."
-        }
-    }
-
-    private func proceed() {
-        switch source {
-        case .library: WindowManager.shared.showLibrary()
-        case .cd: WindowManager.shared.presentNewMac()
-        case .existing: VMStore.shared.presentOpenPanel()
-        }
     }
 }

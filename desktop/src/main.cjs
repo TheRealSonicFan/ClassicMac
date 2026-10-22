@@ -10,7 +10,7 @@ const { readMachine, validate, writeJSON, freshConfig, machineFile } = require('
 const { Engine } = require('./engine.cjs');
 const catalog = require('./catalog.cjs');
 const {paste,plan:pastePlan} = require('./paste.cjs');
-let catalogRows=[], downloadJob, pasteJob;
+let catalogRows=[], downloadJob, pasteJob, setupCD;
 const run = promisify(execFile);
 
 const runtime = process.env.CLASSICMAC_RUNTIME || path.join(process.resourcesPath, 'runtime');
@@ -95,6 +95,20 @@ function handle(name, handler) {
 }
 function installHandlers() {
   handle('state', state);
+  handle('chooseInstallCD', async () => {
+    const result = await dialog.showOpenDialog(window, { title: 'Choose your Mac OS installation CD image', properties: ['openFile'], filters: [{ name: 'Mac OS CD images', extensions: ['iso', 'img', 'toast', 'cdr'] }] });
+    if (result.canceled) return null;
+    setupCD = result.filePaths[0];
+    return path.basename(setupCD);
+  });
+  handle('setupCreate', async fields => {
+    const folder = await require('./setup-machine.cjs').createInstallerMac({
+      name: fields.name, machineFamily: fields.machineFamily, cd: setupCD,
+      directory: path.join(app.getPath('documents'), 'ClassicMac'), imageTool: imageTool(),
+      pramSeed: path.join(runtime, 'pram-seed.img')
+    });
+    const m = await register(folder); await notify(); return m.config.id;
+  });
   handle('open', async () => {
     const result = await dialog.showOpenDialog(window, { title: 'Open a ClassicMac machine folder', properties: ['openDirectory'] });
     if (result.canceled) return null;
@@ -161,12 +175,13 @@ function installHandlers() {
     if (result.response === 1) await engine.forceOff();
   });
   handle('reveal', id => shell.showItemInFolder(lookup(id).folder));
-  handle('catalog', async () => { catalogRows=await catalog.loadCatalog(); return catalogRows.map(m=>({...m,available:(m.machineFamily||'powerMacG4')==='powerMacG4'})); });
-  handle('download', async (id,name) => {
+  handle('catalog', async () => { catalogRows=await catalog.loadCatalog(); return catalogRows.map(m=>({...m,available:(m.machineFamily||'powerMacG4')==='powerMacG4'&&catalog.supportedVersion(m.minimumAppVersion)})); });
+  handle('download', async (id,name,quickSetup=false) => {
     if(downloadJob)throw new Error('Finish or pause the current download first.');
     const entry=catalogRows.find(m=>m.id===id);if(!entry)throw new Error('Reload the Library and choose an edition.');
-    const result=await dialog.showOpenDialog(window,{title:'Save Downloaded Mac In',defaultPath:app.getPath('documents'),properties:['openDirectory','createDirectory']});
+    const result=quickSetup===true ? {canceled:false,filePaths:[path.join(app.getPath('documents'),'ClassicMac')]} : await dialog.showOpenDialog(window,{title:'Save Downloaded Mac In',defaultPath:app.getPath('documents'),properties:['openDirectory','createDirectory']});
     if(result.canceled)return null;
+    if(quickSetup===true)await fs.mkdir(result.filePaths[0],{recursive:true});
     const controller=new AbortController();downloadJob=controller;
     try{
       const folder=await catalog.install(entry,result.filePaths[0],name,path.join(app.getPath('userData'),'Downloads'),{signal:controller.signal,

@@ -27,7 +27,7 @@ struct LibraryView: View {
                 PlatinumIcon("library", size: 32)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Choose a Mac to download.").platinumText(.emphasis)
-                    Text("Each one is a complete Mac, ready to start: download it once and it is yours to keep.")
+                    Text("Each one is a complete Mac, ready to start: download it once to create your own independent copy.")
                         .platinumText(.small)
                 }
                 Spacer()

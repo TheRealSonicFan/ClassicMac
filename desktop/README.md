@@ -1,6 +1,6 @@
 # Windows and Linux desktop
 
-ClassicMac 4.1 uses native x64 QEMU engines and a shared Electron desktop on
+ClassicMac 4.3 uses native x64 QEMU engines and a shared Electron desktop on
 Windows 11 and Ubuntu 24.04+/Debian 13. Machine folders, Iconfactory artwork,
 bitmap fonts, firmware, timing fixes and custom devices are shared with the
 Mac edition. QMP uses private process pipes; the password-protected display
@@ -8,10 +8,17 @@ listens only on loopback. The renderer is sandboxed with context isolation.
 
 Unzip the Windows download and run `ClassicMac.exe`, keeping its companion
 files. Windows binaries are unsigned. On Linux install the DEB with
-`sudo apt install ./ClassicMac-4.2.0-linux-amd64.deb`, or extract the tar.gz and
+`sudo apt install ./ClassicMac-4.3.0-linux-amd64.deb`, or extract the tar.gz and
 run `classicmac`. The tar distribution requires a host with working Chromium
 sandboxing; the DEB installs the sandbox helper with its standard ownership.
 Linux builds require glibc 2.39 or newer and host desktop/audio libraries.
+
+On first launch, a four-step wizard explains software license responsibility,
+then lets you download a pre-installed Mac or use your own installation CD
+image. It saves your Mac in Documents/ClassicMac, uses recommended hardware
+defaults, and finishes with Start Mac or Start Installer. Existing libraries
+open normally. Downloads can be paused and resumed; each one is checked with
+SHA-256 before installation. A download does not grant software licenses.
 
 ## Platform features
 
