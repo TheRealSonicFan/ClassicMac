@@ -83,6 +83,22 @@ class WrapperTests(unittest.TestCase):
             file.write(b"FRESH APPROVED SYSTEM FILE")
         return layout, header
 
+    def testRetiredDriversAreExcludedBeforeAnyCopy(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = Path(directory) / "source", Path(directory) / "target"
+            source.mkdir()
+            (source / "GXMetal").write_bytes(b"retired driver")
+            nested = source / "Extensions"
+            nested.mkdir()
+            (nested / "GXMetal Startup").write_bytes(b"retired startup")
+            (nested / "Apple Driver").write_bytes(b"keep")
+            with patch.object(prepare, "run") as copy:
+                prepare.copy_item(source, output)
+            self.assertEqual(len(copy.call_args_list), 1)
+            self.assertEqual(copy.call_args.args[-2:], (str(nested / "Apple Driver"), str(output / "Extensions/Apple Driver")))
+            self.assertFalse((output / "GXMetal").exists())
+
     def testResizedFilesystemAndBothAlternateHeadersUseActualEnds(self):
         with tempfile.TemporaryDirectory() as directory:
             source, output = [Path(directory) / name for name in ("source.img", "fresh.img")]

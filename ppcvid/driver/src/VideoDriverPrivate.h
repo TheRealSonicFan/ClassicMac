@@ -11,7 +11,6 @@
 #include <PCI.h>
 
 #include "MacDriverUtils.h"
-#include "GXMetalRegistry.h"
 
 #ifndef FALSE
 #define TRUE	1
@@ -25,7 +24,6 @@
 
 #define QEMU_PCI_VIDEO_BASE_REG			0x10
 #define QEMU_PCI_VIDEO_MMIO_REG			0x18
-#define QEMU_PCI_VIDEO_GXMETAL_REG		0x20
 
 #define kDriverGlobalsPropertyName	"GLOBALS"
 #define kDriverFailTextPropertyName	"FAILURE"
@@ -43,9 +41,6 @@ struct DriverGlobal {
 	ByteCount			boardFBMappedSize;
 	LogicalAddress		boardRegAddress;
 	ByteCount			boardRegMappedSize;
-	LogicalAddress		boardGXMetalAddress;
-	ByteCount			boardGXMetalMappedSize;
-	Boolean				gxmetalAvailable;
 
 	volatile Boolean	inInterrupt;
 

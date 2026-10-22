@@ -1,0 +1,11 @@
+{
+  "source_release": "v4.3.0",
+  "comparison": "Mach-O bytes before code signature, normalizing LC_CODE_SIGNATURE metadata",
+  "unchanged_engine_code_sha256": {
+    "qemu-system-ppc": "522748815c57ffbc2b0cdc62e1a9944a3090b2bf35515faa538e7a6269081b83",
+    "qemu-system-m68k": "9d3b6179c9475515914a7955f24157e48003c12aacbb8d80abb2e7ac5c95cd41",
+    "qemu-img": "19d1a9e543c3a76e12b6b8048bad394ade9840e2d5f09c9deee894715a1e9606",
+    "dingusppc": "d8a446a94439b2e49925cf3f8801cfa56b30557668147ef7ac3503dd4c8d38aa"
+  },
+  "prepared_source_ndrv_matches": true
+}

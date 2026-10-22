@@ -13,7 +13,9 @@ resolve to that host. No DNS, firewall, or virtual-host changes are required.
 - Download directory: `/var/www/mcchord.net/classicmac`
 - Existing HTTPS vhost: `/etc/apache2/sites-enabled/001-mcchord.net-le-ssl.conf`
 - Existing service: Apache 2.4 on Ubuntu 22.04.
-- Access: existing SSH authorization; never place keys in this repository.
+- Access: existing SSH authorization as `root@mcchord.net`; use the pinned
+  hostname (the old bare-IP SSH entry refers to a different server key).
+  Never place keys in this repository.
 
 The server had 277 GB free during preflight. HTTPS, a valid certificate, and
 byte-range support were verified before any write. The `classicmac` path did
@@ -25,9 +27,11 @@ not exist at preflight.
 local OS 9 installation as its system-file source. Its source is mounted
 read-only. The source filesystem and free space are not cloned. Source
 preferences, documents, caches, keychains, recent-item lists, and host paths
-are excluded; the installer adds the current guest GXMetal binaries.
+are excluded. Retired graphics files are excluded before copying. `--ati`
+adds the audited Apple/ATI graphics components from `--graphics-source` and
+the checked-in ClassicMac Display helper, and selects the emulated ATI card.
 
-The first template uses verified **Mac OS 9.2.1**, guest GXMetal **2.3.0**,
+The current template uses verified **Mac OS 9.2.1**, Apple/ATI graphics drivers,
 512 MB RAM, an 8 GB virtual disk, and 1024×768 Thousands of colors. The OS
 version is read from the System file's version resource. The OS9 System Folder
 blessing uses Apple's documented HFS Plus finderInfo fields, updating both
@@ -194,3 +198,18 @@ Rollback: verify the backup hash above, copy it to a new temporary name beside
 `catalog.json`, set mode 0644, and atomically rename it to `catalog.json`; verify
 public retrieval. Retain the immutable archives. This affects available downloads,
 not machines that users have already created. Local evidence: `output/3.2.1/hosting`.
+
+## ATI clean image — October 22, 2026
+
+ClassicMac 4.4.0 selects `mac-os-9.2.1-ati-32gb-v4` in place of the retired
+clean image. It is a new filesystem with Apple/ATI graphics software and
+ClassicMac Display, using the emulated ATI Radeon. Existing machines and old
+immutable archives are preserved. [Exact publication and rollback evidence](../evidence/4.4.0/image-publication.json).
+The live schema-1 catalog retains a legacy unavailable-version marker for
+older app decoders; new archives/provenance have no driver-version field.
+Use `root@mcchord.net` with its pinned SSH key for publication.
+
+Rollback: verify the recorded pre-4.4 catalog backup's hash, copy it to a new
+same-directory temporary file under the public download directory, chmod 0644,
+then atomically rename it to catalog.json. Verify HTTPS retrieval matches the
+backup. Keep the new and old immutable archives. No server restart is needed.

@@ -36,6 +36,11 @@ APPLE_MENU_ITEMS = (
     "Key Caps", "Network Browser", "Sherlock 2", "Stickies",
 )
 APPLICATIONS = ("SimpleText", "Graphing Calculator")
+ATI_EXTENSIONS = (
+    "ATI Driver Update", "ATI Radeon 3D Accelerator", "ATI Resource Manager",
+    "OpenGLRendererATI",
+)
+
 GRAPHICS_EXTENSIONS = (
     "QuickDraw™ 3D", "QuickDraw™ 3D IR", "QuickDraw™ 3D RAVE",
     "QuickDraw™ 3D Viewer", "QD3DCustomElements", "OpenGLEngine",
@@ -99,10 +104,38 @@ def hfs_partition(device: str) -> str:
 
 
 def copy_item(source: Path, destination: Path) -> None:
+    # Filter before writing: deleting a copied driver afterwards leaves its
+    # bytes in filesystem free space and in the distributed raw disk.
+    if "gxmetal" in source.name.casefold():
+        return
     if source.is_symlink():
         raise ValueError(f"Symbolic link in template source: {source.name}")
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if source.is_dir() and any("gxmetal" in item.name.casefold() for item in source.rglob("*")):
+        destination.mkdir(exist_ok=True)
+        for item in source.iterdir():
+            copy_item(item, destination / item.name)
+        return
     run("ditto", "--rsrc", "--extattr", "--noacl", "--noqtn", str(source), str(destination))
+
+
+def install_display_helper(extensions: Path) -> None:
+    """Decode the checked-in MacBinary helpers with both Macintosh forks."""
+    binaries = Path(__file__).resolve().parents[1] / "guestcd/classicmac-display/bin"
+    for filename in ("ClassicMacDisplayInit.bin", "ClassicMacDisplay.bin"):
+        blob = (binaries / filename).read_bytes()
+        name = blob[2:2 + blob[1]].decode("mac_roman")
+        if not name or "/" in name or ":" in name:
+            raise ValueError("Invalid display helper MacBinary name")
+        data_size, resource_size = struct.unpack_from(">II", blob, 83)
+        resource_start = 128 + ((data_size + 127) // 128) * 128
+        if resource_start + resource_size > len(blob):
+            raise ValueError("Truncated display helper MacBinary")
+        destination = extensions / name
+        destination.write_bytes(blob[128:128 + data_size])
+        Path(str(destination) + "/..namedfork/rsrc").write_bytes(blob[resource_start:resource_start + resource_size])
+        finder = blob[65:73] + bytes((blob[73], blob[101])) + bytes(22)
+        run("xattr", "-wx", "com.apple.FinderInfo", finder.hex(), str(destination))
 
 
 def bless_hfsplus(image: Path, start: int, size: int, folder_id: int) -> None:
@@ -303,6 +336,8 @@ def main() -> None:
     parser.add_argument("output", type=Path, help="New .classic package")
     parser.add_argument("--graphics-source", type=Path,
                         help="Read-only OS 9 image containing the complete Apple QuickDraw 3D/OpenGL components")
+    parser.add_argument("--ati", action="store_true",
+                        help="Include Apple ATI Radeon software from the graphics source and select the emulated ATI card")
     parser.add_argument("--capacity-gb", type=int, choices=(8, 16, 32, 64, 128), default=32,
                         help="Sparse virtual disk capacity in GiB (default: 32)")
     args = parser.parse_args()
@@ -367,12 +402,12 @@ def main() -> None:
             run("diskutil", "mount", "readOnly", graphics_volume)
             graphics_root = mounted_path(graphics_volume)
         graphics_inventory = []
-        for name in GRAPHICS_EXTENSIONS:
+        for name in GRAPHICS_EXTENSIONS + (ATI_EXTENSIONS if args.ati else ()):
             origin = graphics_root / "System Folder/Extensions" / name
             if not origin.is_file() or origin.is_symlink():
                 raise ValueError(f"Missing Apple graphics component {name}; supply a complete --graphics-source")
             resource = Path(str(origin) + "/..namedfork/rsrc").read_bytes()
-            if b"Apple Computer" not in resource:
+            if not any(vendor in resource for vendor in (b"Apple Computer", b"ATI Technologies")):
                 raise ValueError(f"Expected an Apple-supplied system component: {name}")
             copy_item(origin, target_root / "System Folder/Extensions" / name)
             graphics_inventory.append({
@@ -380,6 +415,9 @@ def main() -> None:
                 "dataSHA256": hashlib.sha256(origin.read_bytes()).hexdigest(),
                 "resourceSHA256": hashlib.sha256(resource).hexdigest(),
             })
+
+        if args.ati:
+            install_display_helper(target_root / "System Folder/Extensions")
 
         readme = target_root / "Desktop Folder/Start Here"
         readme.write_bytes((
@@ -411,6 +449,7 @@ def main() -> None:
             "toolsCDInserted": True, "toolsDeliveryVersion": 1,
             "networking": True, "sound": True, "useG4CPU": True,
             "tabletInput": True, "classicInputHelpers": True,
+            "graphicsCard": "atiRadeon" if args.ati else "standard",
         }
         (output / "config.json").write_text(json.dumps(config, indent=2) + "\n")
         (output.parent / (output.stem + "-preparation.json")).write_text(json.dumps({
@@ -418,6 +457,8 @@ def main() -> None:
             "copiedSystemItems": inventory, "systemFolderCNID": folder_id,
             "preferencesCopied": False, "documentsCopied": False,
             "sourceFreeSpaceCopied": False,
+            "retiredGraphicsExcludedBeforeCopy": True,
+            "graphicsCard": config["graphicsCard"],
             "diskCapacityBytes": disk.stat().st_size,
             "allocatedBytes": disk.stat().st_blocks * 512,
             "hfsPlusCapacityBytes": layout["length"],

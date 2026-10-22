@@ -7,7 +7,7 @@ is iPad-only, targets iPadOS 14 or newer, and includes the `m68k` and `ppc`
 engines needed for the Quadra 800 and Power Macintosh G4 presets.
 
 This first iPad beta deliberately uses UTM's upstream Classic Mac hardware
-support. It does not yet include ClassicMac's custom GXMetal renderer or
+support. It does not yet include the emulated ATI Radeon or
 `nubus-qfb` display device, and emulation is slower than the Apple Silicon
 macOS build because TestFlight apps cannot use JIT compilation.
 

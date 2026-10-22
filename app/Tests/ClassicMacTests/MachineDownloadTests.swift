@@ -63,10 +63,24 @@ final class MachineDownloadTests: XCTestCase {
         }
     }
 
+    func testCatalogAndProvenanceIgnoreRetiredGraphicsMetadata() throws {
+        let machine = fixtureMachine(bytes: Data([1]))
+        var entry = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(machine)) as? [String: Any])
+        XCTAssertNil(entry["gxMetalVersion"])
+        entry["gxMetalVersion"] = "2.3.0"
+        let oldCatalog = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "machines": [entry]])
+        XCTAssertEqual(try MachineCatalog.decode(oldCatalog).machines, [machine])
+        let metadata = VMTemplateMetadata(machine: machine)
+        var oldMetadata = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(metadata)) as? [String: Any])
+        XCTAssertNil(oldMetadata["gxMetalVersion"])
+        oldMetadata["gxMetalVersion"] = "2.3.0"
+        try JSONSerialization.data(withJSONObject: oldMetadata).write(to: directory.appendingPathComponent(VMTemplateMetadata.fileName))
+        XCTAssertEqual(VMTemplateMetadata.load(from: directory), metadata)
+    }
+
     func testCoplandCatalogAndFirmwareIsolation() throws {
         let machine = DownloadableMachine(id: "copland-d11e4-v1", name: "Copland",
-            summary: "Experimental preview", osVersion: "D11E4", gxMetalVersion: "Unavailable",
-            minimumAppVersion: "3.2.0", archiveURL: source, archiveBytes: 1024,
+            summary: "Experimental preview", osVersion: "D11E4", minimumAppVersion: "3.2.0", archiveURL: source, archiveBytes: 1024,
             installedBytes: 4_203_536, sha256: String(repeating: "0", count: 64),
             diskCapacityBytes: 512, machineFamily: .powerMac7500)
         XCTAssertNoThrow(try machine.validate())
@@ -238,7 +252,6 @@ final class MachineDownloadTests: XCTestCase {
         XCTAssertTrue(fresh.toolsCDInserted)
         let metadata = try XCTUnwrap(VMTemplateMetadata.load(from: installed))
         XCTAssertEqual(metadata.osVersion, machine.osVersion)
-        XCTAssertEqual(metadata.gxMetalVersion, machine.gxMetalVersion)
         XCTAssertEqual(metadata.archiveSHA256, machine.sha256)
         XCTAssertEqual(try String(contentsOf: existing.appendingPathComponent("sentinel"), encoding: .utf8), "untouched")
         let disk = try installed.appendingPathComponent("disk.img").resourceValues(forKeys: [.fileSizeKey, .fileAllocatedSizeKey])
@@ -443,7 +456,7 @@ final class MachineDownloadTests: XCTestCase {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
         process.arguments = [repo.appendingPathComponent("scripts/package-machine-template.py").path,
             "--bundle", sourceBundle.path, "--output", archive.path, "--catalog-output", catalog.path,
-            "--archive-url", source.absoluteString, "--id", "mac-os9-v1", "--gxmetal-version", "2.3.0",
+            "--archive-url", source.absoluteString, "--id", "mac-os9-v1",
             "--os-version", "Mac OS 9.2.1"]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
@@ -453,7 +466,7 @@ final class MachineDownloadTests: XCTestCase {
         let machine = try XCTUnwrap(MachineCatalog.decode(Data(contentsOf: catalog)).machines.first)
         XCTAssertEqual(machine.diskCapacityBytes, 512)
         XCTAssertEqual(machine.requiredStorageBytes, 1_048_576)
-        XCTAssertEqual(machine.minimumAppVersion, "3.0.0")
+        XCTAssertEqual(machine.minimumAppVersion, "4.4.0")
         try MachineDownloadTransfer.verify(archive, machine: machine)
         let destination = try MachineTemplateInstaller.installVerifiedArchive(archive, machine: machine, name: "Packaged", in: directory)
         XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: destination.path)),
@@ -465,7 +478,7 @@ final class MachineDownloadTests: XCTestCase {
     private func fixtureMachine(bytes: Data, installedBytes: Int64 = 1024,
                                 diskCapacityBytes: Int64? = nil, requiredStorageBytes: Int64? = nil) -> DownloadableMachine {
         DownloadableMachine(id: "mac-os-9-v1", name: "Mac OS 9", summary: "A ready-to-run Mac.",
-            osVersion: "Mac OS 9.2.1", gxMetalVersion: "2.3.0", minimumAppVersion: "3.0.0",
+            osVersion: "Mac OS 9.2.1", minimumAppVersion: "3.0.0",
             archiveURL: source, archiveBytes: Int64(bytes.count), installedBytes: installedBytes,
             sha256: SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(),
             diskCapacityBytes: diskCapacityBytes, requiredStorageBytes: requiredStorageBytes)

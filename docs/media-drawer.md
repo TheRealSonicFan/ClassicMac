@@ -49,8 +49,8 @@ without that environment variable, the original native Disc/Tools/Floppy menus
 remain available.
 
 Apply `cocoaui/media-drawer.patch` after the existing Cocoa, paste-text, and
-GXMetal status menu patches. Apply `monitor/media-control.patch` after the
-existing boot-clock/GXMetal HMP patches. The latter modifies `hmp-commands.hx`,
+existing Cocoa menu patches. Apply `monitor/media-control.patch` after the
+boot-clock HMP patches. The latter modifies `hmp-commands.hx`,
 `include/monitor/hmp.h`, and `monitor/hmp-cmds.c`; these files are already in the
 build script's reset list. The integration owner registers both patches.
 
@@ -82,7 +82,7 @@ quotes and Unicode, command injection rejection, startup-device rules, invalid
 files, recent image persistence/deduplication/limits, paused Quadra rejection,
 Power Mac staging without a monitor connection, and browser token/origin checks.
 The release Swift build passes in the feature worktree. The new Cocoa patch
-applies after the existing Cocoa patches, Paste Text, and GXMetal status.
+applies after the existing Cocoa patches and Paste Text.
 
 Before the 3.0 release, the integration pass should build the new QEMU patches
 and check the drawer from all three entry points. On an OS 9 Power Mac, stage a

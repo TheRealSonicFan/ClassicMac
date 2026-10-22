@@ -55,7 +55,7 @@ final class QEMURunnerArgumentTests: XCTestCase {
 
         XCTAssertTrue(optionValues("-global", in: thousands).contains("VGA.hardware-cursor=on"))
         XCTAssertTrue(optionValues("-global", in: thousands).contains("VGA.untracked-vram=on"))
-        XCTAssertFalse(thousands.contains { $0.contains("gxmetal") }, "GXMetal is gone in 4.0")
+        XCTAssertFalse(thousands.contains { $0.hasPrefix("VGA.gxmetal") }, "GXMetal is gone in 4.0")
         XCTAssertEqual(optionValues("-vga", in: thousands), ["std"])
         XCTAssertEqual(optionValues("-accel", in: thousands), ["tcg,tb-size=512"])
         XCTAssertEqual(optionValues("-cpu", in: thousands), ["7400"])

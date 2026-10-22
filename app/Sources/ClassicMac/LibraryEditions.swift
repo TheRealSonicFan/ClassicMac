@@ -85,19 +85,19 @@ struct LibraryEdition {
             order: 1
         ),
         LibraryEdition(
-            catalogID: "mac-os-9.2.1-gxmetal-2.3.0-32gb-v2",
+            catalogID: "mac-os-9.2.1-ati-32gb-v4",
             title: "Mac OS 9.2.1",
             osLabel: "Mac OS 9.2.1",
             tagline: "A clean Mac OS 9 to make your own",
-            description: "A fresh Mac OS 9.2.1 with a 32 GB disk that grows on your computer only as you add files. Start here to install your own software.",
+            description: "A fresh Mac OS 9.2.1 with Apple’s ATI graphics software and a 32 GB disk that grows on your computer only as you add files. Start here to install your own software.",
             contents: [
                 ("Included", ["Mac OS 9.2.1", "32 GB startup disk"]),
             ],
             notes: [
-                "Uses the Standard graphics card: any screen size and every color depth, following the window as you resize it.",
-                "This Mac was prepared for an earlier ClassicMac; its GXMetal extension is unused and can be removed.",
+                "Uses the emulated ATI Radeon with Apple’s own Mac OS drivers for accelerated RAVE and OpenGL games.",
+                "Choose the Standard graphics card for live window resizing or Black & White, 4 and 16 colors.",
             ],
-            graphicsCard: .standard,
+            graphicsCard: .atiRadeon,
             icon: "library",
             order: 2
         ),
@@ -147,7 +147,7 @@ struct LibraryEntry: Identifiable, Hashable {
         guard machine.family == .powerMacG4 else { return .standard }
         // New catalog revisions keep their edition's prepared hardware even
         // when this app has no revision-specific contents description yet.
-        return edition?.graphicsCard ?? (["os922-deluxe", "os922-superdeluxe"].contains(family.name) ? .atiRadeon : .standard)
+        return edition?.graphicsCard ?? (["os922-deluxe", "os922-superdeluxe", "mac-os-9.2.1-ati-32gb"].contains(family.name) ? .atiRadeon : .standard)
     }
 
     /// "os922-deluxe-v6" → ("os922-deluxe", 6). Entries without a version

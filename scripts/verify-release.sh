@@ -164,6 +164,9 @@ if [ "$VERSION_MAJOR" -ge 4 ]; then
   if LC_ALL=C grep -a -F "GXMetal" "$TOOLS_CD" >/dev/null; then
     die "Bundled Tools CD still carries the removed GXMetal folder"
   fi
+  if strings "$PPC_NDRV" | grep -i gxmetal >/dev/null; then
+    die "Bundled Power Mac video driver still has the removed GXMetal handoff"
+  fi
   log "Verifying included Iconfactory artwork and attribution"
   diff -r "$ROOT_DIR/Resources/Iconfactory" "$APP/Contents/Resources/Iconfactory" || \
     die "Bundled Iconfactory artwork or attribution differs from the release source"

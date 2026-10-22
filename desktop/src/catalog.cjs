@@ -122,9 +122,9 @@ async function install(m,parent,name,cache,options={}) {
   if((source.machineFamily||'powerMacG4')!=='powerMacG4'||source.diskImageName!=='disk.img'||(source.pramImageName||'pram.img')!=='pram.img')throw new Error('The template does not match its Library entry.');
   const c=freshConfig(name||m.name);for(const key of ['ramMB','width','height','depth','networking','sound','useG4CPU','tabletInput','classicInputHelpers'])if(Object.hasOwn(source,key))c[key]=source[key];
   c.diskSizeGB=Math.ceil((await fs.stat(path.join(folder,'disk.img'))).size/1073741824);c.toolsCDInserted=true;
-  if(/^os922-(?:superdeluxe|deluxe)-v\d+$/.test(m.id))c.graphicsCard='atiRadeon';
+  if(/^(?:os922-(?:superdeluxe|deluxe)|mac-os-9\.2\.1-ati-32gb)-v\d+$/.test(m.id))c.graphicsCard='atiRadeon';
   await writeJSON(path.join(folder,'config.json'),validate(c));
-  await writeJSON(path.join(folder,'template-info.json'),{schemaVersion:1,templateID:m.id,osVersion:m.osVersion,gxMetalVersion:m.gxMetalVersion,archiveSHA256:m.sha256,importedAt:new Date().toISOString()});
+  await writeJSON(path.join(folder,'template-info.json'),{schemaVersion:1,templateID:m.id,osVersion:m.osVersion,archiveSHA256:m.sha256,importedAt:new Date().toISOString()});
   return folder;
  }catch(error){for(const file of ['config.json','disk.img','preview.png','template-info.json'])await fs.rm(path.join(folder,file),{force:true});await fs.rmdir(folder);throw error;}
 }

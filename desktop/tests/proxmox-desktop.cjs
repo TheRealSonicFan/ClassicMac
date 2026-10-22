@@ -13,12 +13,12 @@ const run=promisify(execFile);
  if(!supplied){
  const archive=path.join(out,'fixture.tar.gz');
  if(!await fs.access(archive).then(()=>true,()=>false)){
-  const r=await fetch('https://mcchord.net/classicmac/mac-os-9.2.1-gxmetal-2.3.0-v1.tar.gz');if(!r.ok)throw new Error('Fixture download failed');
+  const r=await fetch('https://mcchord.net/classicmac/mac-os-9.2.1-ati-32gb-v4.tar.gz');if(!r.ok)throw new Error('Fixture download failed');
   await pipeline(Readable.fromWeb(r.body),createWriteStream(archive));
  }
  const hash=createHash('sha256');for await(const part of createReadStream(archive))hash.update(part);
- if(hash.digest('hex')!=='9dedbf11c866b18c8d9bc54843f42872fbdb7fe9838c75fad2cc6abdb50fd5cb')throw new Error('Fixture hash mismatch');
- await fs.mkdir(fixture);await run('tar',['-xzf',archive,'-C',fixture],{windowsHide:true});
+ if(hash.digest('hex')!=='0e2449c5444ee77fb919fc31c52745b438e3972944cbf4cc3d206d19d3775e48')throw new Error('Fixture hash mismatch');
+ await fs.mkdir(fixture);await require('../src/catalog.cjs').extract(archive,fixture,{installedBytes:34359738942,diskCapacityBytes:34359738368});
  }
  const file=path.join(fixture,'config.json'),c=JSON.parse(await fs.readFile(file,'utf8'));
  Object.assign(c,{id:randomUUID(),name:'ClassicMac Parity OS 9',machineFamily:'powerMacG4',graphicsCard:process.env.CLASSICMAC_TEST_ATI?'atiRadeon':'standard',width:640,height:480,depth:32,sound:false,networking:true,toolsCDInserted:true,tabletInput:true,bootFromCD:false});

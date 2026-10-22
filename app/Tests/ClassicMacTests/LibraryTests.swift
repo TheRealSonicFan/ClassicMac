@@ -4,7 +4,7 @@ import XCTest
 final class LibraryTests: XCTestCase {
     private func machine(_ id: String, family: MachineFamily = .powerMacG4, name: String? = nil) -> DownloadableMachine {
         DownloadableMachine(id: id, name: name ?? id, summary: "Summary of \(id)", osVersion: "9.2.2",
-                            gxMetalVersion: "n/a", minimumAppVersion: "3.0.0",
+                            minimumAppVersion: "3.0.0",
                             archiveURL: URL(string: "https://example.com/\(id).tar.gz")!,
                             archiveBytes: 1_000, installedBytes: 2_000, sha256: String(repeating: "a", count: 64),
                             machineFamily: family)
@@ -15,12 +15,12 @@ final class LibraryTests: XCTestCase {
             machine("copland-d11e4-activities-v3", family: .powerMac7500),
             machine("os922-deluxe-v5"),
             machine("os922-deluxe-v6"),
-            machine("mac-os-9.2.1-gxmetal-2.3.0-32gb-v2"),
+            machine("mac-os-9.2.1-ati-32gb-v4"),
             machine("os922-superdeluxe-v2"),
             machine("future-edition", name: "A Future Mac"),
         ]
         let current = LibraryEntry.entries(from: machines, includeOlder: false).map(\.id)
-        XCTAssertEqual(current, ["os922-superdeluxe-v2", "os922-deluxe-v6", "mac-os-9.2.1-gxmetal-2.3.0-32gb-v2",
+        XCTAssertEqual(current, ["os922-superdeluxe-v2", "os922-deluxe-v6", "mac-os-9.2.1-ati-32gb-v4",
                                  "copland-d11e4-activities-v3", "future-edition"])
         let all = LibraryEntry.entries(from: machines, includeOlder: true).map(\.id)
         XCTAssertEqual(all.last, "os922-deluxe-v5")
@@ -52,7 +52,7 @@ final class LibraryTests: XCTestCase {
     }
 
     func testNewCatalogRevisionsKeepPreparedGraphicsWithoutStaleDescriptions() {
-        for id in ["os922-deluxe-v9", "os922-superdeluxe-v5"] {
+        for id in ["os922-deluxe-v9", "os922-superdeluxe-v5", "mac-os-9.2.1-ati-32gb-v5"] {
             let entry = LibraryEntry(machine: machine(id), edition: LibraryEdition.edition(for: id))
             XCTAssertNil(entry.edition)
             XCTAssertEqual(entry.description, "Summary of \(id)")

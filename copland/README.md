@@ -14,7 +14,7 @@ Use Control-G to capture/release the mouse, Control-+ / Control-− to scale the
 window, and Control-F for full screen. Choose **Shut Down** in the guest's **Spaz**
 menu for a graceful shutdown. ClassicMac's confirmed Shut Down command powers off
 the preview immediately. Restart creates a fresh emulator process. Sound,
-networking, folder sharing, removable media, GXMetal, text paste and browser
+networking, folder sharing, removable media, ATI acceleration, text paste and browser
 viewing are unavailable in this machine.
 
 ## Build and provenance

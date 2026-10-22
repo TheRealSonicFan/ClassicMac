@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
 const {gzipSync}=require('node:zlib');
 const {createHash}=require('node:crypto');
-const {catalog,download,extract}=require('../src/catalog.cjs');
+const {catalog,download,extract,install}=require('../src/catalog.cjs');
 const {plan,paste}=require('../src/paste.cjs');
 function member(name,data,type='0'){
  const h=Buffer.alloc(512);h.write(name);h.write('0000600\0',100);h.write('0000000\0',108);h.write('0000000\0',116);h.write(data.length.toString(8).padStart(11,'0')+'\0',124);h.write('00000000000\0',136);h.fill(32,148,156);h.write(type,156);h.write('ustar\0',257);h.write('00',263);
@@ -42,4 +42,20 @@ test('Paste plans Mac US chords and rejects unsupported text before typing',asyn
 });
 test('Pause cancels a paste before the next chord',async()=>{
  let sent=0;await assert.rejects(paste({paused:true,hmp:async()=>sent++},'abc'));assert.equal(sent,0);
+});
+
+test('Clean ATI editions import prepared hardware and driver-neutral provenance',async t=>{
+ const dir=await temp(t),config=Buffer.from(JSON.stringify({machineFamily:'powerMacG4',diskImageName:'disk.img',graphicsCard:'atiRadeon'})),disk=Buffer.alloc(512);
+ const bytes=gzipSync(Buffer.concat([member('config.json',config),member('disk.img',disk),Buffer.alloc(1024)]));
+ const original=global.fetch;
+ try{
+  global.fetch=async()=>new Response(bytes,{headers:{'content-length':String(bytes.length)}});
+  for(const [id,graphicsCard] of [['mac-os-9.2.1-ati-32gb-v4','atiRadeon'],['mac-os-9.2.1-ati-32gb-v5','atiRadeon'],['unprepared-v1','standard']]){
+   const m={...entry,id,osVersion:'9.2.1',sha256:createHash('sha256').update(bytes).digest('hex'),archiveBytes:bytes.length,installedBytes:config.length+disk.length};
+   const folder=await install(m,dir,id,path.join(dir,'cache'));
+   assert.equal(JSON.parse(await fs.readFile(path.join(folder,'config.json'))).graphicsCard,graphicsCard);
+   const metadata=JSON.parse(await fs.readFile(path.join(folder,'template-info.json')));
+   assert.equal(metadata.templateID,id);assert.equal(metadata.osVersion,'9.2.1');assert.equal(Object.hasOwn(metadata,'gxMetalVersion'),false);
+  }
+ }finally{global.fetch=original;}
 });

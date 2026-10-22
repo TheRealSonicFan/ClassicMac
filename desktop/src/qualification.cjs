@@ -37,7 +37,7 @@ async function qualify({window,engines,id,home,imageTool,version}) {
   if((await readMachine(folder)).config.ramMB!==256)throw new Error('Settings did not persist.');
  });
  if(process.env.CLASSICMAC_TEST_LIBRARY==='1')await check('real Library pause/resume/hash/extraction',async()=>{
-  const rows=await catalog.loadCatalog(),entry=rows.find(m=>m.id==='mac-os-9.2.1-gxmetal-2.3.0-32gb-v2');
+  const rows=await catalog.loadCatalog(),entry=rows.find(m=>m.id==='mac-os-9.2.1-ati-32gb-v4');
   if(!entry)throw new Error('Clean Library edition is absent.');
   const cache=path.join(home,'cache'),controller=new AbortController();let cancelled=false;
   try{await catalog.download(entry,cache,{signal:controller.signal,progress:p=>{if(p.completed>1048576)controller.abort();}});}catch(e){if(!controller.signal.aborted)throw e;cancelled=true;}

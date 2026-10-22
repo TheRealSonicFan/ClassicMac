@@ -1,0 +1,15 @@
+{
+  "native_ci_source": "92b977dea514b3c07ee80b1746fdfe98b41049ee",
+  "windows_run": 39814128066,
+  "linux_run": 39813549507,
+  "windows_job": 119948224729,
+  "linux_job": 119946331390,
+  "all_21_desktop_tests_pass": true,
+  "both_setup_routes_pass": true,
+  "real_public_clean_v4_download_pause_resume_hash_import_ati_finder_shutdown": true,
+  "standard_boot_restart_reconnect_shutdown_and_toolbar_pass": true,
+  "package_source_ui_files_each": 57,
+  "rebuilt_ndrv_in_both_packages": true,
+  "linux_deb_tar_match": true,
+  "github_projection_note": "Completed job logs and uploaded reports are authoritative; projected statuses lagged."
+}

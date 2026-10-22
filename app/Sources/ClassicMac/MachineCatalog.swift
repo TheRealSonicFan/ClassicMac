@@ -26,7 +26,7 @@ struct MachineCatalog: Codable {
     static let defaultURL = URL(string: "https://mcchord.net/classicmac/catalog.json")!
     static let maximumCatalogBytes: Int64 = 1_048_576
     static var currentAppVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "3.2.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "4.4.0"
     }
 
     let schemaVersion: Int
@@ -56,7 +56,6 @@ struct DownloadableMachine: Codable, Identifiable, Hashable {
     let name: String
     let summary: String
     let osVersion: String
-    let gxMetalVersion: String
     let minimumAppVersion: String
     let archiveURL: URL
     let archiveBytes: Int64
@@ -70,11 +69,11 @@ struct DownloadableMachine: Codable, Identifiable, Hashable {
     var family: MachineFamily { machineFamily ?? .powerMacG4 }
 
     init(id: String, name: String, summary: String, osVersion: String,
-         gxMetalVersion: String, minimumAppVersion: String, archiveURL: URL,
+         minimumAppVersion: String, archiveURL: URL,
          archiveBytes: Int64, installedBytes: Int64, sha256: String,
          diskCapacityBytes: Int64? = nil, requiredStorageBytes: Int64? = nil, machineFamily: MachineFamily? = nil) {
         self.id = id; self.name = name; self.summary = summary
-        self.osVersion = osVersion; self.gxMetalVersion = gxMetalVersion
+        self.osVersion = osVersion
         self.minimumAppVersion = minimumAppVersion; self.archiveURL = archiveURL
         self.archiveBytes = archiveBytes; self.installedBytes = installedBytes
         self.sha256 = sha256; self.diskCapacityBytes = diskCapacityBytes
@@ -93,7 +92,6 @@ struct DownloadableMachine: Codable, Identifiable, Hashable {
               Self.validText(name, maximum: 100),
               Self.validText(summary, maximum: 1000),
               Self.validText(osVersion, maximum: 80),
-              Self.validText(gxMetalVersion, maximum: 80),
               AppReleaseVersion(minimumAppVersion) != nil,
               Self.secureURL(archiveURL),
               archiveBytes > 0, archiveBytes <= 140 * 1_073_741_824,
@@ -155,14 +153,12 @@ struct AppReleaseVersion: Comparable {
     }
 }
 
-// Provenance, not a live assertion that the guest's driver is still installed.
-// A user can modify or remove GXMetal inside the machine after importing it.
+// Records the original download; later guest changes do not alter provenance.
 struct VMTemplateMetadata: Codable, Equatable {
     static let fileName = "template-info.json"
     let schemaVersion: Int
     let templateID: String
     let osVersion: String
-    let gxMetalVersion: String
     let archiveSHA256: String
     let importedAt: Date
 
@@ -170,7 +166,6 @@ struct VMTemplateMetadata: Codable, Equatable {
         schemaVersion = 1
         templateID = machine.id
         osVersion = machine.osVersion
-        gxMetalVersion = machine.gxMetalVersion
         archiveSHA256 = machine.sha256
         self.importedAt = importedAt
     }

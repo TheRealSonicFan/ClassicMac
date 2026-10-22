@@ -744,3 +744,74 @@ consolidated root checks, publish and verify stable 4.1.1. Retain 4.1.0 for roll
   worktrees preserved. No Library catalog, DNS, hosting or infrastructure
   changes. Task worktree/ignored output retained. Stable 4.2.0 remains for
   rollback by promotion to Latest. No pending release action.
+
+## 2026-10-22 — retire remaining GXMetal surfaces for 4.4.0
+
+- User authorized retirement from app, images and documentation, all task
+  commits, main integration and stable release 4.4.0. Contained task branch
+  codex/4.4-retire-gxmetal starts at 547448b. Existing local GXMetal build
+  artifacts, user machines and unrelated worktrees are preserved.
+- Removed required catalog/provenance version fields and dormant PowerPC NDRV
+  transport/header. Rebuilt NDRV; mode/gamma contracts pass. Clean Library
+  revisions select ATI hardware on Mac/Windows/Linux. Removed obsolete driver
+  installation/status/game guides and updated current ATI documentation.
+- Rebuilt clean 9.2.1 on a fresh filesystem, copying neither source free space
+  nor preferences/documents and filtering retired files before writing. Added
+  fourteen verified Apple/ATI graphics components plus ClassicMac Display.
+  Finder at 1024x768 and normal shutdown pass. Read-only filesystem and full
+  raw-disk audits find zero retired files/byte strings. Published immutable
+  82,965,064-byte archive 9ec5b9e9…0e2d, then atomically promoted the catalog
+  after saving its checked mode-600 backup. Other catalog editions are intact.
+- Mac app uses verified public 4.3 runtime with fresh Swift binary and NDRV.
+  App and DMG notarization/staples/Gatekeeper/exact verifier pass. Native
+  packaging, final source checks and consolidated integration remain pending;
+  no public 4.4 release/tag yet. Rollback retains 4.3 and the old catalog.
+
+## 2026-10-22 — clean-image shutdown qualification correction
+
+- Fresh native Mac import caught a disk-check dialog in the v3 candidate.
+  Investigation showed the preparation guest had not exited after the menu
+  click; the initial archive was made while it was still running. No public
+  4.4 release existed and older apps reject that entry's minimum version.
+- Performed native Shut Down and verified emulator exit, then cold-booted an
+  independent clone to Finder without a disk-check dialog. That clone also
+  exits normally after Shut Down, with no forced termination. Repeated the
+  zero-retired-file/raw-byte and fourteen-component hash audits on the stopped
+  source. Published immutable v4, withdrew v3 from the catalog, and preserved
+  all other editions and the original rollback catalog. Qualified archive:
+  82,965,347 bytes, SHA256 0e2449c5…75e48. Updated native fixtures and source.
+
+## 2026-10-22 — final Mac and native Linux gates pass
+
+- Final notarized Mac app freshly downloads public v4 through the native
+  wizard and Swift importer, reaches ready and Finder without a disk-check
+  dialog, reports ATI 3D on the host and mounts Tools. Verified host toolbar
+  shutdown after Finder settles, emulator exit and the HFS+ clean flag.
+  Mac retains the existing 15-second fallback for an unresponsive guest.
+- All 131 Swift tests pass (three local optional engine/fixture skips), all
+  21 desktop tests pass with the real signed image tool, and NDRV mode/gamma
+  plus image preparation/packaging checks pass. All four Mac engine code
+  images match public 4.3; matching source includes the rebuilt NDRV.
+- Native Linux 39813549507 at 92b977d passes both setup routes, real public v4
+  download/pause/resume/hash/import, first ATI Finder boot, normal shutdown,
+  and existing standard-card boot/restart/display/toolbar checks. Logs and
+  reports are authoritative while GitHub status projections remain stale.
+- All 57 source/UI files match each native package; NDRV matches too. Linux
+  DEB/TAR app archives match; all three QEMU source archives contain current
+  NDRV and no retired transport files. Current public Deluxe/SuperDeluxe
+  disks have no retired files. Removed five now-unused GXMetal screenshots.
+  Final Windows 39814128066 checks remain pending; no public 4.4 tag/release.
+
+## 2026-10-22 — native Windows gates pass; release scope frozen
+
+- Final native Windows 39814128066 at 92b977d passes all 21 desktop tests,
+  packaged standard-card boot/pause/restart/reconnect/normal shutdown/toolbar
+  checks and both first-run routes. Real public ATI v4 download supports
+  pause/resume, verifies/imports, reaches first Finder boot and shuts down
+  normally. Completed logs and uploaded reports prove the results despite
+  stale GitHub status projections. Native Linux gates also pass.
+- Both packaged source/UI trees and NDRV match; all nine archives are staged
+  with corresponding prepared source. Mac signatures/notarization/staples,
+  final native wizard/import/Finder/clean shutdown and exact verifier pass.
+  Next: PR #34 integration, consolidated root validation, tag/publish stable
+  Latest 4.4.0, then fresh anonymous verification. No public 4.4 release yet.

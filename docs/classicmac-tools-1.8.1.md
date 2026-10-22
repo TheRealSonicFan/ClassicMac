@@ -1,5 +1,9 @@
 # Reliable ClassicMac Tools delivery in 1.8.1
 
+> Historical qualification record. For the current graphics setup, use
+> the [ATI guide](../ati/README.md) and [machine downloads](downloadable-machines.md).
+
+
 ## The 1.8.0 failure
 
 ClassicMac 1.8.0 kept a dedicated IDE CD tray named `tools0` and changed its
