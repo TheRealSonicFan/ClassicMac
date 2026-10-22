@@ -1,0 +1,14 @@
+{
+  "version": "4.3.0",
+  "signed": "Developer ID Application: Austin McChord (7PTN7E8EDS)",
+  "app_notary": "9cb3c72e-8ce7-4e4d-a835-2068451d1151",
+  "dmg_notary": "365824b9-dc88-4adc-870d-8eb5c110a621",
+  "accepted_submissions": 4,
+  "app_and_dmg_stapled": true,
+  "gatekeeper": true,
+  "verify_release_app": true,
+  "verify_release_dmg": true,
+  "packaging": "Release Swift executable and 4.3.0 bundle metadata in verified public 4.2.0 app; helpers re-signed; engine code unchanged",
+  "final_notarized_boot": "Existing library bypass; Finder boot from retained disposable clean download; normal shutdown",
+  "final_boot_screenshot_sha256": "54d0f5807bae24d4f776db9a7b93b477cba79d1ad878681a69f8d0a515bc4967"
+}
