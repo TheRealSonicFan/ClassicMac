@@ -1,0 +1,11 @@
+{
+  "task_guests_stopped": true,
+  "native_debug_tour_shutdown_complete": true,
+  "shared_desktop_setup_reports_clean_shutdown": true,
+  "notary_credentials": "Existing keychain profile; no temporary private-key file created",
+  "user_gxmetal_preserved": true,
+  "no_catalog_dns_hosting_infrastructure_changes": true,
+  "prior_release_retained": "v4.2.0",
+  "public_dmg_full_verifier_passed": true,
+  "task_worktree_and_evidence_retained": true
+}

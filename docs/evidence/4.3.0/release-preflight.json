@@ -1,0 +1,19 @@
+{
+  "version": "4.3.0",
+  "source": "7467ddd02d03cc66360273de252b9db123124cfa",
+  "app_tree": "8e3a144fb1e8a784c72f83a343927f8805e7ae7f",
+  "desktop_tree": "d160d3a496d600e721130dc7d9b1d99c4edc3db6",
+  "native_ci_source": "49dd7ded0b42ffacb6937b5c538de40a4268002b",
+  "windows_run": 39806245692,
+  "linux_run": 39806241075,
+  "gates": "Both completed job logs, both setup reports, existing smoke and package/source parity pass; status projections initially stale during GitHub incident",
+  "consolidated": {
+    "swift_tests": 130,
+    "swift_skips": 2,
+    "swift_failures": 0,
+    "desktop_tests": 20,
+    "desktop_failures": 0
+  },
+  "rollback": "Retain v4.2.0 and promote it with gh release edit v4.2.0 --latest if required",
+  "dmg_sha256": "d26f247bb7f0ab9ca983db068628330e36f196a0e445612fc3a25e13ea3ff6f5"
+}

@@ -1,26 +1,33 @@
-# ClassicMac 4.3.0 — setup wizard release qualification
+# ClassicMac 4.3.0 — stable release complete
 
-User requested the simplest first-install-to-first-boot flow and authorized
-release as 4.3.0 after testing. Branch codex/4.3-setup-wizard, contained checkout
-worktrees/4.3-setup-wizard, PR #33. Baseline stable/main: v4.2.0 / 262f663.
-Root's untracked gxmetal work and existing machines are preserved.
+[Stable Latest v4.3.0](https://github.com/amcchord/ClassicMac/releases/tag/v4.3.0),
+published October 22, 2026. Exact source/tag:
+`7467ddd02d03cc66360273de252b9db123124cfa` (PR #33 integrated through Git).
+All ten assets are public. Fresh anonymous downloads of all nine archives
+match SHA256SUMS; the public Mac DMG passes full release verification,
+Gatekeeper and staple validation.
 
-The four-step wizard begins with software age/license responsibility, then
-pre-installed downloads or own-CD setup, preparation and a Start Mac/Start
-Installer ready screen. Native real Library download reached Finder and normal
-shutdown. Own-CD creation reached the actual installer CD desktop and normal
-shutdown. 130 Swift tests pass (three local optional engine/fixture skips),
-20 desktop tests with the real image tool pass, browser flow checks pass.
+A four-step first-run wizard covers software age/license responsibility,
+pre-installed download or own-CD setup, preparation and first startup.
+Existing libraries open directly. Newer editions keep ATI defaults. Windows
+uses supported disk-creation options. Unavailable Windows/Linux audio falls
+back for the session with a status message, preserving saved preferences.
 
-Native Windows/Linux runs 39806245692 / 39806241075 pass all 20 desktop tests,
-both setup routes, real download/pause/resume/first Finder boot, normal shutdown,
-restart/reconnect and toolbar geometry. Both exercise unavailable-audio fallback.
-Completed logs/reports are retained; GitHub's Actions/PR incident leaves some
-status projections stale. All 57 packaged source/UI files match on each host;
-Linux DEB/TAR application archives match. Mac signing/notarization/staples,
-Gatekeeper, exact package checks and final Finder boot pass. Nine archives
-and SHA256SUMS are staged. No tag/release is public.
+Consolidated root validation: 130 Swift tests, two optional Copland fixture
+skips, zero failures; all 20 desktop tests pass with the real image tool.
+Native Windows 39806245692 and Linux 39806241075 pass both packaged setup
+routes, real download/pause/resume/hash/install/first Finder boot, restart,
+normal shutdown and toolbar checks. All 57 packaged source/UI files match;
+Linux DEB/TAR application archives match. Mac app/DMG signatures, accepted
+notarization/staples, final Finder boot and exact package checks pass.
+See docs/4.3.0-validation.md for scope, sources and the GitHub status incident.
 
-Next: merge PR #33, consolidated root checks once, publish stable Latest v4.3.0
-and verify fresh anonymous downloads. See docs/4.3.0-validation.md.
-Retain stable v4.2.0 for rollback. No catalog/hosting/infrastructure changes.
+No release action remains. Task guests stopped normally. Existing notary
+keychain credentials were used; no temporary private key was created.
+User gxmetal work, machines and unrelated worktrees are preserved. No catalog,
+hosting, DNS or Proxmox changes. Task checkout/output are retained under
+worktrees/4.3-setup-wizard for support.
+
+Rollback: `gh release edit v4.2.0 --latest`, then record the reason in 4.3 notes.
+Windows remains unsigned; Copland is Mac-only. Physical Windows/Linux audio/GPU
+and a full guest OS installation are outside this setup qualification.

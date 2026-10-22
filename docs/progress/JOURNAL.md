@@ -720,3 +720,27 @@ consolidated root checks, publish and verify stable 4.1.1. Retain 4.1.0 for roll
 - Next: merge PR #33, consolidated root validation, exact-source tag, publish
   stable Latest 4.3.0, then verify every fresh anonymous download. 4.2.0 remains
   the rollback release. No public 4.3.0 tag/release yet.
+
+## 2026-10-22 — 4.3.0 stable release published and verified
+
+- Integrated the exact tested PR #33 head f9017eb through Git because GitHub's
+  Actions/PR incident left mergeability and job status projections stale.
+  Merge tree exactly matches the qualified branch. Source/tag v4.3.0:
+  7467ddd02d03cc66360273de252b9db123124cfa. Consolidated root checks pass
+  130 Swift tests (two optional Copland fixture skips) and all 20 desktop tests.
+- Native Windows 39806245692 / Linux 39806241075 completed logs and artifacts
+  prove both wizard routes, real Library pause/resume/verification/preparation,
+  first Finder boot, audio-unavailable fallback and normal shutdown. Existing
+  boot/pause/restart/reconnect/layout checks pass. All 57 packaged source/UI
+  assets match, allowing Windows text line endings; Linux DEB/TAR ASARs match.
+- Mac app notary 9cb3c72e-8ce7-4e4d-a835-2068451d1151 and DMG notary
+  365824b9-dc88-4adc-870d-8eb5c110a621 accepted. Signatures, staples, Gatekeeper,
+  exact package checks and final notarized Finder boot pass. Published stable
+  Latest v4.3.0 with ten assets. Fresh anonymous downloads match all nine archive
+  hashes; fresh public DMG passes full verification/staple/Gatekeeper again.
+  DMG SHA256: d26f247bb7f0ab9ca983db068628330e36f196a0e445612fc3a25e13ea3ff6f5.
+- Task guests normally shut down, temporary mounts detached, no temporary
+  notary private key created. User gxmetal work, machines and unrelated
+  worktrees preserved. No Library catalog, DNS, hosting or infrastructure
+  changes. Task worktree/ignored output retained. Stable 4.2.0 remains for
+  rollback by promotion to Latest. No pending release action.

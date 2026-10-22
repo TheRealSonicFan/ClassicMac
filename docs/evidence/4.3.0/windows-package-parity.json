@@ -230,5 +230,6 @@
       "file": "ui/setup.js",
       "sha256": "2b4493d8dc8a2a2256250811f594825ce05a39cd1b4c15d927fc25ff5d86b552"
     }
-  ]
+  ],
+  "comparison": "Binary assets exact; text CRLF normalized to LF"
 }
