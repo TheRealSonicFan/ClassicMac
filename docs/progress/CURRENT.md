@@ -1,28 +1,23 @@
-# ClassicMac 4.2.0 — stable release complete
+# ClassicMac 4.3.0 — setup wizard release qualification
 
-[Stable Latest v4.2.0](https://github.com/amcchord/ClassicMac/releases/tag/v4.2.0),
-published October 19, 2026. Exact release source/tag:
-`9ca105f583ba9e220f4795790032901da56f5c14` (PR #31). All ten assets are public;
-fresh anonymous downloads of all nine archives match SHA256SUMS.
+User requested the simplest first-install-to-first-boot flow and authorized
+release as 4.3.0 after testing. Branch codex/4.3-setup-wizard, contained checkout
+worktrees/4.3-setup-wizard, PR #33. Baseline stable/main: v4.2.0 / 262f663.
+Root's untracked gxmetal work and existing machines are preserved.
 
-Original Mac OS 9 Icon Services artwork replaces system-icon substitutes,
-including native 16/32-pixel strikes and 8-bit alpha. Mac document frames and
-controls cover 42 independent pixel references at 1×/2×; all 95 system glyphs
-and advances pass. Real signed-app checks cover SuperDeluxe boot/display,
-compact toolbar, WindowShade/restore and Media icons. Source/family hashes
-and Apple attribution remain separate from MIT and Iconfactory assets.
+The four-step wizard begins with software age/license responsibility, then
+pre-installed downloads or own-CD setup, preparation and a Start Mac/Start
+Installer ready screen. Native real Library download reached Finder and normal
+shutdown. Own-CD creation reached the actual installer CD desktop and normal
+shutdown. 130 Swift tests pass (three local optional engine/fixture skips),
+15 desktop tests with the real image tool pass, browser flow checks pass.
 
-Consolidated root checks: 129 Swift tests, two optional Copland fixture skips,
-zero failures; 12 desktop tests pass. Final native Windows 39267099712 and
-Linux 39267103833 pass packaged boot/restart/shutdown and actual toolbar
-geometry. All 54 packaged source/assets match on each platform. Mac app/DMG
-signatures, notarization/staples, Gatekeeper and full release verification
-pass; fresh public DMG checks also pass. See docs/4.2.0-validation.md for scope.
+Native Windows/Linux builds are running packaged first-run download and
+own-CD qualification plus existing boot/restart/shutdown/layout checks.
+Signed Mac 4.3.0 app uses unchanged verified public 4.2.0 engine code; app/DMG
+notarization and final release gates are in progress. No tag/release is public.
+See docs/4.3.0-validation.md and contained output/4.3.0 for evidence.
 
-No release action remains. Task guests stopped normally; mounts detached;
-temporary notary key removed. User gxmetal work, machines and unrelated
-worktrees are preserved. No catalog, DNS, Apache or Proxmox changes in this
-UI release. Worktree/output remain in worktrees/native-platinum-icons.
-
-Rollback: `gh release edit v4.1.1 --latest`, then record the reason in 4.2 notes.
-Whole-app fonts/layouts and desktop CSS retain the documented fidelity limits.
+Next: finish native CI and Mac gates, merge PR #33, run consolidated integration
+checks once, publish stable Latest v4.3.0 and verify every public archive.
+Retain stable v4.2.0 for rollback. No catalog/hosting/infrastructure changes.

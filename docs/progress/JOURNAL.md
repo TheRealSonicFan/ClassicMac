@@ -645,3 +645,27 @@ consolidated root checks, publish and verify stable 4.1.1. Retain 4.1.0 for roll
 - Stable v4.1.1 assets remain for rollback by promotion to Latest; record the
   reason in 4.2 notes if used. No pending release work. The documented wider
   font/layout/desktop fidelity limits remain outside the measured frame gate.
+
+## 2026-10-22 — first-run wizard and 4.3.0 qualification
+
+- User requested a simple first-install-to-first-boot wizard, license
+  responsibility notice, own-OS/pre-installed routes and release as 4.3.0.
+  Contained branch codex/4.3-setup-wizard starts at 262f663; PR #33.
+- Added a four-step native Mac/shared desktop flow, recommended hardware,
+  copied installation media, current compatible editions, inline resumable
+  progress and a ready screen retained across machine registration. Native
+  Finder/File opens during setup also reach ready. New Deluxe catalog
+  revisions keep ATI defaults while using current catalog descriptions.
+- Disposable signed-Mac tests pass real clean Library download, verified
+  import, ready, first Finder boot and normal shutdown; own-CD route copies
+  a real OS9 installer, creates a sparse disk and boots the CD desktop, then
+  shuts down normally. Guest OS installation itself is outside this check.
+  130 Swift tests pass (three local engine/fixture skips), 15 desktop tests
+  pass with the bundled image tool, and browser setup scenarios pass.
+- Native packaged CI now exercises both first-run routes through actual
+  renderer/IPC, real download/pause/resume/first boot/shutdown and disk/CD
+  creation. Runs are in progress. Mac app uses public 4.2.0 engine code,
+  independently matched without code signatures; notarization is in progress.
+  No new public tag/release yet. Next: complete gates, merge, consolidate,
+  publish and verify stable 4.3.0. Keep 4.2.0 for rollback.
+- No user machine, gxmetal, catalog, DNS or production infrastructure changes.
