@@ -690,3 +690,17 @@ consolidated root checks, publish and verify stable 4.1.1. Retain 4.1.0 for roll
   pass. Final notarized Mac app bypasses setup for the retained disposable
   library, boots Finder and shuts down normally. Both final native CI runs
   are in progress; no public 4.3.0 tag/release yet.
+
+## 2026-10-22 — first boot without host audio
+
+- Windows own-CD creation passes after correcting its raw-image arguments.
+  Default-sound first boots on headless Windows/Linux revealed missing
+  DirectSound/PulseAudio output could stop QEMU before any guest execution.
+- Recognized host-audio startup errors now retry once with a silent backend,
+  retaining guest sound hardware/clock and the saved preference. A status
+  message explains sound is unavailable for this session. Unit checks prove
+  actual fallback arguments, unchanged settings and bounded failure. The
+  expanded desktop suite has 20 passing tests. The temporary Linux CI audio
+  service workaround was removed; native CI exercises the real fallback.
+- Final native runs use source 49dd7de; the Mac app source remains the exact
+  notarized e892524 tree. No public 4.3.0 tag/release has been published.

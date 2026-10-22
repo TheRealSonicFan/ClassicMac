@@ -9,6 +9,9 @@
 - Recommended hardware defaults, saved installation media, inline download
   progress and recovery, and clear installation instructions reduce setup.
   Existing libraries open directly, and existing Macs can be imported.
+- Hosts without usable Windows/Linux audio can still boot, using a silent
+  backend for the session and a clear status message. Sound preferences stay
+  saved for the next startup. Windows disk creation uses supported options.
 - Windows/Linux retry a pre-boot display-port collision with fresh ports,
   avoiding a failed first boot or restart when another process claims a port.
 - Newer Deluxe/SuperDeluxe catalog revisions retain ATI Radeon graphics
