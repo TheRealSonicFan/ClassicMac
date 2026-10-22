@@ -51,8 +51,8 @@ test('Missing Windows/Linux audio outputs fall back for the session without chan
     await engine.start();
     assert.equal(fake.calls.length, 2); assert.equal(engine.audioUnavailable, true);
     assert.equal(config.sound, true);
-    // The injected failure is platform-independent; actual Windows/Linux
-    // command lines select the silent backend, leaving the guest card intact.
+    assert(fake.calls[1].includes('none,id=snd0'));
+    assert(fake.calls[1].some(value => value === 'mac99,via=cuda,audiodev=snd0'));
     engine.child.kill();
   }
 });

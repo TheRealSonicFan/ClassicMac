@@ -46,7 +46,7 @@ class Engine extends EventEmitter {
     this.endpoint = { vncPort: await availablePort(), webSocketPort: await availablePort() };
     this.password = randomBytes(6).toString('base64').slice(0, 8);
     const args = argumentsFor(this.machine, this.resources, this.endpoint).map(value => {
-      if (this.audioUnavailable && /^(?:dsound|pa),id=snd0$/.test(value)) return 'none,id=snd0';
+      if (this.audioUnavailable && /^(?:dsound|pa|coreaudio),id=snd0$/.test(value)) return 'none,id=snd0';
       return process.env.CLASSICMAC_TEST_HOME && process.env.CLASSICMAC_TEST_TOOLS_IMAGE
         ? value.replace(require('node:path').join(this.resources,'ClassicMacTools.iso'), process.env.CLASSICMAC_TEST_TOOLS_IMAGE) : value;
     });
