@@ -780,3 +780,24 @@ consolidated root checks, publish and verify stable 4.1.1. Retain 4.1.0 for roll
   source. Published immutable v4, withdrew v3 from the catalog, and preserved
   all other editions and the original rollback catalog. Qualified archive:
   82,965,347 bytes, SHA256 0e2449c5…75e48. Updated native fixtures and source.
+
+## 2026-10-22 — final Mac and native Linux gates pass
+
+- Final notarized Mac app freshly downloads public v4 through the native
+  wizard and Swift importer, reaches ready and Finder without a disk-check
+  dialog, reports ATI 3D on the host and mounts Tools. Verified host toolbar
+  shutdown after Finder settles, emulator exit and the HFS+ clean flag.
+  Mac retains the existing 15-second fallback for an unresponsive guest.
+- All 131 Swift tests pass (three local optional engine/fixture skips), all
+  21 desktop tests pass with the real signed image tool, and NDRV mode/gamma
+  plus image preparation/packaging checks pass. All four Mac engine code
+  images match public 4.3; matching source includes the rebuilt NDRV.
+- Native Linux 39813549507 at 92b977d passes both setup routes, real public v4
+  download/pause/resume/hash/import, first ATI Finder boot, normal shutdown,
+  and existing standard-card boot/restart/display/toolbar checks. Logs and
+  reports are authoritative while GitHub status projections remain stale.
+- All 57 source/UI files match each native package; NDRV matches too. Linux
+  DEB/TAR app archives match; all three QEMU source archives contain current
+  NDRV and no retired transport files. Current public Deluxe/SuperDeluxe
+  disks have no retired files. Removed five now-unused GXMetal screenshots.
+  Final Windows 39814128066 checks remain pending; no public 4.4 tag/release.

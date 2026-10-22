@@ -1,0 +1,14 @@
+[
+  {
+    "id": "os922-deluxe-v9",
+    "retiredFiles": [],
+    "nativeATIComponentsPresent": true,
+    "source": "Public catalog archive verified by SHA256; mounted read-only"
+  },
+  {
+    "id": "os922-superdeluxe-v5",
+    "retiredFiles": [],
+    "nativeATIComponentsPresent": true,
+    "source": "Public catalog archive verified by SHA256; mounted read-only"
+  }
+]
