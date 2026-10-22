@@ -2,17 +2,17 @@
   "schemaVersion": 1,
   "machines": [
     {
-      "id": "mac-os-9.2.1-ati-32gb-v3",
+      "id": "mac-os-9.2.1-ati-32gb-v4",
       "name": "Mac OS 9.2.1",
       "summary": "A clean Mac OS 9.2.1 with Apple ATI Radeon graphics drivers and a 32 GB disk that grows on your computer as you add files.",
       "osVersion": "Mac OS 9.2.1",
       "minimumAppVersion": "4.4.0",
-      "archiveURL": "https://mcchord.net/classicmac/mac-os-9.2.1-ati-32gb-v3.tar.gz",
-      "archiveBytes": 82965064,
+      "archiveURL": "https://mcchord.net/classicmac/mac-os-9.2.1-ati-32gb-v4.tar.gz",
+      "archiveBytes": 82965347,
       "installedBytes": 34359738942,
       "diskCapacityBytes": 34359738368,
-      "requiredStorageBytes": 124780544,
-      "sha256": "9ec5b9e999dbf908a4a3cedb458e8b29f4792ce26239223af0e51e7b080d0e2d"
+      "requiredStorageBytes": 125829120,
+      "sha256": "0e2449c5444ee77fb919fc31c52745b438e3972944cbf4cc3d206d19d3775e48"
     }
   ]
 }

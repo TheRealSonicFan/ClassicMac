@@ -766,3 +766,17 @@ consolidated root checks, publish and verify stable 4.1.1. Retain 4.1.0 for roll
   App and DMG notarization/staples/Gatekeeper/exact verifier pass. Native
   packaging, final source checks and consolidated integration remain pending;
   no public 4.4 release/tag yet. Rollback retains 4.3 and the old catalog.
+
+## 2026-10-22 — clean-image shutdown qualification correction
+
+- Fresh native Mac import caught a disk-check dialog in the v3 candidate.
+  Investigation showed the preparation guest had not exited after the menu
+  click; the initial archive was made while it was still running. No public
+  4.4 release existed and older apps reject that entry's minimum version.
+- Performed native Shut Down and verified emulator exit, then cold-booted an
+  independent clone to Finder without a disk-check dialog. That clone also
+  exits normally after Shut Down, with no forced termination. Repeated the
+  zero-retired-file/raw-byte and fourteen-component hash audits on the stopped
+  source. Published immutable v4, withdrew v3 from the catalog, and preserved
+  all other editions and the original rollback catalog. Qualified archive:
+  82,965,347 bytes, SHA256 0e2449c5…75e48. Updated native fixtures and source.

@@ -1,15 +1,16 @@
 {
   "date": "2026-10-22",
-  "archive": "https://mcchord.net/classicmac/mac-os-9.2.1-ati-32gb-v3.tar.gz",
-  "archive_sha256": "9ec5b9e999dbf908a4a3cedb458e8b29f4792ce26239223af0e51e7b080d0e2d",
-  "archive_bytes": 82965064,
+  "archive": "https://mcchord.net/classicmac/mac-os-9.2.1-ati-32gb-v4.tar.gz",
+  "archive_sha256": "0e2449c5444ee77fb919fc31c52745b438e3972944cbf4cc3d206d19d3775e48",
+  "archive_bytes": 82965347,
   "retired_files": 0,
   "raw_disk_retired_byte_strings": 0,
   "apple_ati_components_verified": 14,
-  "boot": "Finder at 1024x768 with Apple ATI driver and ClassicMac Display; normal guest shutdown",
+  "boot": "Finder at 1024x768; preparation guest exit verified; second cold boot has no disk-check dialog and exits normally after Shut Down.",
   "catalog_before_sha256": "9ebccbc1925ca9a75f146f8108bd4c534785482c99243875ffd2b32e5f4e21f2",
-  "catalog_after_sha256": "1fac3c804157a04cc24c620857b21ee703b38bab5ca6777d069eb95d14f670bf",
+  "catalog_after_sha256": "21661864c256e8780c50b0fefa037a8f75a038bf8cc7a77a8850be6d35ffcf85",
   "rollback_catalog": "/root/classicmac-catalog-backups/pre-4.4.0-20261022.json",
   "historical_archives": "retained unchanged",
-  "compatibility": "Live schema-1 catalog retains an Unavailable legacy version marker for older app decoders; 4.4 ignores it and writes no retired graphics metadata."
+  "compatibility": "Live schema-1 catalog retains an Unavailable legacy version marker for older app decoders; 4.4 ignores it and writes no retired graphics metadata.",
+  "withdrawn_candidate": "v3 was packaged before its preparation guest exited; a fresh import exposed the disk-check dialog. It is withdrawn from the catalog and retained unchanged; v4 is the qualified image."
 }

@@ -13,11 +13,11 @@ const run=promisify(execFile);
  if(!supplied){
  const archive=path.join(out,'fixture.tar.gz');
  if(!await fs.access(archive).then(()=>true,()=>false)){
-  const r=await fetch('https://mcchord.net/classicmac/mac-os-9.2.1-ati-32gb-v3.tar.gz');if(!r.ok)throw new Error('Fixture download failed');
+  const r=await fetch('https://mcchord.net/classicmac/mac-os-9.2.1-ati-32gb-v4.tar.gz');if(!r.ok)throw new Error('Fixture download failed');
   await pipeline(Readable.fromWeb(r.body),createWriteStream(archive));
  }
  const hash=createHash('sha256');for await(const part of createReadStream(archive))hash.update(part);
- if(hash.digest('hex')!=='9ec5b9e999dbf908a4a3cedb458e8b29f4792ce26239223af0e51e7b080d0e2d')throw new Error('Fixture hash mismatch');
+ if(hash.digest('hex')!=='0e2449c5444ee77fb919fc31c52745b438e3972944cbf4cc3d206d19d3775e48')throw new Error('Fixture hash mismatch');
  await fs.mkdir(fixture);await require('../src/catalog.cjs').extract(archive,fixture,{installedBytes:34359738942,diskCapacityBytes:34359738368});
  }
  const file=path.join(fixture,'config.json'),c=JSON.parse(await fs.readFile(file,'utf8'));

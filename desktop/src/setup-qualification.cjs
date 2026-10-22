@@ -51,7 +51,7 @@ async function qualify({ window, dialog, engines, home, route }) {
   } else {
     await js('document.getElementById("setup-next").click()');
     await until('document.getElementById("setup-edition").options.length > 0');
-    await js('document.getElementById("setup-edition").value = "mac-os-9.2.1-ati-32gb-v3"; document.getElementById("setup-edition").dispatchEvent(new Event("change"))');
+    await js('document.getElementById("setup-edition").value = "mac-os-9.2.1-ati-32gb-v4"; document.getElementById("setup-edition").dispatchEvent(new Event("change"))');
     await shot('download');
     await js('document.getElementById("setup-next").click()');
     await until('!document.getElementById("setup-progress").hidden && document.getElementById("setup-activity").textContent.includes("Downloading")');

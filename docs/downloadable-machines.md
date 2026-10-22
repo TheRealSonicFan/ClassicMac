@@ -27,10 +27,10 @@ ATI graphics on that stopped disk. Packaging does not inspect or scrub HFS conte
 ```sh
 python3 scripts/package-machine-template.py \
   --bundle /absolute/path/Mac-OS-9.classic \
-  --output /absolute/path/mac-os-9.2.1-ati-32gb-v3.tar.gz \
+  --output /absolute/path/mac-os-9.2.1-ati-32gb-v4.tar.gz \
   --catalog-output /absolute/path/catalog.json \
-  --archive-url https://mcchord.net/classicmac/mac-os-9.2.1-ati-32gb-v3.tar.gz \
-  --id mac-os-9.2.1-ati-32gb-v3 \
+  --archive-url https://mcchord.net/classicmac/mac-os-9.2.1-ati-32gb-v4.tar.gz \
+  --id mac-os-9.2.1-ati-32gb-v4 \
   --os-version 'Mac OS 9.2.1'
 ```
 

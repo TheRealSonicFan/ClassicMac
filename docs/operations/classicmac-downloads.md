@@ -201,7 +201,7 @@ not machines that users have already created. Local evidence: `output/3.2.1/host
 
 ## ATI clean image — October 22, 2026
 
-ClassicMac 4.4.0 selects `mac-os-9.2.1-ati-32gb-v3` in place of the retired
+ClassicMac 4.4.0 selects `mac-os-9.2.1-ati-32gb-v4` in place of the retired
 clean image. It is a new filesystem with Apple/ATI graphics software and
 ClassicMac Display, using the emulated ATI Radeon. Existing machines and old
 immutable archives are preserved. [Exact publication and rollback evidence](../evidence/4.4.0/image-publication.json).

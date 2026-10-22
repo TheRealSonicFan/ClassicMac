@@ -85,7 +85,7 @@ struct LibraryEdition {
             order: 1
         ),
         LibraryEdition(
-            catalogID: "mac-os-9.2.1-ati-32gb-v3",
+            catalogID: "mac-os-9.2.1-ati-32gb-v4",
             title: "Mac OS 9.2.1",
             osLabel: "Mac OS 9.2.1",
             tagline: "A clean Mac OS 9 to make your own",

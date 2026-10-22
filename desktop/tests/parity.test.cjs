@@ -50,7 +50,7 @@ test('Clean ATI editions import prepared hardware and driver-neutral provenance'
  const original=global.fetch;
  try{
   global.fetch=async()=>new Response(bytes,{headers:{'content-length':String(bytes.length)}});
-  for(const [id,graphicsCard] of [['mac-os-9.2.1-ati-32gb-v3','atiRadeon'],['mac-os-9.2.1-ati-32gb-v4','atiRadeon'],['unprepared-v1','standard']]){
+  for(const [id,graphicsCard] of [['mac-os-9.2.1-ati-32gb-v4','atiRadeon'],['mac-os-9.2.1-ati-32gb-v5','atiRadeon'],['unprepared-v1','standard']]){
    const m={...entry,id,osVersion:'9.2.1',sha256:createHash('sha256').update(bytes).digest('hex'),archiveBytes:bytes.length,installedBytes:config.length+disk.length};
    const folder=await install(m,dir,id,path.join(dir,'cache'));
    assert.equal(JSON.parse(await fs.readFile(path.join(folder,'config.json'))).graphicsCard,graphicsCard);

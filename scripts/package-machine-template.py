@@ -94,7 +94,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True, help="New .tar.gz archive")
     parser.add_argument("--catalog-output", type=Path, required=True, help="New catalog JSON")
     parser.add_argument("--archive-url", type=secure_url, required=True)
-    parser.add_argument("--id", required=True, help="Immutable template version, e.g. mac-os-9.2.1-ati-32gb-v3")
+    parser.add_argument("--id", required=True, help="Immutable template version, e.g. mac-os-9.2.1-ati-32gb-v4")
     parser.add_argument("--name", default="Mac OS 9")
     parser.add_argument("--summary")
     parser.add_argument("--os-version", required=True)
