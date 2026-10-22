@@ -20,14 +20,24 @@ class Engine extends EventEmitter {
   }
   async start() {
     this.starting = true;
+    let collisions = 0;
     try {
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (;;) {
         this.exited = false; this.log = ''; this.initialized = false;
         try { return await this.launch(); }
         catch (error) {
           // A port can be claimed between the availability probe and QEMU's
           // bind. Retry only that pre-boot failure, with fresh display ports.
-          if (attempt === 2 || !/Failed to find an available port: Address already in use/.test(this.log)) throw error;
+          if (/Failed to find an available port: Address already in use/.test(this.log) && ++collisions < 3) continue;
+          // A missing host sound device must not prevent the first boot. Keep
+          // the guest sound hardware/clock and the saved preference; use a
+          // silent host backend for this session and tell the UI about it.
+          if (!this.audioUnavailable && this.machine.config.sound &&
+              /Could not initialize DirectSound|could not stat pidfile .*[/\\]pulse[/\\]pid|pa_context_connect(?:\(\))? failed/i.test(this.log)) {
+            this.audioUnavailable = true;
+            continue;
+          }
+          throw error;
         }
       }
     } finally { this.starting = false; }
@@ -35,9 +45,11 @@ class Engine extends EventEmitter {
   async launch() {
     this.endpoint = { vncPort: await availablePort(), webSocketPort: await availablePort() };
     this.password = randomBytes(6).toString('base64').slice(0, 8);
-    const args = argumentsFor(this.machine, this.resources, this.endpoint).map(value =>
-      process.env.CLASSICMAC_TEST_HOME && process.env.CLASSICMAC_TEST_TOOLS_IMAGE
-        ? value.replace(require('node:path').join(this.resources,'ClassicMacTools.iso'), process.env.CLASSICMAC_TEST_TOOLS_IMAGE) : value);
+    const args = argumentsFor(this.machine, this.resources, this.endpoint).map(value => {
+      if (this.audioUnavailable && /^(?:dsound|pa),id=snd0$/.test(value)) return 'none,id=snd0';
+      return process.env.CLASSICMAC_TEST_HOME && process.env.CLASSICMAC_TEST_TOOLS_IMAGE
+        ? value.replace(require('node:path').join(this.resources,'ClassicMacTools.iso'), process.env.CLASSICMAC_TEST_TOOLS_IMAGE) : value;
+    });
     this.child = this.launchProcess(this.binary, args, { cwd: require('node:path').join(this.resources, 'bin'), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const ready = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('The emulation engine did not start. ' + this.log)), 15000);

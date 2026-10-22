@@ -47,7 +47,7 @@ async function state() {
       const file = await machineFile(m.folder, 'preview.png');
       if ((await fs.stat(file)).size < 5 * 1024 * 1024) preview = 'data:image/png;base64,' + (await fs.readFile(file)).toString('base64');
     } catch { /* Previews are optional. */ }
-    rows.push({ ...m.config, folder: m.folder, running: !!e, paused: e?.paused ?? false, preview,
+    rows.push({ ...m.config, folder: m.folder, running: !!e, paused: e?.paused ?? false, audioUnavailable: !!e?.audioUnavailable, preview,
       display: e?.endpoint ? { url: `ws://127.0.0.1:${e.endpoint.webSocketPort}`, password: e.password } : null });
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name));

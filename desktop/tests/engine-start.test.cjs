@@ -43,3 +43,21 @@ test('Display retries are bounded and unrelated startup failures are reported im
     assert.equal(fake.calls.length, attempts); assert.equal(engine.initialized, false);
   }
 });
+test('Missing Windows/Linux audio outputs fall back for the session without changing settings', async () => {
+  for (const message of ['Could not initialize DirectSound: No sound driver is available', 'could not stat pidfile /run/user/1001/pulse/pid: No such file or directory']) {
+    const fake = processFactory(1, message);
+    const config = freshConfig('Mac');
+    const engine = new Engine({ folder: '/test/Mac.classic', config }, '/runtime', '/qemu', fake.launch);
+    await engine.start();
+    assert.equal(fake.calls.length, 2); assert.equal(engine.audioUnavailable, true);
+    assert.equal(config.sound, true);
+    // The injected failure is platform-independent; actual Windows/Linux
+    // command lines select the silent backend, leaving the guest card intact.
+    engine.child.kill();
+  }
+});
+test('An audio fallback is attempted only once', async () => {
+  const fake = processFactory(10, 'Could not initialize DirectSound: No sound driver is available');
+  const engine = new Engine({ folder: '/test/Mac.classic', config: freshConfig('Mac') }, '/runtime', '/qemu', fake.launch);
+  await assert.rejects(engine.start()); assert.equal(fake.calls.length, 2);
+});
