@@ -1,0 +1,51 @@
+{
+  "ci_run": 39806241075,
+  "source": "49dd7ded0b42ffacb6937b5c538de40a4268002b",
+  "unit_tests": 20,
+  "unit_failures": 0,
+  "installer": {
+    "platform": "linux",
+    "route": "installer",
+    "checks": [
+      "License acknowledgment gates Continue",
+      "Own CD required; real sparse disk and CD copy created; ready screen survives registration; Later opens library"
+    ],
+    "passed": true
+  },
+  "download": {
+    "platform": "linux",
+    "route": "download",
+    "checks": [
+      "License acknowledgment gates Continue",
+      "Real Library pause/resume, SHA-256, extraction, ready, Start Mac, Finder framebuffer and clean shutdown"
+    ],
+    "passed": true
+  },
+  "existing_smoke": {
+    "machines": [
+      {
+        "id": "a759a9a3-a2c8-4895-bcef-9189ccad7fca",
+        "running": true
+      }
+    ],
+    "connected": true,
+    "canvas": true,
+    "selected": "a759a9a3-a2c8-4895-bcef-9189ccad7fca",
+    "toolbar": {
+      "fitsWidth": true,
+      "singleLineButtons": true,
+      "bottomVisible": true
+    },
+    "setup": {
+      "active": false,
+      "step": "welcome",
+      "busy": false,
+      "acknowledged": false
+    }
+  },
+  "shutdown": {
+    "cleanShutdown": true
+  },
+  "headless_audio_fallback_observed": true,
+  "log_source": "Completed job log and uploaded reports; status projection initially stale during GitHub incident"
+}

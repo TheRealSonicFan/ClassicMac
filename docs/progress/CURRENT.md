@@ -12,13 +12,15 @@ shutdown. Own-CD creation reached the actual installer CD desktop and normal
 shutdown. 130 Swift tests pass (three local optional engine/fixture skips),
 20 desktop tests with the real image tool pass, browser flow checks pass.
 
-Native Windows/Linux builds are running packaged first-run download and
-own-CD qualification plus existing boot/restart/shutdown/layout checks.
-Signed Mac 4.3.0 app uses unchanged verified public 4.2.0 engine code; app/DMG
-notarization, stapling, Gatekeeper and exact-package checks pass. Final native
-Windows/Linux boot gates remain in progress. No tag/release is public.
-See docs/4.3.0-validation.md and contained output/4.3.0 for evidence.
+Native Windows/Linux runs 39806245692 / 39806241075 pass all 20 desktop tests,
+both setup routes, real download/pause/resume/first Finder boot, normal shutdown,
+restart/reconnect and toolbar geometry. Both exercise unavailable-audio fallback.
+Completed logs/reports are retained; GitHub's Actions/PR incident leaves some
+status projections stale. All 57 packaged source/UI files match on each host;
+Linux DEB/TAR application archives match. Mac signing/notarization/staples,
+Gatekeeper, exact package checks and final Finder boot pass. Nine archives
+and SHA256SUMS are staged. No tag/release is public.
 
-Next: finish native CI and Mac gates, merge PR #33, run consolidated integration
-checks once, publish stable Latest v4.3.0 and verify every public archive.
+Next: merge PR #33, consolidated root checks once, publish stable Latest v4.3.0
+and verify fresh anonymous downloads. See docs/4.3.0-validation.md.
 Retain stable v4.2.0 for rollback. No catalog/hosting/infrastructure changes.

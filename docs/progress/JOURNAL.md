@@ -704,3 +704,19 @@ consolidated root checks, publish and verify stable 4.1.1. Retain 4.1.0 for roll
   service workaround was removed; native CI exercises the real fallback.
 - Final native runs use source 49dd7de; the Mac app source remains the exact
   notarized e892524 tree. No public 4.3.0 tag/release has been published.
+
+## 2026-10-22 — final native package gates pass
+
+- Final source 49dd7de passes all 20 desktop tests on native Windows/Linux.
+  Runs 39806245692 / 39806241075 complete both setup routes, real Library
+  pause/resume/hash/extraction, first Finder boot and clean shutdown. Existing
+  packaged pause/restart/reconnect/shutdown and toolbar geometry also pass.
+  Both hosts exercise unavailable-audio fallback without changing guest
+  settings. Completed job logs and uploaded reports are authoritative;
+  GitHub's current Actions/PR incident leaves some status projections stale.
+- All 57 packaged source/UI assets match on each platform; Linux DEB/TAR
+  application archives match. Nine release archives and SHA256SUMS are staged.
+  Mac notarization/source checks remain valid; source app tree is unchanged.
+- Next: merge PR #33, consolidated root validation, exact-source tag, publish
+  stable Latest 4.3.0, then verify every fresh anonymous download. 4.2.0 remains
+  the rollback release. No public 4.3.0 tag/release yet.
