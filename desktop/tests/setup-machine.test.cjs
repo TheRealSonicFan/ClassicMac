@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { createInstallerMac } = require('../src/setup-machine.cjs');
+const { createInstallerMac, rawDiskArguments } = require('../src/setup-machine.cjs');
 const { readMachine } = require('../src/machines.cjs');
 const imageTool = process.env.CLASSICMAC_TEST_IMAGE_TOOL || path.resolve(__dirname, '../../output/desktop/runtime/bin/qemu-img' + (process.platform === 'win32' ? '.exe' : ''));
 async function fixture(t) {
@@ -13,6 +13,10 @@ async function fixture(t) {
   const cd = path.join(root, 'Mac OS.iso'); await fs.writeFile(cd, 'installation media');
   return { name: 'My First Mac', machineFamily: 'powerMacG4', cd, directory: path.join(root, 'Macs'), imageTool, pramSeed: path.resolve(__dirname, '../../shared/pram-seed.img') };
 }
+test('Windows disk creation omits unsupported raw preallocation options', () => {
+  assert.deepEqual(rawDiskArguments('disk.img', 32, 'win32'), ['create', '-f', 'raw', 'disk.img', '32G']);
+  for (const platform of ['darwin', 'linux']) assert.deepEqual(rawDiskArguments('disk.img', 32, platform), ['create', '-f', 'raw', '-o', 'preallocation=off', 'disk.img', '32G']);
+});
 test('Installer creation keeps a CD copy, boot defaults and existing same-named Macs', async t => {
   try { await fs.access(imageTool); } catch { return t.skip('Set CLASSICMAC_TEST_IMAGE_TOOL to a built qemu-img'); }
   const options = await fixture(t);

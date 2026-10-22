@@ -124,7 +124,7 @@ function installHandlers() {
     const folder = result.filePath.endsWith('.classic') ? result.filePath : result.filePath + '.classic';
     await fs.mkdir(folder); // No recursive overwrite of an existing machine.
     try {
-      await run(imageTool(), ['create', '-f', 'raw', '-o', 'preallocation=off', path.join(folder, 'disk.img'), `${size}G`], { windowsHide: true });
+      await run(imageTool(), require('./setup-machine.cjs').rawDiskArguments(path.join(folder, 'disk.img'), size), { windowsHide: true });
       if (c.machineFamily === 'quadra800') await fs.copyFile(path.join(runtime, 'pram-seed.img'), path.join(folder, 'pram.img'));
       await writeJSON(path.join(folder, 'config.json'), c);
     } catch (error) {

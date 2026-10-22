@@ -5,6 +5,11 @@ const { promisify } = require('node:util');
 const run = promisify(require('node:child_process').execFile);
 const { freshConfig, writeJSON } = require('./machines.cjs');
 
+function rawDiskArguments(file, sizeGB, platform = process.platform) {
+  // The Windows file backend does not expose raw preallocation options.
+  return ['create', '-f', 'raw', ...(platform === 'win32' ? [] : ['-o', 'preallocation=off']), file, `${sizeGB}G`];
+}
+
 // A first-run Mac uses safe defaults and keeps its installation CD with it.
 // mkdir reserves a unique package; a failed copy/image build removes only
 // files created by this invocation, leaving existing machines untouched.
@@ -23,7 +28,7 @@ async function createInstallerMac({ name, machineFamily, cd, directory, imageToo
   const cdName = 'Install CD' + path.extname(cd).toLowerCase();
   try {
     await fs.copyFile(cd, path.join(folder, cdName), require('node:fs').constants.COPYFILE_EXCL);
-    await run(imageTool, ['create', '-f', 'raw', '-o', 'preallocation=off', path.join(folder, 'disk.img'), `${config.diskSizeGB}G`], { windowsHide: true });
+    await run(imageTool, rawDiskArguments(path.join(folder, 'disk.img'), config.diskSizeGB), { windowsHide: true });
     if (machineFamily === 'quadra800') await fs.copyFile(pramSeed, path.join(folder, 'pram.img'));
     config.cdImagePath = path.join(folder, cdName);
     config.bootFromCD = true;
@@ -35,4 +40,4 @@ async function createInstallerMac({ name, machineFamily, cd, directory, imageToo
     throw error;
   }
 }
-module.exports = { createInstallerMac };
+module.exports = { createInstallerMac, rawDiskArguments };
