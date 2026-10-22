@@ -13,6 +13,8 @@ async function qualify({ window, dialog, engines, home, route }) {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
       if (await js(source)) return;
+      const problem = await js('document.getElementById("setup-error")?.textContent');
+      if (problem && !problem.startsWith('Paused.')) throw new Error(problem);
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     throw new Error('Setup timed out: ' + source);
