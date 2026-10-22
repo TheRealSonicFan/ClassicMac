@@ -1,10 +1,11 @@
 import RFB from './browser/novnc/core/rfb.js';
+import { initFirstMacSetup } from './setup.js';
 const api = window.classicmac;
 const $ = id => document.getElementById(id);
 const model = { powerMacG4: 'Power Mac G4', quadra800: 'Quadra 800', powerMac7500: 'Power Mac 7500' };
 const icon = { powerMacG4: 'powermac_g4', quadra800: 'quadra_800', powerMac7500: 'powermac_7500' };
 let relativePointer = false;
-let machines = [], selected, rfb, displayID, displayKey, connectTimer, creating = false, connectionGeneration = 0;
+let machines = [], selected, rfb, displayID, displayKey, connectTimer, creating = false, connectionGeneration = 0, setup;
 const current = () => machines.find(m => m.id === selected);
 function message(text) { $('message-text').textContent = text; if (!$('message').open) $('message').showModal(); }
 async function action(fn) { try { await fn(); } catch (error) { message(error.message); } }
@@ -14,7 +15,7 @@ function updateGameMouse() {
   $('capture').hidden = !relativePointer;
   $('capture').textContent = captured ? 'Release game mouse' : 'Capture game mouse';
   $('capture').setAttribute('aria-pressed', String(captured));
-  if (relativePointer) $('notice').textContent = captured ? 'Mouse captured. Press Escape to release it.' : 'Click the Mac screen to capture the mouse for this game. Press Escape to release it.';
+  if (relativePointer) $('notice').textContent = (captured ? 'Mouse captured. Press Escape to release it.' : 'Click the Mac screen to capture the mouse for this game. Press Escape to release it.') + (current()?.audioUnavailable ? ' Sound is unavailable on this computer; this Mac is running without sound.' : '');
 }
 function captureGameMouse() {
   const canvas = $('display').querySelector('canvas');
@@ -79,7 +80,9 @@ function render() {
   const nextDisplay = m?.running ? `${m.id}:${m.display?.url}` : null;
   if (nextDisplay !== displayKey) { displayKey = nextDisplay; connect(m); }
   $('notice').textContent = m?.running ? 'Use Shut Down from Mac OS before closing ClassicMac. Force Off is for an unresponsive Mac.' : m ? 'Choose Start Mac, or use Media to select an installation CD.' : 'Open a .classic folder from your Mac, or create a new Mac.';
+  if (m?.running && m.audioUnavailable) $('notice').textContent = 'Sound is unavailable on this computer. This Mac is running without sound; its saved sound setting is unchanged.';
   updateGameMouse();
+  setup?.sync(machines);
 }
 api.onState(rows => { machines = rows; selected ??= rows[0]?.id; render(); });
 api.onProblem(message);
@@ -157,6 +160,11 @@ window.classicmacEvidence = () => {
     singleLineButtons: buttons.every(button => { const range = document.createRange(); range.selectNodeContents(button); return [...range.getClientRects()].filter(r => r.width > 0 && r.height > 0).length === 1; }),
     bottomVisible: bounds.bottom <= innerHeight
   };
-  return { machines: machines.map(m => ({ id: m.id, running: m.running })), connected: $('curtain').hidden, canvas: !!$('display').querySelector('canvas'), selected, toolbar };
+  return { machines: machines.map(m => ({ id: m.id, running: m.running })), connected: $('curtain').hidden, canvas: !!$('display').querySelector('canvas'), selected, toolbar, setup: setup?.evidence() };
 };
+setup = initFirstMacSetup(api, async (id, start) => {
+  selected = id;
+  if (start) await api.start(id);
+  machines = await api.state(); render();
+});
 machines = await api.state(); selected = machines[0]?.id; render();

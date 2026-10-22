@@ -3,6 +3,22 @@
 <body>
   <nav><strong>ClassicMac</strong><button id="new">New Mac…</button><button id="open" data-icon="folder">Open Mac…</button><button id="library" data-icon="library">Mac OS Library…</button><button id="about">About ClassicMac</button><span class="platform">Windows / Linux edition</span></nav>
   <main class="window"><header class="titlebar"><span></span><strong>ClassicMac</strong><span></span></header>
+    <section id="setup" hidden aria-label="Set up your first Mac">
+      <div class="setup-heading"><img src="powermac_g4-32.png" width="64" height="64" alt=""><div><h1 id="setup-title" tabindex="-1">Welcome to ClassicMac</h1><p id="setup-step">Step 1 of 4 · Your first classic Mac</p></div></div>
+      <div id="setup-content">
+        <div data-step="welcome"><h2>This is 30-year-old software.</h2><p>ClassicMac brings the classic Macintosh to your computer. We’ll help you download a pre-installed Mac or install Mac OS from your own CD image.</p><fieldset><legend>A quick note about licenses</legend><p>You are responsible for knowing whether you have the right licenses for Mac OS and any other software you download, install or use. A pre-installed download does not provide those licenses.</p></fieldset><label class="setup-check"><input id="setup-license" type="checkbox"> I understand that I am responsible for the software licenses.</label></div>
+        <div data-step="source" hidden><label class="setup-route"><input type="radio" name="setup-source" value="download" checked><span><strong>Download a pre-installed Mac — easiest</strong><small>Choose one of our ready-to-run versions. We’ll download it, check it and prepare your Mac.</small></span></label><label class="setup-route"><input type="radio" name="setup-source" value="installer"><span><strong>Install my own copy of Mac OS</strong><small>Bring your own CD image. We’ll create a Mac with the right defaults, then start your installer.</small></span></label><p>Already have a .classic Mac? <button id="setup-open">Open Existing Mac…</button></p></div>
+        <div data-step="prepare" hidden>
+          <div id="setup-download-fields"><p>Mac OS is already installed. Choose an edition and we’ll do the rest.</p><label>Edition <select id="setup-edition" aria-label="Pre-installed Mac edition"></select></label><p id="setup-summary"></p><p id="setup-size" class="hint"></p><button id="setup-retry" hidden>Try Again</button></div>
+          <div id="setup-installer-fields" hidden><p>Choose the model for your Mac OS version. Memory, disk and display are set up for you.</p><label>Model <select id="setup-model"><option value="powerMacG4">Power Mac G4 — Mac OS 8.5 to 9.2.2</option><option value="quadra800">Quadra 800 — System 7.1 to Mac OS 8.1</option></select></label><p><button id="setup-cd" data-icon="cd">Choose CD…</button> <span id="setup-cd-name">No CD image chosen</span></p><p class="hint">We’ll keep a copy of your installation CD with your Mac.</p></div>
+          <label class="setup-name">Mac name <input id="setup-name" maxlength="100" required></label><p class="hint">Saved in Documents / ClassicMac. You can change settings later with Get Info.</p>
+          <div id="setup-progress" hidden><p id="setup-activity" role="status"></p><progress id="setup-bar" max="1"></progress><button id="setup-pause">Pause Download</button></div>
+        </div>
+        <div data-step="ready" hidden><h2 id="setup-ready-name"></h2><p id="setup-ready-text"></p><p id="setup-install-help" hidden></p><p class="hint">Change settings with Get Info and add software with Media. When you’re done, choose Shut Down inside Mac OS.</p></div>
+        <p id="setup-error" role="alert"></p>
+      </div>
+      <footer><button id="setup-back" hidden>Back</button><span class="spacer"></span><button id="setup-later" hidden>Later</button><button id="setup-next" class="default" disabled>Continue</button></footer>
+    </section>
     <div class="workspace"><aside><h2>Macs on this computer:</h2><div id="machines" role="listbox" aria-label="Macs on this computer"></div><p class="hint">Open a .classic machine folder copied from your Mac, or create a new Mac with your own installation disc.</p></aside>
     <section class="home"><div id="display" tabindex="0" aria-label="Mac screen"><div id="curtain"><img src="powermac_g4-32.png" width="64" height="64" alt=""><p>Welcome to ClassicMac</p></div></div>
       <div class="heading"><h1 id="name">Your classic Macs, on your PC.</h1><span id="status">Ready</span></div>

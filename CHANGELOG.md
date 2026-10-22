@@ -1,5 +1,22 @@
 # Changelog
 
+## 4.3.0 — 2026-10-22
+
+- A guided first-run wizard on macOS, Windows and Linux, from an empty library
+  to your first Mac. It begins with a 30-year-old software and licensing
+  responsibility acknowledgment, then offers pre-installed downloads or your
+  own Mac OS CD image, and finishes with Start Mac or Start Installer.
+- Recommended hardware defaults, saved installation media, inline download
+  progress and recovery, and clear installation instructions reduce setup.
+  Existing libraries open directly, and existing Macs can be imported.
+- Hosts without usable Windows/Linux audio can still boot, using a silent
+  backend for the session and a clear status message. Sound preferences stay
+  saved for the next startup. Windows disk creation uses supported options.
+- Windows/Linux retry a pre-boot display-port collision with fresh ports,
+  avoiding a failed first boot or restart when another process claims a port.
+- Newer Deluxe/SuperDeluxe catalog revisions retain ATI Radeon graphics
+  without displaying an older edition's software descriptions.
+
 ## 4.0.0 — 2026-10-18
 
 - Stable release of the Platinum interface, native guest windows, Mac OS

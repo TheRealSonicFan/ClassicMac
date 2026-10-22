@@ -1,7 +1,7 @@
 'use strict';
 const { contextBridge, ipcRenderer } = require('electron');
 const api = {};
-for (const name of ['state', 'open', 'create', 'save', 'floppy', 'disc', 'start', 'pause', 'resume', 'shutdown', 'restart', 'forceOff', 'reveal', 'catalog', 'download', 'pauseDownload', 'paste', 'cancelPaste', 'chooseShare', 'platform']) {
+for (const name of ['state', 'open', 'create', 'setupCreate', 'chooseInstallCD', 'save', 'floppy', 'disc', 'start', 'pause', 'resume', 'shutdown', 'restart', 'forceOff', 'reveal', 'catalog', 'download', 'pauseDownload', 'paste', 'cancelPaste', 'chooseShare', 'platform']) {
   api[name] = (...args) => ipcRenderer.invoke(name, ...args);
 }
 api.onState = callback => { ipcRenderer.on('state', (_event, state) => callback(state)); };

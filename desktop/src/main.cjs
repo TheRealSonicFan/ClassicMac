@@ -10,7 +10,7 @@ const { readMachine, validate, writeJSON, freshConfig, machineFile } = require('
 const { Engine } = require('./engine.cjs');
 const catalog = require('./catalog.cjs');
 const {paste,plan:pastePlan} = require('./paste.cjs');
-let catalogRows=[], downloadJob, pasteJob;
+let catalogRows=[], downloadJob, pasteJob, setupCD;
 const run = promisify(execFile);
 
 const runtime = process.env.CLASSICMAC_RUNTIME || path.join(process.resourcesPath, 'runtime');
@@ -47,7 +47,7 @@ async function state() {
       const file = await machineFile(m.folder, 'preview.png');
       if ((await fs.stat(file)).size < 5 * 1024 * 1024) preview = 'data:image/png;base64,' + (await fs.readFile(file)).toString('base64');
     } catch { /* Previews are optional. */ }
-    rows.push({ ...m.config, folder: m.folder, running: !!e, paused: e?.paused ?? false, preview,
+    rows.push({ ...m.config, folder: m.folder, running: !!e, paused: e?.paused ?? false, audioUnavailable: !!e?.audioUnavailable, preview,
       display: e?.endpoint ? { url: `ws://127.0.0.1:${e.endpoint.webSocketPort}`, password: e.password } : null });
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name));
@@ -95,6 +95,20 @@ function handle(name, handler) {
 }
 function installHandlers() {
   handle('state', state);
+  handle('chooseInstallCD', async () => {
+    const result = await dialog.showOpenDialog(window, { title: 'Choose your Mac OS installation CD image', properties: ['openFile'], filters: [{ name: 'Mac OS CD images', extensions: ['iso', 'img', 'toast', 'cdr'] }] });
+    if (result.canceled) return null;
+    setupCD = result.filePaths[0];
+    return path.basename(setupCD);
+  });
+  handle('setupCreate', async fields => {
+    const folder = await require('./setup-machine.cjs').createInstallerMac({
+      name: fields.name, machineFamily: fields.machineFamily, cd: setupCD,
+      directory: path.join(app.getPath('documents'), 'ClassicMac'), imageTool: imageTool(),
+      pramSeed: path.join(runtime, 'pram-seed.img')
+    });
+    const m = await register(folder); await notify(); return m.config.id;
+  });
   handle('open', async () => {
     const result = await dialog.showOpenDialog(window, { title: 'Open a ClassicMac machine folder', properties: ['openDirectory'] });
     if (result.canceled) return null;
@@ -110,7 +124,7 @@ function installHandlers() {
     const folder = result.filePath.endsWith('.classic') ? result.filePath : result.filePath + '.classic';
     await fs.mkdir(folder); // No recursive overwrite of an existing machine.
     try {
-      await run(imageTool(), ['create', '-f', 'raw', '-o', 'preallocation=off', path.join(folder, 'disk.img'), `${size}G`], { windowsHide: true });
+      await run(imageTool(), require('./setup-machine.cjs').rawDiskArguments(path.join(folder, 'disk.img'), size), { windowsHide: true });
       if (c.machineFamily === 'quadra800') await fs.copyFile(path.join(runtime, 'pram-seed.img'), path.join(folder, 'pram.img'));
       await writeJSON(path.join(folder, 'config.json'), c);
     } catch (error) {
@@ -161,12 +175,13 @@ function installHandlers() {
     if (result.response === 1) await engine.forceOff();
   });
   handle('reveal', id => shell.showItemInFolder(lookup(id).folder));
-  handle('catalog', async () => { catalogRows=await catalog.loadCatalog(); return catalogRows.map(m=>({...m,available:(m.machineFamily||'powerMacG4')==='powerMacG4'})); });
-  handle('download', async (id,name) => {
+  handle('catalog', async () => { catalogRows=await catalog.loadCatalog(); return catalogRows.map(m=>({...m,available:(m.machineFamily||'powerMacG4')==='powerMacG4'&&catalog.supportedVersion(m.minimumAppVersion)})); });
+  handle('download', async (id,name,quickSetup=false) => {
     if(downloadJob)throw new Error('Finish or pause the current download first.');
     const entry=catalogRows.find(m=>m.id===id);if(!entry)throw new Error('Reload the Library and choose an edition.');
-    const result=await dialog.showOpenDialog(window,{title:'Save Downloaded Mac In',defaultPath:app.getPath('documents'),properties:['openDirectory','createDirectory']});
+    const result=quickSetup===true ? {canceled:false,filePaths:[path.join(app.getPath('documents'),'ClassicMac')]} : await dialog.showOpenDialog(window,{title:'Save Downloaded Mac In',defaultPath:app.getPath('documents'),properties:['openDirectory','createDirectory']});
     if(result.canceled)return null;
+    if(quickSetup===true)await fs.mkdir(result.filePaths[0],{recursive:true});
     const controller=new AbortController();downloadJob=controller;
     try{
       const folder=await catalog.install(entry,result.filePaths[0],name,path.join(app.getPath('userData'),'Downloads'),{signal:controller.signal,
@@ -219,6 +234,11 @@ async function serve() {
 if (process.env.CLASSICMAC_TEST_HOME) app.setPath('userData', process.env.CLASSICMAC_TEST_HOME);
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.whenReady().then(async () => {
+  if (process.env.CLASSICMAC_TEST_SETUP) {
+    if (!process.env.CLASSICMAC_TEST_HOME) throw new Error('Setup qualification requires an isolated home.');
+    const documents = path.join(app.getPath('userData'), 'Documents');
+    await fs.mkdir(documents, { recursive: true }); app.setPath('documents', documents);
+  }
   await fs.mkdir(app.getPath('userData'), { recursive: true });
   let folders = [];
   try { folders = JSON.parse(await fs.readFile(indexFile(), 'utf8')); } catch { /* First launch. */ }
@@ -242,6 +262,10 @@ else app.whenReady().then(async () => {
   });
   app.on('second-instance', () => { window.show(); window.focus(); });
   await window.loadURL(`${origin}/${token}/index.html`);
+  if (process.env.CLASSICMAC_TEST_SETUP) {
+    await require('./setup-qualification.cjs').qualify({ window, dialog, engines, home: app.getPath('userData'), route: process.env.CLASSICMAC_TEST_SETUP });
+    app.quit(); return;
+  }
   if (process.env.CLASSICMAC_TEST_START) await start(process.env.CLASSICMAC_TEST_START);
   if (process.env.CLASSICMAC_TEST_CYCLE && process.env.CLASSICMAC_TEST_START) {
     const id = process.env.CLASSICMAC_TEST_START, engine = engines.get(id);

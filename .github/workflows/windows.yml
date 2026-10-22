@@ -88,6 +88,8 @@ jobs:
           retention-days: 14
       - name: Test the packaged desktop with a disposable OS9 machine
         run: node desktop/tests/smoke-desktop.cjs output/desktop/packages/win-unpacked/ClassicMac.exe output/desktop/smoke
+      - name: Test first-run setup through the packaged application
+        run: node desktop/tests/setup-smoke.cjs output/desktop/packages/win-unpacked/ClassicMac.exe output/desktop/setup-smoke
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -97,4 +99,7 @@ jobs:
             output/desktop/smoke/desktop.png.json
             output/desktop/smoke/desktop.png.shutdown.json
             output/desktop/smoke/desktop.log
+            output/desktop/setup-smoke/*/*.png
+            output/desktop/setup-smoke/*/*.json
+            output/desktop/setup-smoke/*/desktop.log
           retention-days: 14

@@ -143,7 +143,12 @@ struct LibraryEntry: Identifiable, Hashable {
     var tagline: String { edition?.tagline ?? machine.summary }
     var description: String { edition?.description ?? machine.summary }
     var icon: String { edition?.icon ?? "library" }
-    var graphicsCard: GraphicsCard { machine.family == .powerMacG4 ? (edition?.graphicsCard ?? .standard) : .standard }
+    var graphicsCard: GraphicsCard {
+        guard machine.family == .powerMacG4 else { return .standard }
+        // New catalog revisions keep their edition's prepared hardware even
+        // when this app has no revision-specific contents description yet.
+        return edition?.graphicsCard ?? (["os922-deluxe", "os922-superdeluxe"].contains(family.name) ? .atiRadeon : .standard)
+    }
 
     /// "os922-deluxe-v6" → ("os922-deluxe", 6). Entries without a version
     /// suffix are their own family.

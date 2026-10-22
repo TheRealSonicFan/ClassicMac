@@ -1,0 +1,14 @@
+{
+  "platform": "macOS",
+  "profile": "disposable CFFIXED_USER_HOME; no user library",
+  "download": "Live clean Mac OS 9.2.1 catalog entry; SHA-256; sparse install; Start Mac; Finder; normal shutdown",
+  "own_cd": "Copied real OS 9.2.1 install CD; blank 32 GB sparse disk; Start Installer; CD desktop; normal shutdown",
+  "own_cd_limit": "Guest OS installation not performed",
+  "screenshots_sha256": {
+    "mac-welcome.png": "a5780d75ceb0c803dba305f1deba299c875dc7d78ff34f607618c1b273d59e29",
+    "mac-download-first-boot.png": "5df11e54776c238c436d296c83d30adc023fe92f2a337870af3379046c5c5b4f",
+    "mac-own-cd.png": "0ae79c3577bf58333f78ae1e9a3263bd07e704a35340055c9db8a68eb54c1748",
+    "mac-installer-ready.png": "96a9aa787a3e821badef9d35542e8add4a16c4623b41d9f187535b03c441b8bd",
+    "mac-installer-boot.png": "42f7360be0dcbba94635c19ede9a50871dabf42a24ae40e0621c4f47ece45d4f"
+  }
+}

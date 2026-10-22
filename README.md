@@ -257,11 +257,12 @@ ClassicMac exists because of years of brilliant work by other engineers. The pat
 ## Getting started
 
 1. Grab **ClassicMac.dmg** from the [latest release](../../releases/latest), drag ClassicMac to Applications, and launch it.
-2. In the welcome panel choose **The Mac OS Library**, or open it later with
-   **File → Mac OS Library…** (⇧⌘L). Pick a Mac (SuperDeluxe and Deluxe come
-   with games and classic software and start on the ATI Radeon card), name
-   it, and click **Download**.
-3. Select your Mac and click **Start Up** (⌘R). Its screen opens in a
+2. The first-run wizard starts with a reminder: this is 30-year-old software,
+   and you are responsible for having the right licenses. Acknowledge it,
+   then choose **Download a pre-installed Mac** or **Install my own copy of
+   Mac OS**. Downloads need no OS installation; your own installer needs a
+   model and CD image. The wizard uses recommended hardware settings.
+3. Choose **Start Mac** or **Start Installer** on the ready screen. Its screen opens in a
    Platinum window with a toolbar for common commands; **Show Mac** brings it
    forward. Every key, Command combinations included, goes to the Mac while
    its screen has focus; Control-Command-F toggles full screen, and games
@@ -271,6 +272,7 @@ ClassicMac exists because of years of brilliant work by other engineers. The pat
    graphics card and a shared folder, which appears in the guest as a
    writable disk.
 
+You can add more Macs later through **File → Mac OS Library…** (⇧⌘L).
 For a manual installation, choose **File → New Mac…** (⌘N): a Quadra 800
 (System 7.1–8.1) or Power Mac G4 (Mac OS 8.5–9.2.2), memory, a virtual disk up
 to 120 GB and your Mac OS CD image. The Mac starts from the CD; once Mac OS is
@@ -329,7 +331,7 @@ Requirements: an Apple Silicon Mac (M1 or later) running macOS 15 or newer.
 # 3. Build the app and bundle QEMU + firmware + dylibs into
 #    dist/ClassicMac.app (code-signed). APP_VERSION, APP_BUILD_VERSION and
 #    DIST_DIR override the version and output folder.
-APP_VERSION=4.0.0 APP_BUILD_VERSION=4.0.0 ./scripts/bundle-qemu.sh
+APP_VERSION=4.3.0 APP_BUILD_VERSION=4.3.0 ./scripts/bundle-qemu.sh
 
 # 4. Notarize and package a distributable disk image (DIST_NAME and
 #    DMG_VOLUME_NAME name the outputs)
@@ -337,7 +339,7 @@ APP_VERSION=4.0.0 APP_BUILD_VERSION=4.0.0 ./scripts/bundle-qemu.sh
 
 # 5. Verify the exact signed/stapled artifact, including versions, Gatekeeper,
 #    the bundled Tools CD and both Power Mac display cards
-./scripts/verify-release.sh dist/ClassicMac.dmg 4.0.0 4.0.0
+./scripts/verify-release.sh dist/ClassicMac.dmg 4.3.0 4.3.0
 ```
 
 All scripts are idempotent and safe to re-run. Building needs the Xcode command line tools and [Homebrew](https://brew.sh).

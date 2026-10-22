@@ -50,4 +50,13 @@ final class LibraryTests: XCTestCase {
         let games = edition.contents.filter { !["Productivity", "Utilities"].contains($0.category) }
         XCTAssertEqual(games.flatMap(\.items).count, 54)
     }
+
+    func testNewCatalogRevisionsKeepPreparedGraphicsWithoutStaleDescriptions() {
+        for id in ["os922-deluxe-v9", "os922-superdeluxe-v5"] {
+            let entry = LibraryEntry(machine: machine(id), edition: LibraryEdition.edition(for: id))
+            XCTAssertNil(entry.edition)
+            XCTAssertEqual(entry.description, "Summary of \(id)")
+            XCTAssertEqual(entry.graphicsCard, .atiRadeon)
+        }
+    }
 }

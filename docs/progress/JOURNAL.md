@@ -645,3 +645,78 @@ consolidated root checks, publish and verify stable 4.1.1. Retain 4.1.0 for roll
 - Stable v4.1.1 assets remain for rollback by promotion to Latest; record the
   reason in 4.2 notes if used. No pending release work. The documented wider
   font/layout/desktop fidelity limits remain outside the measured frame gate.
+
+## 2026-10-22 — first-run wizard and 4.3.0 qualification
+
+- User requested a simple first-install-to-first-boot wizard, license
+  responsibility notice, own-OS/pre-installed routes and release as 4.3.0.
+  Contained branch codex/4.3-setup-wizard starts at 262f663; PR #33.
+- Added a four-step native Mac/shared desktop flow, recommended hardware,
+  copied installation media, current compatible editions, inline resumable
+  progress and a ready screen retained across machine registration. Native
+  Finder/File opens during setup also reach ready. New Deluxe catalog
+  revisions keep ATI defaults while using current catalog descriptions.
+- Disposable signed-Mac tests pass real clean Library download, verified
+  import, ready, first Finder boot and normal shutdown; own-CD route copies
+  a real OS9 installer, creates a sparse disk and boots the CD desktop, then
+  shuts down normally. Guest OS installation itself is outside this check.
+  130 Swift tests pass (three local engine/fixture skips), 15 desktop tests
+  pass with the bundled image tool, and browser setup scenarios pass.
+- Native packaged CI now exercises both first-run routes through actual
+  renderer/IPC, real download/pause/resume/first boot/shutdown and disk/CD
+  creation. Runs are in progress. Mac app uses public 4.2.0 engine code,
+  independently matched without code signatures; notarization is in progress.
+  No new public tag/release yet. Next: complete gates, merge, consolidate,
+  publish and verify stable 4.3.0. Keep 4.2.0 for rollback.
+- No user machine, gxmetal, catalog, DNS or production infrastructure changes.
+
+## 2026-10-22 — native qualification corrections
+
+- The first Linux restart hit a display-port bind collision. Added a maximum
+  of three pre-boot retries with fresh ports and tests proving bounds and
+  immediate failure for unrelated errors. Subsequent packaged restart,
+  shutdown and toolbar checks pass on both Windows and Linux.
+- New own-CD packaged tests caught unsupported `preallocation=off` in the
+  Windows raw-file backend. Both wizard and existing New Mac now use the
+  supported Windows arguments; regression coverage explicitly checks each
+  platform. Windows prepackaging now makes unit-test success a hard gate,
+  since PowerShell had continued to packaging after a failed npm test.
+- Linux's real default-sound download reached ready but could not start in
+  the headless runner without PulseAudio. CI now starts a virtual sink;
+  product sound defaults remain exercised. Setup checks report errors
+  promptly. The shared renderer/IPC routes both pass locally with real tools,
+  including Library pause/resume, Finder and guest-shutdown.
+- Mac app/DMG notarization accepted, staples/Gatekeeper/full release checks
+  pass. Final notarized Mac app bypasses setup for the retained disposable
+  library, boots Finder and shuts down normally. Both final native CI runs
+  are in progress; no public 4.3.0 tag/release yet.
+
+## 2026-10-22 — first boot without host audio
+
+- Windows own-CD creation passes after correcting its raw-image arguments.
+  Default-sound first boots on headless Windows/Linux revealed missing
+  DirectSound/PulseAudio output could stop QEMU before any guest execution.
+- Recognized host-audio startup errors now retry once with a silent backend,
+  retaining guest sound hardware/clock and the saved preference. A status
+  message explains sound is unavailable for this session. Unit checks prove
+  actual fallback arguments, unchanged settings and bounded failure. The
+  expanded desktop suite has 20 passing tests. The temporary Linux CI audio
+  service workaround was removed; native CI exercises the real fallback.
+- Final native runs use source 49dd7de; the Mac app source remains the exact
+  notarized e892524 tree. No public 4.3.0 tag/release has been published.
+
+## 2026-10-22 — final native package gates pass
+
+- Final source 49dd7de passes all 20 desktop tests on native Windows/Linux.
+  Runs 39806245692 / 39806241075 complete both setup routes, real Library
+  pause/resume/hash/extraction, first Finder boot and clean shutdown. Existing
+  packaged pause/restart/reconnect/shutdown and toolbar geometry also pass.
+  Both hosts exercise unavailable-audio fallback without changing guest
+  settings. Completed job logs and uploaded reports are authoritative;
+  GitHub's current Actions/PR incident leaves some status projections stale.
+- All 57 packaged source/UI assets match on each platform; Linux DEB/TAR
+  application archives match. Nine release archives and SHA256SUMS are staged.
+  Mac notarization/source checks remain valid; source app tree is unchanged.
+- Next: merge PR #33, consolidated root validation, exact-source tag, publish
+  stable Latest 4.3.0, then verify every fresh anonymous download. 4.2.0 remains
+  the rollback release. No public 4.3.0 tag/release yet.
