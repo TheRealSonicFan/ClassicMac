@@ -16,7 +16,17 @@
   <img src="https://img.shields.io/badge/QEMU-11.0.2%20(custom)-orange" alt="QEMU">
   <img src="https://img.shields.io/badge/UI-Apple%20Platinum-lightgrey" alt="Apple Platinum interface">
   <img src="https://img.shields.io/badge/3D-ATI%20Radeon%20(emulated)-c00" alt="Emulated ATI Radeon 3D">
+  <img src="https://img.shields.io/badge/macOS%20build-Intel%20x86__64%20only-0071c5" alt="macOS build: Intel x86_64 only">
 </p>
+
+> [!IMPORTANT]
+> **This is an Intel Mac only build of ClassicMac.** It is *not* an Apple
+> Silicon build: the macOS app, its QEMU engines and every bundled library are
+> native x86_64 code for Intel Macs running macOS 15 or newer. On an Apple
+> Silicon Mac, use the official arm64 release from
+> [amcchord/ClassicMac](https://github.com/amcchord/ClassicMac/releases/latest).
+> This build is ad-hoc signed rather than notarized; run the included
+> `adhoc-sign-classicmac.sh` once on each Mac (see [Getting started](#getting-started)).
 
 ---
 
@@ -84,14 +94,15 @@
 
 | Download | Host | Install |
 | --- | --- | --- |
-| macOS DMG | Apple Silicon, macOS 15+ | Drag ClassicMac to Applications |
+| macOS DMG (this build) | **Intel Macs (x86_64) only**, macOS 15+; not for Apple Silicon | Drag ClassicMac to Applications, then run `adhoc-sign-classicmac.sh` |
 | Windows ZIP | Windows 11, x64 | Extract and run `ClassicMac.exe`, keeping its companion files |
 | Linux DEB | Ubuntu 24.04+/Debian 13, x64 | Install the package with your package manager |
 | Linux tar.gz | Same Linux baseline | Extract and run `classicmac`; the host must support Chromium sandboxing |
 
 The [latest release](https://github.com/amcchord/ClassicMac/releases/latest)
 contains the applications, checksums and corresponding engine sources. The
-macOS app is Developer ID signed and notarized. Windows binaries are unsigned.
+upstream macOS app is Apple Silicon only, Developer ID signed and notarized;
+this Intel build is ad-hoc signed instead. Windows binaries are unsigned.
 See the [desktop build and platform support guide](desktop/README.md).
 
 <p align="center">
@@ -185,7 +196,7 @@ Classic Mac OS setup flow.
 
 The iPad build uses UTM SE's App Store-compatible QEMU threaded-code
 interpreter because iPadOS cannot launch the macOS app's bundled emulator
-processes. That makes it slower than the Apple Silicon Mac build. This first
+processes. That makes it slower than the Mac build. This first
 beta also uses upstream UTM display hardware, so the emulated ATI Radeon and custom `nubus-qfb` display device are unavailable. See
 [`ios/README.md`](ios/README.md) for the pinned build and TestFlight workflow.
 
@@ -200,7 +211,9 @@ modes and EDID, command processor, 2D engine and a 3D engine whose draws run
 on a host OpenGL 4.1 thread (Apple's OpenGL over Metal). Mac OS 9's stock
 *ATI Driver Update*, *ATI Radeon 3D Accelerator*, *ATI Resource Manager* and
 *OpenGLRendererATI* do the rest; nothing is installed from ClassicMac. On an
-Apple M5 Max the Quake III Arena demo runs at about 150 frames per second.
+Apple M5 Max the Quake III Arena demo runs at about 150 frames per second
+(an upstream Apple Silicon measurement; Intel Macs are slower, depending on
+their CPU and GPU).
 
 - Mac OS starts at 640 × 480 and switches to the size you chose (640 × 480
   up to 1920 × 1440) during startup through RetroBoot Display (in the
@@ -232,6 +245,7 @@ You bring your own Mac OS installation media: every classic Mac OS version is av
 
 ClassicMac exists because of years of brilliant work by other engineers. The patches and drivers that make it possible deserve top billing:
 
+- [amcchord/ClassicMac](https://github.com/amcchord/ClassicMac) (Austin McChord and contributors) — the original ClassicMac app, its QEMU patch set, Platinum interface, Mac OS Library and build tooling. This Intel-only build is derived from ClassicMac 4.4.0 and adds native x86_64 support; all credit for ClassicMac itself belongs there.
 - [QEMU](https://www.qemu.org/) and the m68k / q800 maintainers (incl. the `nubus-virtio-mmio` transport) — the emulation core underneath everything.
 - [SolraBizna/qemu](https://github.com/SolraBizna/qemu) for the `nubus-qfb` paravirtualized framebuffer (ported here onto QEMU 11.0.2) that gives the Quadra arbitrary resolutions and rich color.
 - [elliotnunn/classicvirtio](https://github.com/elliotnunn/classicvirtio) for the classic Mac OS virtio drivers used for folder sharing and Quadra floppy images (68k card firmware and the PowerPC ndrvloader), and for the ndrv link recipe used to build the Power Mac video driver.
@@ -264,11 +278,21 @@ ClassicMac exists because of years of brilliant work by other engineers. The pat
 - **Safe, faster shutdown cycles.** The app's Shut Down command presses the
   virtual Mac's Power key and confirms Mac OS's own dialog, allowing HFS/HFS+
   to unmount cleanly so the next boot does not pay the recovery penalty.
-- **Signed, notarized, stapled DMG** for distribution — recipients get a clean Gatekeeper experience even offline.
+- **Intel-only, ad-hoc signed DMG** for distribution — recipients run the included `adhoc-sign-classicmac.sh` once to clear the download quarantine and sign the app for their Mac.
 
 ## Getting started
 
-1. Grab **ClassicMac.dmg** from the [latest release](../../releases/latest), drag ClassicMac to Applications, and launch it.
+1. Open **ClassicMac-4.4.0-intel.dmg** on an Intel Mac and drag ClassicMac to
+   Applications. Because this build is not notarized, sign it for your Mac
+   once from Terminal, then launch it:
+
+   ```bash
+   bash "/Volumes/ClassicMac/adhoc-sign-classicmac.sh"   # or add /path/to/ClassicMac.app
+   ```
+
+   The script removes the download quarantine, re-signs the app ad-hoc with the
+   JIT entitlements its emulators need, and verifies the result. Run it again
+   after copying ClassicMac to another Mac.
 2. The first-run wizard starts with a reminder: this is 30-year-old software,
    and you are responsible for having the right licenses. Acknowledge it,
    then choose **Download a pre-installed Mac** or **Install my own copy of
@@ -314,7 +338,9 @@ machines keep their current disk sizes.
 
 New machines are created as `.classic` documents (default `~/Documents/ClassicMac/`). Double-click one in Finder to boot it.
 
-Requirements: an Apple Silicon Mac (M1 or later) running macOS 15 or newer.
+Requirements: an **Intel Mac (x86_64)** running macOS 15 or newer and a GPU
+with OpenGL 4.1 for the ATI Radeon card. This build is Intel only; it is not
+an Apple Silicon build (use the upstream arm64 release there).
 
 ## Display & sound notes
 
@@ -341,20 +367,60 @@ Requirements: an Apple Silicon Mac (M1 or later) running macOS 15 or newer.
 ./scripts/build-guest-cd.sh
 
 # 3. Build the app and bundle QEMU + firmware + dylibs into
-#    dist/ClassicMac.app (code-signed). APP_VERSION, APP_BUILD_VERSION and
-#    DIST_DIR override the version and output folder.
-APP_VERSION=4.4.0 APP_BUILD_VERSION=4.4.0 ./scripts/bundle-qemu.sh
+#    dist/x86_64/ClassicMac.app (code-signed, x86_64 on an Intel Mac).
+#    APP_VERSION, APP_BUILD_VERSION and DIST_DIR override the version and
+#    output folder.
+APP_VERSION=4.4.0 APP_BUILD_VERSION=4.4.0 DIST_DIR=dist/x86_64 ./scripts/bundle-qemu.sh
 
-# 4. Notarize and package a distributable disk image (DIST_NAME and
-#    DMG_VOLUME_NAME name the outputs)
-./scripts/make-dmg.sh
+# 4. Package the Intel-only disk image with the ad-hoc signing script and a
+#    READ ME: dist/x86_64/ClassicMac-4.4.0-intel.dmg (+ .sha256)
+./scripts/make-intel-dmg.sh
 
-# 5. Verify the exact signed/stapled artifact, including versions, Gatekeeper,
-#    the bundled Tools CD and both Power Mac display cards
-./scripts/verify-release.sh dist/ClassicMac.dmg 4.4.0 4.4.0
+# 4b. With a Developer ID and notary credentials instead: notarize and package
+#     (DIST_NAME and DMG_VOLUME_NAME name the outputs), then verify the exact
+#     signed/stapled artifact, the bundled Tools CD and both display cards
+DIST_DIR=dist/x86_64 ./scripts/make-dmg.sh
+DIST_DIR=dist/x86_64 ./scripts/verify-release.sh dist/x86_64/ClassicMac.dmg 4.4.0 4.4.0
 ```
 
 All scripts are idempotent and safe to re-run. Building needs the Xcode command line tools and [Homebrew](https://brew.sh).
+
+### About the Intel build
+
+This repository's distributed macOS app is the Intel (x86_64) build above.
+The scripts build for the architecture of the shell they run in: x86_64 on an
+Intel Mac (Homebrew in `/usr/local`); on Apple Silicon they still produce
+upstream's arm64 app (Homebrew in `/opt/homebrew`), which this Intel build does
+not replace. `build-qemu.sh` refuses a Homebrew of the other
+architecture, and `bundle-qemu.sh` takes the app's architecture from the QEMU
+build, checks the Copland engine matches and compiles the Swift app for it.
+The same TCG engine, ATI Radeon OpenGL back end, signing (`scripts/sign-app.sh`)
+and macOS 15 deployment target are used for both.
+
+```bash
+# Optional, for maintainers: arm64 and universal apps.
+# On each architecture (an Apple Silicon Mac can build x86_64 too, from
+# `arch -x86_64 /bin/bash` with the x86_64 Homebrew's /usr/local/bin first in
+# PATH; the Copland engine also cross-builds with CLASSICMAC_ARCH=x86_64):
+./scripts/build-qemu.sh && ./scripts/build-copland.sh && ./scripts/build-guest-cd.sh
+DIST_DIR=dist/arm64 ./scripts/bundle-qemu.sh      # or DIST_DIR=dist/x86_64
+
+# Separate releases: notarize and package each folder as usual
+DIST_DIR=dist/x86_64 DIST_NAME=ClassicMac-x86_64 ./scripts/make-dmg.sh
+
+# Or one universal app from the two (same commit, version and Tools CD):
+./scripts/make-universal.sh dist/arm64/ClassicMac.app dist/x86_64/ClassicMac.app
+DIST_DIR=dist/universal ./scripts/make-dmg.sh
+DIST_DIR=dist/universal ./scripts/verify-release.sh dist/universal/ClassicMac.dmg 4.4.0 4.4.0
+```
+
+`verify-release.sh` checks that every bundled executable shares the main
+app's architectures and that each architecture's bundled libraries resolve
+(`EXPECTED_ARCHS="arm64 x86_64"` pins the set). Homebrew no longer publishes
+Intel bottles for every library version; for x86_64 the release-library step
+then uses the installed keg, only if it is thin x86_64 and targets macOS 15 or
+earlier, and records that in `release-libraries.json`
+(`CLASSICMAC_RELEASE_LIBRARIES=bottle` requires official bottles instead).
 
 The Platinum fonts and icons are generated from the MIT sources in
 `platinum/` with `python3 platinum/tools/build_platinum_swift.py`; see
@@ -418,4 +484,4 @@ ClassicMac/
 - **Mac OS 9 hard-disk startup** — hard-disk boots use a startup-only accounted instruction clock, zero-delay cached IDE completion, and PowerPC TCG fast paths so Mac OS 9's hardware and timebase polling does not sleep on the host. QEMU recognizes Finder's menu bar directly in guest VRAM—even headless and at arbitrary supported resolutions—then atomically returns the virtual clock and 25 MHz PowerPC timebase to real time before applications run. A 15-second app fallback covers unusual themes; installer-CD boots retain normal timing and the 1 ms IDE race safeguard. Six 512 MB cold boots of the 1920×1080 OS 9.2.2 test machine reached the automatic handoff in 9.92–10.22 seconds, including a reboot after verified clean shutdown, versus roughly 18.5 seconds on the former real-time-only path; exact results vary with host load and guest configuration.
 - **Power Mac Mac OS 8 startup** — the machine uses a CUDA/G3 profile with an original-iMac OpenBIOS identity and classic Mac NVRAM/RTAS services. During CD startup, a read-only Virtio mirror lets the Mac OS 8.5/8.6 ROM read the selected disc before its IDE driver is active; the ordinary IDE CD stays present for Installer and Finder.
 - **Quadra floppy storage** — a removable `virtio-blk-device` rides on the existing classicvirtio NuBus transport. A small extension to the 68k block driver adds writes, flushes, media-change events, and a host/guest eject handshake so Finder owns the unmount before QEMU removes the raw image.
-- **Emulation speed** — both machines run on QEMU's TCG JIT; an Apple Silicon Mac runs them comfortably faster than the original hardware.
+- **Emulation speed** — both machines run on QEMU's TCG JIT, compiled natively for Intel (x86_64) in this build; a recent Intel Mac runs them faster than the original hardware.

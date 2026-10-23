@@ -23,7 +23,8 @@ Run `scripts/build-copland.sh` before `scripts/bundle-qemu.sh`. CMake, Ninja and
 Apple's command-line tools are required. The script pins DingusPPC's Copland fork
 and SDL2, applies `rtc.patch`, `host-integration.patch`, `clock-state.patch` and `keyboard-input.patch`,
 installs the source overlays, and runs the serial protocol and persistent-clock tests. The helper links only system dynamic
-libraries and targets macOS 15 on Apple Silicon.
+libraries and targets macOS 15 on the host architecture (arm64 or x86_64;
+`CLASSICMAC_ARCH` selects another).
 
 The eleven hardware fixes are Michael Steil's work in the pinned `copland-boot`
 branch. His `wasm-port` contributes the pinned RTC patch and debugger protocol.

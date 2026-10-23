@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 #
 # build-qemu.sh - Build qemu-system-m68k, qemu-system-ppc and qemu-img for
-# Apple Silicon: the Quadra's enhanced nubus-qfb paravirtualized framebuffer
+# the host architecture (arm64 on Apple Silicon; x86_64 on Intel Macs, or
+# under Rosetta with the x86_64 Homebrew in /usr/local): the Quadra's enhanced
+# nubus-qfb paravirtualized framebuffer
 # (arbitrary resolutions + Thousands colour) and nubus-virtio-mmio transport,
 # and the Power Mac G4's std-VGA extensions plus the emulated ATI Radeon R100
 # (ati/, Mac OS 9's own ATI drivers with 3D rendered through host OpenGL),
@@ -166,6 +168,10 @@ VIRTIO_DIR="$ROOT_DIR/virtio"
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
+# QEMU and its Homebrew libraries are native to the shell's architecture
+# (validated below for full macOS builds; source preparation is host-neutral).
+HOST_ARCH="$(uname -m)"
+
 # ---------------------------------------------------------------------------
 # 1. Toolchain + dependencies via Homebrew
 # ---------------------------------------------------------------------------
@@ -195,6 +201,23 @@ else
 fi
 
 export PKG_CONFIG_PATH="$BREW_PREFIX/lib/pkgconfig:$BREW_PREFIX/share/pkgconfig:$BREW_PREFIX/opt/jpeg-turbo/lib/pkgconfig:$BREW_PREFIX/opt/libslirp/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+
+# QEMU is built natively for the host architecture against Homebrew's
+# libraries, so both must agree: an arm64 shell needs the arm64 Homebrew in
+# /opt/homebrew, an x86_64 (Intel, or Rosetta on Apple Silicon) shell the
+# x86_64 Homebrew in /usr/local.
+case "$HOST_ARCH" in
+  arm64|x86_64) ;;
+  *) die "Unsupported host architecture: $HOST_ARCH (expected arm64 or x86_64)" ;;
+esac
+BREW_GLIB="$BREW_PREFIX/opt/glib/lib/libglib-2.0.0.dylib"
+[ -f "$BREW_GLIB" ] || die "glib not found at $BREW_GLIB"
+BREW_ARCHS="$(lipo -archs "$BREW_GLIB")"
+case " $BREW_ARCHS " in
+  *" $HOST_ARCH "*) ;;
+  *) die "Homebrew at $BREW_PREFIX has $BREW_ARCHS libraries, but this shell builds $HOST_ARCH. On Apple Silicon build x86_64 from 'arch -x86_64 /bin/bash' with /usr/local/bin first in PATH, and arm64 natively with /opt/homebrew/bin first." ;;
+esac
+log "Building for $HOST_ARCH against Homebrew at $BREW_PREFIX"
 
 # QEMU's mkvenv requires the "distlib" module to be importable. Install it into a
 # private directory exposed via PYTHONPATH (does not touch Homebrew site-packages).
@@ -528,12 +551,15 @@ fi
 # ---------------------------------------------------------------------------
 # 4. Configure (out-of-tree) if not already configured
 # ---------------------------------------------------------------------------
-# -ffp-contract=off: clang's default on arm64 fuses a*b+c into one FMA, which
-# rounds differently from the separate operations the PowerPC FPU fast paths
-# and the ATI vertex decoder are written for.
+# -ffp-contract=off: clang may fuse a*b+c into one FMA wherever the target has
+# FMA instructions (always on arm64), which rounds differently from the
+# separate operations the PowerPC FPU fast paths and the ATI vertex decoder
+# are written for. The flag keeps every host architecture on unfused math.
 QEMU_CFLAGS="-O3 -ffp-contract=off"
 CONFIGURE_STAMP="$BUILD_DIR/classicmac-configure.stamp"
-CONFIGURE_ID="cflags=$QEMU_CFLAGS"
+# The architecture is part of the configuration: a tree configured in the
+# other architecture's shell (e.g. under Rosetta) is reconfigured from clean.
+CONFIGURE_ID="cflags=$QEMU_CFLAGS arch=$HOST_ARCH"
 if [ -f "$BUILD_DIR/build.ninja" ] && [ -z "${FORCE_CONFIGURE:-}" ] && \
    [ "$(cat "$CONFIGURE_STAMP" 2>/dev/null || true)" = "$CONFIGURE_ID" ]; then
   log "Already configured (set FORCE_CONFIGURE=1 to reconfigure)"
@@ -580,6 +606,13 @@ ninja -C "$BUILD_DIR" qemu-system-m68k qemu-system-ppc qemu-img
 # ---------------------------------------------------------------------------
 QEMU_BIN="$BUILD_DIR/qemu-system-m68k"
 [ -x "$QEMU_BIN" ] || die "qemu-system-m68k was not produced"
+
+for binary in qemu-system-m68k qemu-system-ppc qemu-img; do
+  BIN_ARCHS="$(lipo -archs "$BUILD_DIR/$binary")"
+  [ "$BIN_ARCHS" = "$HOST_ARCH" ] || \
+    die "$binary is built for '$BIN_ARCHS', expected thin $HOST_ARCH (FORCE_CONFIGURE=1 rebuilds from clean)"
+done
+printf '    OK  %s binaries (qemu-system-m68k, qemu-system-ppc, qemu-img)\n' "$HOST_ARCH"
 
 log "QEMU version:"
 "$QEMU_BIN" --version | head -1

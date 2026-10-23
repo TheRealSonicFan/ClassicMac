@@ -149,9 +149,19 @@ if [ "$VERIFY_NOTARIZATION" -eq 1 ]; then
   spctl --assess --type execute --verbose=2 "$APP"
 fi
 
+log "Verifying the bundled executables' architectures"
+# The release's architectures are the main executable's (arm64, x86_64, or
+# both for a universal app; EXPECTED_ARCHS="arm64 x86_64" pins them). Every
+# engine must carry the same set with a complete bundled library closure.
+APP_ARCHS="$(python3 "$ROOT_DIR/scripts/universal-app.py" verify "$APP" \
+  ${EXPECTED_ARCHS:+--expect-archs "$EXPECTED_ARCHS"} | tee /dev/stderr | \
+  sed -n 's/^    OK  every executable is \(.*\) with a complete bundled dependency closure$/\1/p')" || \
+  die "Bundled executables do not share one architecture set"
+[ -n "$APP_ARCHS" ] || die "Could not determine the release architectures"
+"$PPC_QEMU" --version >/dev/null 2>&1 || \
+  die "This $(uname -m) Mac cannot run the bundled $APP_ARCHS engines for the checks below; verify on a matching Mac"
+
 log "Verifying the bundled Power Mac executable and display cards"
-file "$PPC_QEMU" | grep -q 'arm64' || die "Power Mac QEMU is not arm64"
-file "$QUADRA_QEMU" | grep -q 'arm64' || die "Quadra QEMU is not arm64"
 DEVICE_HELP="$("$PPC_QEMU" -device VGA,help 2>&1)"
 for property in untracked-vram packed-lowbpp hardware-cursor host-resize classicmac-boot-handoff; do
   printf '%s\n' "$DEVICE_HELP" | grep -q "$property" || \
@@ -185,7 +195,7 @@ if [ "$VERSION_MAJOR" -ge 4 ]; then
   strings "$APP/Contents/Resources/qemu/pc-bios/openbios-ppc" | \
     grep -F 'ATY,Rage6p' >/dev/null || \
     die "Bundled OpenBIOS lacks the ATI Radeon (ATY,Rage6p) node"
-  if otool -L "$PPC_QEMU" | grep -E '/(OpenGL|Metal)\.framework/' >/dev/null; then
+  if otool -arch all -L "$PPC_QEMU" | grep -E '/(OpenGL|Metal)\.framework/' >/dev/null; then
     die "Power Mac QEMU must load OpenGL at run time, not link it"
   fi
 fi
@@ -238,11 +248,12 @@ for helper in (app / "Contents/Helpers").glob("*.app"):
     if not (helper / "Contents/Resources/release-libraries.json").is_file():
         sys.exit(f"Missing runtime library provenance: {helper.name}")
     for library in list(frameworks.glob("*.dylib")) + list((helper / "Contents/MacOS").iterdir()):
-        info = subprocess.check_output(["otool", "-l", str(library)], text=True)
+        # -arch all: every slice of a universal binary must qualify.
+        info = subprocess.check_output(["otool", "-arch", "all", "-l", str(library)], text=True)
         minimums = re.findall(r"\bminos ([0-9.]+)", info)
         if not minimums or any(tuple(map(int, (v + ".0.0").split(".")[:3])) > (15, 0, 0) for v in minimums):
             sys.exit(f"Runtime library needs newer than macOS 15: {library.name}")
-        deps = subprocess.check_output(["otool", "-L", str(library)], text=True)
+        deps = subprocess.check_output(["otool", "-arch", "all", "-L", str(library)], text=True)
         if "/opt/homebrew" in deps or "@@HOMEBREW" in deps or "/usr/local" in deps:
             sys.exit(f"Unbundled runtime dependency: {library.name}")
 print("All packaged runtime libraries target macOS 15 or earlier.")
@@ -252,12 +263,13 @@ grep -q 'pseudoEncodingQEMUPointerTypeChange' "$BROWSER_RFB" || \
   die "Bundled browser client lacks QEMU relative-pointer support"
 grep -q 'Math.floor(fit)' "$BROWSER_SCALE" || \
   die "Bundled browser client lacks whole-number display scaling"
-if otool -L "$PPC_QEMU" | grep -Eq '/opt/homebrew|/usr/local'; then
+if otool -arch all -L "$PPC_QEMU" | grep -Eq '/opt/homebrew|/usr/local'; then
   die "Bundled Power Mac QEMU still references a package-manager library"
 fi
 
 log "Release verification passed"
 printf '    Version:       %s (%s)\n' "$VERSION" "$BUILD"
+printf '    Architectures: %s\n' "$APP_ARCHS"
 printf '    Tools CD SHA:  %s\n' "$(shasum -a 256 "$TOOLS_CD" | awk '{ print $1 }')"
 printf '    Power NDRV SHA: %s\n' "$(shasum -a 256 "$PPC_NDRV" | awk '{ print $1 }')"
 if [ -f "$TARGET" ]; then

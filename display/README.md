@@ -140,7 +140,7 @@ connection.
 ## Testing
 
 ```sh
-PY=/opt/homebrew/opt/python@3.12/bin/python3.12
+PY="$(brew --prefix)/opt/python@3.12/bin/python3.12"
 Q=vendor/qemu/build/qemu-system-ppc; B=vendor/qemu/pc-bios
 $PY display/tests/test_display_gate.py $Q $B            # also run by build-qemu.sh
 $PY display/tests/test_cursor_plumbing.py $Q $B output/display

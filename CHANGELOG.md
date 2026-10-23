@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- This distribution is an Intel Mac (x86_64) only build: `make-intel-dmg.sh`
+  packages `ClassicMac-<version>-intel.dmg` with `adhoc-sign-classicmac.sh`,
+  which recipients run once to clear the quarantine and sign the app ad-hoc
+  with the emulators' JIT entitlements. README credits amcchord/ClassicMac.
+- Native Intel (x86_64) Mac builds alongside Apple Silicon (arm64), and a
+  universal app. `build-qemu.sh` and `build-copland.sh` build for the host
+  (or `CLASSICMAC_ARCH`) architecture; `bundle-qemu.sh` follows the engines'
+  architecture; the new `make-universal.sh` merges an arm64 and an x86_64 app
+  with `lipo`, and both paths sign through the shared `sign-app.sh`.
+- Release libraries are staged from the target architecture's official
+  macOS 15-compatible Homebrew bottles, falling back to a verified local keg
+  where Homebrew publishes no Intel bottle; provenance records which.
+- `verify-release.sh` checks the bundle's architecture set and each
+  architecture's library closure instead of requiring arm64.
+
 ## 4.4.0 — 2026-10-22
 
 - Retire the remaining GXMetal catalog/provenance fields and dormant PowerPC

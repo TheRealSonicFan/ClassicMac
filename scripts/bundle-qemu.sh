@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 #
 # bundle-qemu.sh - Build the SwiftUI app and assemble a self-contained
-# ClassicMac.app for Apple Silicon: the app binary, the custom qemu-system-m68k,
+# ClassicMac.app for one architecture (arm64 or x86_64, the architecture of
+# the QEMU build in vendor/): the app binary, the custom qemu-system-m68k,
 # qemu-system-ppc and qemu-img, the enhanced framebuffer firmware, the Quadra
 # 800 ROM, the OpenBIOS PPC firmware, and all required dynamic libraries
-# (relocated with dylibbundler), code-signed so QEMU's JIT runs on Apple
-# Silicon.
+# (relocated with dylibbundler), code-signed with the JIT entitlements QEMU's
+# TCG needs under the hardened runtime. scripts/make-universal.sh merges an
+# arm64 and an x86_64 app into one universal app.
 #
 # Idempotent: the app bundle is rebuilt from scratch on every run.
 #
@@ -16,6 +18,8 @@
 #   VENDOR_DIR                       prepared engines and licenses (read in place)
 #   TOOLS_CD_SRC                     Tools CD image (default dist/ClassicMacTools.iso)
 #   SIGN_IDENTITY                    signing identity, "-" for ad-hoc
+#   CLASSICMAC_RELEASE_LIBRARIES     auto (default) or bottle; see
+#                                    scripts/bundle-release-libraries.py
 
 set -euo pipefail
 
@@ -154,13 +158,35 @@ done
 [ -f "$VENDOR_DIR/qemu/COPYING.LIB" ] || die "QEMU LGPL license not found. Run scripts/build-qemu.sh first."
 command -v dylibbundler >/dev/null 2>&1 || die "dylibbundler is required (brew install dylibbundler)."
 
+# The bundle's architecture is the QEMU build's (build-qemu.sh builds for the
+# host shell's architecture). Every engine must be a thin binary of that same
+# architecture; the app binary is then built to match.
+TARGET_ARCH="$(lipo -archs "$QEMU_BUILD_DIR/qemu-system-ppc")"
+case "$TARGET_ARCH" in
+  arm64|x86_64) ;;
+  *) die "qemu-system-ppc is built for '$TARGET_ARCH'; expected thin arm64 or x86_64." ;;
+esac
+for engine in "$QEMU_BUILD_DIR/qemu-system-m68k" "$QEMU_BUILD_DIR/qemu-img" "$COPLAND_BIN"; do
+  [ "$(lipo -archs "$engine")" = "$TARGET_ARCH" ] || \
+    die "$(basename "$engine") is built for '$(lipo -archs "$engine")', but qemu-system-ppc is $TARGET_ARCH. Rebuild it for $TARGET_ARCH (CLASSICMAC_ARCH=$TARGET_ARCH scripts/build-copland.sh for the Copland engine)."
+done
+log "Bundling ClassicMac for $TARGET_ARCH"
+
 # ---------------------------------------------------------------------------
 # 1. Build the SwiftUI app (release)
 # ---------------------------------------------------------------------------
-log "Building ClassicMac app (release)"
-( cd "$APP_SRC_DIR" && swift build -c release )
-APP_BIN="$APP_SRC_DIR/.build/release/ClassicMac"
+log "Building ClassicMac app (release, $TARGET_ARCH)"
+SWIFT_BUILD_ARGS=(-c release)
+if [ "$TARGET_ARCH" != "$(uname -m)" ]; then
+  # Cross-compile the app for the engines' architecture; the macOS SDK has
+  # both slices. Native builds keep SwiftPM's default host triple.
+  SWIFT_BUILD_ARGS+=(--triple "$TARGET_ARCH-apple-macosx15.0")
+fi
+( cd "$APP_SRC_DIR" && swift build "${SWIFT_BUILD_ARGS[@]}" )
+APP_BIN="$(cd "$APP_SRC_DIR" && swift build "${SWIFT_BUILD_ARGS[@]}" --show-bin-path)/ClassicMac"
 [ -x "$APP_BIN" ] || die "Swift build did not produce the ClassicMac executable."
+[ "$(lipo -archs "$APP_BIN")" = "$TARGET_ARCH" ] || \
+  die "ClassicMac executable is built for '$(lipo -archs "$APP_BIN")', expected $TARGET_ARCH."
 
 # ---------------------------------------------------------------------------
 # 2. Assemble the .app skeleton in the private staging directory
@@ -466,77 +492,32 @@ dedupe_rpaths "$QUADRA_APP/Contents/MacOS/qemu-img"
 dedupe_rpaths "$PPC_APP/Contents/MacOS/qemu-system-ppc"
 
 # A newer host's Homebrew libraries may require a newer OS than ClassicMac.
-# Replace them with verified, same-version official Sequoia bottles instead
-# of changing Mach-O minimum-version headers or dropping macOS 15 support.
-log "Staging verified macOS 15 runtime libraries"
+# Replace them with verified, same-version official Sequoia-compatible bottles
+# for the bundle's architecture instead of changing Mach-O minimum-version
+# headers or dropping macOS 15 support. Where Homebrew publishes no such bottle
+# (common for Intel), the installed keg is used only if it already targets
+# macOS 15; its provenance is recorded either way.
+log "Staging verified macOS 15 runtime libraries ($TARGET_ARCH)"
 for helper in "$QUADRA_APP" "$PPC_APP"; do
   python3 "$ROOT_DIR/scripts/bundle-release-libraries.py" \
     --frameworks "$helper/Contents/Frameworks" \
-    --cache "$ROOT_DIR/vendor/release-libraries"
+    --cache "$ROOT_DIR/vendor/release-libraries" \
+    --arch "$TARGET_ARCH" \
+    --prefix "$(brew --prefix)"
   # Frameworks is a code-only signing location; provenance is bundle data.
   mv "$helper/Contents/Frameworks/release-libraries.json" \
     "$helper/Contents/Resources/release-libraries.json"
 done
 
 # ---------------------------------------------------------------------------
-# 5. Code signing. Sign inner items first, then outward.
-#
-# Uses the Developer ID Application certificate when one is present in the
-# keychain (required for notarization / distribution); falls back to ad-hoc
-# signing otherwise. Override with SIGN_IDENTITY=<identity or "-">.
+# 5. Code signing (inner items first, then outward) and verification, shared
+#    with scripts/make-universal.sh. Uses the Developer ID Application
+#    certificate when one is present in the keychain (required for
+#    notarization / distribution); falls back to ad-hoc signing otherwise.
+#    Override with SIGN_IDENTITY=<identity or "-">.
 # ---------------------------------------------------------------------------
-SIGN_IDENTITY="${SIGN_IDENTITY:-}"
-if [ -z "$SIGN_IDENTITY" ]; then
-  SIGN_IDENTITY="$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/{print $2; exit}')"
-fi
-if [ -z "$SIGN_IDENTITY" ]; then
-  SIGN_IDENTITY="-"
-fi
-
-# Developer ID signatures need a secure timestamp for notarization; ad-hoc
-# signatures cannot get one.
-TIMESTAMP_FLAG="--timestamp"
-if [ "$SIGN_IDENTITY" = "-" ]; then
-  TIMESTAMP_FLAG="--timestamp=none"
-  log "Code signing (ad-hoc)"
-else
-  log "Code signing (identity: $SIGN_IDENTITY)"
-fi
-
-find "$QUADRA_APP/Contents/Frameworks" "$PPC_APP/Contents/Frameworks" -name '*.dylib' -print0 | while IFS= read -r -d '' lib; do
-  codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" "$lib"
-done
-
-# qemu-img is not the helper bundle's main executable, so it needs its own
-# signature (no JIT entitlements required). All executables get the hardened
-# runtime, which notarization requires.
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" \
-  --options runtime \
-  "$QUADRA_APP/Contents/MacOS/qemu-img"
-
-# Sign the helper apps as bundles, then the outer app. Signing a bundle
-# (re-)signs its main executable - the qemu-system binary - so the JIT
-# entitlements MUST be supplied here or this pass would strip them, leaving a
-# hardened-runtime binary that cannot map its JIT buffer ("allocate ... bytes
-# for jit buffer: Invalid argument" at launch).
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" \
-  --options runtime --entitlements "$ENTITLEMENTS" \
-  "$QUADRA_APP"
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" \
-  --options runtime --entitlements "$ENTITLEMENTS" \
-  "$PPC_APP"
-
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" --options runtime "$COPLAND_APP"
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" --options runtime "$MACOS_DIR/ClassicMac"
-
-# Sign the whole bundle last.
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" --options runtime "$APP"
-
-# ---------------------------------------------------------------------------
-# 6. Verify
-# ---------------------------------------------------------------------------
-log "Verifying bundle signature"
-codesign --verify --deep --strict --verbose=2 "$APP" || die "Bundle failed signature verification."
+SIGN_IDENTITY="${SIGN_IDENTITY:-}" bash "$ROOT_DIR/scripts/sign-app.sh" "$APP" || \
+  die "Bundle failed code signing or signature verification."
 
 # Promote only a completely assembled and verified app. Both moves are
 # same-volume renames. If the second move fails, cleanup_bundle restores the
