@@ -21,6 +21,13 @@
 - Added `cpu/tests/test_fpu_fast_paths.py`, a bare-metal differential test of
   the PowerPC FPU/AltiVec fast paths against softfloat. It covers the x86
   SSE2/SSSE3 AltiVec lanes that only Intel builds compile.
+- Intel Mac only distribution: `make-intel-dmg.sh` packages a thin x86_64 app
+  (it refuses any other architecture) with `Ad-hoc Sign ClassicMac.command`.
+  That command is `adhoc-sign-classicmac.sh`, a self-contained script that
+  removes the download quarantine, re-signs the app ad-hoc with the JIT
+  entitlements, and verifies it on the Mac that will run it. It ships with a
+  README note. The README now describes this as an Intel Mac only build and
+  credits amcchord/ClassicMac.
 
 ## 4.5.0 — Portable Platinum desktop (2026-10-23)
 

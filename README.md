@@ -16,7 +16,17 @@
   <img src="https://img.shields.io/badge/QEMU-11.0.2%20(custom)-orange" alt="QEMU">
   <img src="https://img.shields.io/badge/UI-Apple%20Platinum-lightgrey" alt="Apple Platinum interface">
   <img src="https://img.shields.io/badge/3D-ATI%20Radeon%20(emulated)-c00" alt="Emulated ATI Radeon 3D">
+  <img src="https://img.shields.io/badge/macOS%20build-Intel%20(x86__64)%20only-0071c5" alt="macOS build: Intel x86_64 only">
 </p>
+
+> [!IMPORTANT]
+> **This is an Intel Mac only build of ClassicMac.** It is *not* the Apple
+> Silicon-only build: its macOS app, `ClassicMac-4.6.1-x86_64.dmg`, contains
+> native x86_64 code only and runs on Intel Macs with macOS 15 or newer. It is
+> based on [amcchord/ClassicMac](https://github.com/amcchord/ClassicMac) 4.6.1,
+> whose official releases are for Apple Silicon. The disk image is ad-hoc
+> signed rather than notarized; see [Getting started](#getting-started) for the
+> one-time preparation with the included ad-hoc signing script.
 
 ---
 
@@ -119,13 +129,15 @@
 
 | Download | Host | Install |
 | --- | --- | --- |
-| macOS DMG | Apple Silicon, macOS 15+ (Intel x86_64: universal/Intel builds, see [Building from source](#intel-macs-and-universal-builds)) | Drag ClassicMac to Applications |
+| macOS DMG | **Intel Mac (x86_64) only**, macOS 15+ (this build is not for Apple Silicon) | Drag ClassicMac to Applications, then run the included ad-hoc signing script |
 | Windows EXE | Windows 11, x64 | Run the single portable executable |
 | Linux AppImage | Ubuntu 24.04+/Debian 13, x64 | Mark the single file executable, then run it |
 
-The [latest release](https://github.com/amcchord/ClassicMac/releases/latest)
-contains the applications, checksums and corresponding engine sources. The
-macOS app is Developer ID signed and notarized. Windows binaries are unsigned.
+The upstream [amcchord/ClassicMac releases](https://github.com/amcchord/ClassicMac/releases/latest)
+contain the Apple Silicon macOS app, the Windows and Linux applications,
+checksums and corresponding engine sources. This Intel build's macOS app is
+ad-hoc signed, not Developer ID signed or notarized, and needs the one-time
+preparation described in Getting started. Windows binaries are unsigned.
 See the [desktop build and platform support guide](desktop/README.md).
 
 <p align="center">
@@ -266,6 +278,7 @@ You bring your own Mac OS installation media: every classic Mac OS version is av
 
 ClassicMac exists because of years of brilliant work by other engineers. The patches and drivers that make it possible deserve top billing:
 
+- [amcchord/ClassicMac](https://github.com/amcchord/ClassicMac) — the original ClassicMac project by Austin McChord and contributors: the native app, Platinum interface, custom QEMU patch set, emulated ATI Radeon integration, Copland engine and Mac OS Library. This Intel Mac build is derived from its 4.6.1 release.
 - [QEMU](https://www.qemu.org/) and the m68k / q800 maintainers (incl. the `nubus-virtio-mmio` transport) — the emulation core underneath everything.
 - [SolraBizna/qemu](https://github.com/SolraBizna/qemu) for the `nubus-qfb` paravirtualized framebuffer (ported here onto QEMU 11.0.2) that gives the Quadra arbitrary resolutions and rich color.
 - [elliotnunn/classicvirtio](https://github.com/elliotnunn/classicvirtio) for the classic Mac OS virtio drivers used for folder sharing and Quadra floppy images (68k card firmware and the PowerPC ndrvloader), and for the ndrv link recipe used to build the Power Mac video driver.
@@ -298,11 +311,23 @@ ClassicMac exists because of years of brilliant work by other engineers. The pat
 - **Safe, faster shutdown cycles.** The app's Shut Down command presses the
   virtual Mac's Power key and confirms Mac OS's own dialog, allowing HFS/HFS+
   to unmount cleanly so the next boot does not pay the recovery penalty.
-- **Signed, notarized, stapled DMG** for distribution — recipients get a clean Gatekeeper experience even offline.
+- **Intel DMG with an ad-hoc signing script** — the disk image carries `Ad-hoc Sign ClassicMac.command`, which removes the download quarantine and re-signs the app for the Mac it runs on. Developer ID signed, notarized and stapled DMGs remain available through `scripts/make-dmg.sh` for maintainers with a Developer ID.
 
 ## Getting started
 
-1. Grab **ClassicMac.dmg** from the [latest release](../../releases/latest), drag ClassicMac to Applications, and launch it.
+1. Grab **ClassicMac-4.6.1-x86_64.dmg** (the Intel Mac build), drag ClassicMac
+   to Applications, and prepare it once with the ad-hoc signing script on the
+   disk image. In Terminal:
+
+   ```bash
+   bash "/Volumes/ClassicMac Intel/Ad-hoc Sign ClassicMac.command"
+   ```
+
+   The script ([`scripts/adhoc-sign-classicmac.sh`](scripts/adhoc-sign-classicmac.sh))
+   removes the download quarantine, re-signs the app ad-hoc for this Mac with
+   the JIT entitlements the emulator needs, and verifies it. It signs
+   `/Applications/ClassicMac.app` by default or the path you give it. Then
+   launch ClassicMac. Run the script again after replacing the app.
 2. The first-run wizard starts with a reminder: this is 30-year-old software,
    and you are responsible for having the right licenses. Acknowledge it,
    then choose **Download a pre-installed Mac** or **Install my own copy of
@@ -348,11 +373,11 @@ machines keep their current disk sizes.
 
 New machines are created as `.classic` documents (default `~/Documents/ClassicMac/`). Double-click one in Finder to boot it.
 
-Requirements: a Mac running macOS 15 or newer: Apple Silicon (M1 or later), or
-an Intel Mac with a build that includes x86_64 (a universal or Intel build; see
-[Intel Macs and universal builds](#intel-macs-and-universal-builds)). The
-emulated ATI Radeon needs an OpenGL 4.1 renderer, which every Mac that runs
-macOS 15 provides.
+Requirements: an **Intel Mac (x86_64)** running macOS 15 or newer. This is an
+Intel Mac only build; on Apple Silicon use the official Apple Silicon release
+of [amcchord/ClassicMac](https://github.com/amcchord/ClassicMac/releases). The
+emulated ATI Radeon needs an OpenGL 4.1 renderer, which every Intel Mac that
+runs macOS 15 provides.
 
 ## Display & sound notes
 
@@ -379,16 +404,22 @@ macOS 15 provides.
 ./scripts/build-guest-cd.sh
 
 # 3. Build the app and bundle QEMU + firmware + dylibs into
-#    dist/ClassicMac.app (code-signed). APP_VERSION, APP_BUILD_VERSION and
-#    DIST_DIR override the version and output folder.
+#    dist/ClassicMac.app (code-signed). On an Intel Mac this is the thin
+#    x86_64 app. APP_VERSION, APP_BUILD_VERSION and DIST_DIR override the
+#    version and output folder.
 APP_VERSION=4.6.1 APP_BUILD_VERSION=4.6.1 ./scripts/bundle-qemu.sh
 
-# 4. Notarize and package a distributable disk image (DIST_NAME and
-#    DMG_VOLUME_NAME name the outputs)
+# 4a. Intel Mac only build: package the ad-hoc signed app, the ad-hoc signing
+#     script and installation notes into dist/ClassicMac-4.6.1-x86_64.dmg
+#     (refuses any non-x86_64 Mach-O file)
+./scripts/make-intel-dmg.sh
+
+# 4b. With a Developer ID: notarize and package a distributable disk image
+#     (DIST_NAME and DMG_VOLUME_NAME name the outputs)
 ./scripts/make-dmg.sh
 
-# 5. Verify the exact signed/stapled artifact, including versions, Gatekeeper,
-#    the bundled Tools CD and both Power Mac display cards
+# 5. Verify the exact signed/stapled artifact (Developer ID builds), including
+#    versions, Gatekeeper, the bundled Tools CD and both Power Mac display cards
 ./scripts/verify-release.sh dist/ClassicMac.dmg 4.6.1 4.6.1
 ```
 
@@ -489,7 +520,7 @@ ClassicMac/
   audio/                    # CoreAudio backend patch
   ide/                      # PPC MacIO IDE/DBDMA timing fix + tracepoints
   guestcd/                  # Tools CD manifest + HFS copy tooling
-  scripts/                  # build-qemu, bundle-qemu, build-guest-cd, make-dmg, notarize...
+  scripts/                  # build-qemu, bundle-qemu, build-guest-cd, make-intel-dmg, adhoc-sign-classicmac, make-dmg, notarize...
 ```
 
 > Mac OS installation media is **not** committed; download the version you want from the [WinWorld operating system library](https://winworldpc.com/library/operating-systems) (Mac OS 8.5, 8.6, 9.2.1, and the [9.2.2 Universal Install CD](https://macintoshgarden.org/apps/mac-os-922-universal) are supported) and import it through the app.
@@ -507,4 +538,4 @@ ClassicMac/
 - **Mac OS 9 hard-disk startup** — hard-disk boots use a startup-only accounted instruction clock, zero-delay cached IDE completion, and PowerPC TCG fast paths so Mac OS 9's hardware and timebase polling does not sleep on the host. QEMU recognizes Finder's menu bar directly in guest VRAM—even headless and at arbitrary supported resolutions—then atomically returns the virtual clock and 25 MHz PowerPC timebase to real time before applications run. A 15-second app fallback covers unusual themes; installer-CD boots retain normal timing and the 1 ms IDE race safeguard. Six 512 MB cold boots of the 1920×1080 OS 9.2.2 test machine reached the automatic handoff in 9.92–10.22 seconds, including a reboot after verified clean shutdown, versus roughly 18.5 seconds on the former real-time-only path; exact results vary with host load and guest configuration.
 - **Power Mac Mac OS 8 startup** — the machine uses a CUDA/G3 profile with an original-iMac OpenBIOS identity and classic Mac NVRAM/RTAS services. During CD startup, a read-only Virtio mirror lets the Mac OS 8.5/8.6 ROM read the selected disc before its IDE driver is active; the ordinary IDE CD stays present for Installer and Finder.
 - **Quadra floppy storage** — a removable `virtio-blk-device` rides on the existing classicvirtio NuBus transport. A small extension to the 68k block driver adds writes, flushes, media-change events, and a host/guest eject handshake so Finder owns the unmount before QEMU removes the raw image.
-- **Emulation speed** — both machines run on QEMU's TCG JIT; an Apple Silicon Mac runs them comfortably faster than the original hardware.
+- **Emulation speed** — both machines run on QEMU's TCG JIT natively on the Intel Mac's x86_64 CPU, including SSE2/SSSE3 fast paths for AltiVec floating point.
