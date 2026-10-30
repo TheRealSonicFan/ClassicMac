@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — Intel (x86_64) Mac support
+
+- The macOS build is architecture-neutral. `build-qemu.sh`, `build-copland.sh`
+  and `bundle-qemu.sh` build and package for the architecture they run as.
+  They check that Homebrew, every engine and the Swift app share that
+  architecture, so an arm64 build is unchanged and an Intel Mac produces a
+  native x86_64 app.
+- `make-universal.sh` merges an arm64 and an x86_64 app into one universal app
+  with `lipo`. Every Mach-O must be thin and every other file identical, apart
+  from per-architecture library provenance. `sign-app.sh` now holds the
+  signing sequence that `bundle-qemu.sh` and the merge both use, so signing,
+  notarization, stapling and `verify-release.sh` are unchanged.
+- `bundle-release-libraries.py` picks bottles by architecture: `arm64_sequoia`,
+  or the newest Intel bottle that loads on macOS 15. When Homebrew publishes no
+  compatible Intel bottle, it uses a verified installed keg. The macOS 15
+  deployment target is enforced on every slice.
+- `verify-release.sh` accepts thin arm64, thin x86_64 or universal apps
+  (`EXPECTED_ARCHS` can pin them) and checks each slice's bundled dependencies.
+- Added `cpu/tests/test_fpu_fast_paths.py`, a bare-metal differential test of
+  the PowerPC FPU/AltiVec fast paths against softfloat. It covers the x86
+  SSE2/SSSE3 AltiVec lanes that only Intel builds compile.
+
 ## 4.5.0 — Portable Platinum desktop (2026-10-23)
 
 - Windows ships as one portable EXE; Linux ships as one AppImage, with an

@@ -42,7 +42,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for tool in cmp codesign file plutil shasum spctl strings xcrun; do
+for tool in cmp codesign file lipo otool plutil shasum spctl strings xcrun; do
   command -v "$tool" >/dev/null 2>&1 || die "Required tool not found: $tool"
 done
 [ -e "$TARGET" ] || die "Release target not found: $TARGET"
@@ -149,9 +149,33 @@ if [ "$VERIFY_NOTARIZATION" -eq 1 ]; then
   spctl --assess --type execute --verbose=2 "$APP"
 fi
 
+log "Verifying the bundled executables' architectures"
+# A release is thin arm64, thin x86_64, or universal (both). Every executable
+# must carry exactly the main app's architectures; EXPECTED_ARCHS (for
+# example "arm64 x86_64") additionally pins them.
+normalize_archs() { tr ' ' '\n' | sed '/^$/d' | sort -u | xargs; }
+APP_ARCHS="$(lipo -archs "$APP/Contents/MacOS/ClassicMac" | normalize_archs)"
+[ -n "$APP_ARCHS" ] || die "Could not read the ClassicMac executable's architectures"
+for arch in $APP_ARCHS; do
+  case "$arch" in
+    arm64|x86_64) ;;
+    *) die "Unsupported architecture in the ClassicMac executable: $arch" ;;
+  esac
+done
+if [ -n "${EXPECTED_ARCHS:-}" ]; then
+  [ "$APP_ARCHS" = "$(printf '%s' "$EXPECTED_ARCHS" | normalize_archs)" ] || \
+    die "Expected architectures $EXPECTED_ARCHS, found $APP_ARCHS"
+fi
+for exe in "$PPC_QEMU" "$QUADRA_QEMU" "$QUADRA_HELPER/Contents/MacOS/qemu-img" "$COPLAND_ENGINE"; do
+  [ "$(lipo -archs "$exe" | normalize_archs)" = "$APP_ARCHS" ] || \
+    die "$(basename "$exe") is not built for $APP_ARCHS"
+done
+printf '    OK  %s\n' "$APP_ARCHS"
+# The checks below run the bundled engines, so this Mac must be able to.
+"$PPC_QEMU" --version >/dev/null 2>&1 || \
+  die "The bundled $APP_ARCHS engines cannot run on this $(uname -m) Mac; verify on a Mac that can run them"
+
 log "Verifying the bundled Power Mac executable and display cards"
-file "$PPC_QEMU" | grep -q 'arm64' || die "Power Mac QEMU is not arm64"
-file "$QUADRA_QEMU" | grep -q 'arm64' || die "Quadra QEMU is not arm64"
 DEVICE_HELP="$("$PPC_QEMU" -device VGA,help 2>&1)"
 for property in untracked-vram packed-lowbpp hardware-cursor host-resize classicmac-boot-handoff; do
   printf '%s\n' "$DEVICE_HELP" | grep -q "$property" || \
@@ -238,13 +262,37 @@ for helper in (app / "Contents/Helpers").glob("*.app"):
     if not (helper / "Contents/Resources/release-libraries.json").is_file():
         sys.exit(f"Missing runtime library provenance: {helper.name}")
     for library in list(frameworks.glob("*.dylib")) + list((helper / "Contents/MacOS").iterdir()):
-        info = subprocess.check_output(["otool", "-l", str(library)], text=True)
+        # Every architecture slice of a universal file is checked.
+        info = subprocess.check_output(["otool", "-arch", "all", "-l", str(library)], text=True)
         minimums = re.findall(r"\bminos ([0-9.]+)", info)
         if not minimums or any(tuple(map(int, (v + ".0.0").split(".")[:3])) > (15, 0, 0) for v in minimums):
             sys.exit(f"Runtime library needs newer than macOS 15: {library.name}")
-        deps = subprocess.check_output(["otool", "-L", str(library)], text=True)
+        deps = subprocess.check_output(["otool", "-arch", "all", "-L", str(library)], text=True)
         if "/opt/homebrew" in deps or "@@HOMEBREW" in deps or "/usr/local" in deps:
             sys.exit(f"Unbundled runtime dependency: {library.name}")
+        # Each slice's bundled dependencies must exist with that slice's
+        # architecture (a universal app may hold single-architecture dylibs
+        # that only one architecture's dependency closure uses). Bundled
+        # executables use @rpath = @executable_path/../Frameworks; staged
+        # dylibs use @loader_path within Frameworks.
+        for arch in subprocess.check_output(["lipo", "-archs", str(library)], text=True).split():
+            listing = subprocess.check_output(["otool", "-arch", arch, "-L", str(library)], text=True)
+            for line in listing.splitlines()[1:]:
+                dep = line.strip().split(" (compatibility version", 1)[0]
+                if dep.startswith("@loader_path/"):
+                    target = library.parent / dep.removeprefix("@loader_path/")
+                elif dep.startswith("@rpath/"):
+                    target = frameworks / dep.removeprefix("@rpath/")
+                elif dep.startswith("@executable_path/../Frameworks/"):
+                    target = frameworks / dep.removeprefix("@executable_path/../Frameworks/")
+                else:
+                    continue
+                if target == library:
+                    continue  # the dylib's own install name
+                if not target.is_file():
+                    sys.exit(f"{library.name} ({arch}) needs missing {dep}")
+                if arch not in subprocess.check_output(["lipo", "-archs", str(target)], text=True).split():
+                    sys.exit(f"{library.name} ({arch}) needs {target.name}, which lacks {arch}")
 print("All packaged runtime libraries target macOS 15 or earlier.")
 PY
 fi
@@ -252,12 +300,13 @@ grep -q 'pseudoEncodingQEMUPointerTypeChange' "$BROWSER_RFB" || \
   die "Bundled browser client lacks QEMU relative-pointer support"
 grep -q 'Math.floor(fit)' "$BROWSER_SCALE" || \
   die "Bundled browser client lacks whole-number display scaling"
-if otool -L "$PPC_QEMU" | grep -Eq '/opt/homebrew|/usr/local'; then
+if otool -arch all -L "$PPC_QEMU" | grep -Eq '/opt/homebrew|/usr/local'; then
   die "Bundled Power Mac QEMU still references a package-manager library"
 fi
 
 log "Release verification passed"
 printf '    Version:       %s (%s)\n' "$VERSION" "$BUILD"
+printf '    Architectures: %s (engines run on this %s Mac)\n' "$APP_ARCHS" "$(uname -m)"
 printf '    Tools CD SHA:  %s\n' "$(shasum -a 256 "$TOOLS_CD" | awk '{ print $1 }')"
 printf '    Power NDRV SHA: %s\n' "$(shasum -a 256 "$PPC_NDRV" | awk '{ print $1 }')"
 if [ -f "$TARGET" ]; then

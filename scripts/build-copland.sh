@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 # Reproducible native Copland engine. No guest disks or Apple ROMs are fetched.
+# Built for the architecture this script runs as (arm64 or x86_64), like
+# build-qemu.sh; VENDOR_DIR may point to a per-architecture tree.
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENGINE="$ROOT_DIR/vendor/dingusppc"
-SDL="$ROOT_DIR/vendor/SDL2"
+VENDOR_DIR="${VENDOR_DIR:-$ROOT_DIR/vendor}"
+ENGINE="$VENDOR_DIR/dingusppc"
+SDL="$VENDOR_DIR/SDL2"
+# CMake would otherwise target its own executable's architecture, which can
+# differ from this shell's under Rosetta.
+BUILD_ARCH="$(uname -m)"
 ENGINE_COMMIT=8dcac6fb160adfd8860c2252fba321d412b2c8a6
 SDL_COMMIT=5d249570393f7a37e037abf22cd6012a4cc56a71
 for tool in git cmake ninja; do command -v "$tool" >/dev/null; done
-mkdir -p "$ROOT_DIR/vendor"
+mkdir -p "$VENDOR_DIR"
 if [ ! -d "$ENGINE/.git" ] && [ ! -f "$ENGINE/SOURCE-REVISION" ]; then
     git clone --branch copland-boot https://github.com/mist64/dingusppc.git "$ENGINE"
     git -C "$ENGINE" checkout "$ENGINE_COMMIT"
@@ -44,14 +50,18 @@ cp "$ROOT_DIR/copland/host_control.h" "$ENGINE/core/classicmac_control.h"
 cp "$ROOT_DIR/copland/clock_state.h" "$ENGINE/devices/common/classicmac_clock.h"
 cp "$ROOT_DIR/copland/soundserver_silent.cpp" "$ENGINE/devices/sound/soundserver_cubeb.cpp"
 cmake -S "$SDL" -B "$SDL/build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DSDL_SHARED=OFF -DSDL_STATIC=ON \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_OSX_ARCHITECTURES="$BUILD_ARCH" \
+    -DSDL_SHARED=OFF -DSDL_STATIC=ON \
     -DSDL_TEST=OFF -DSDL_TESTS=OFF -DCMAKE_INSTALL_PREFIX="$SDL/install"
 cmake --build "$SDL/build" -j "$(sysctl -n hw.ncpu)"
 cmake --install "$SDL/build"
 cmake -S "$ENGINE" -B "$ENGINE/build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DSDL2_DIR="$SDL/install/lib/cmake/SDL2" \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_OSX_ARCHITECTURES="$BUILD_ARCH" \
+    -DSDL2_DIR="$SDL/install/lib/cmake/SDL2" \
     -DBUILD_SHARED_LIBS=OFF
 cmake --build "$ENGINE/build" -j "$(sysctl -n hw.ncpu)"
+[ "$(lipo -archs "$ENGINE/build/bin/dingusppc.app/Contents/MacOS/dingusppc")" = "$BUILD_ARCH" ] || \
+    { echo "dingusppc is not a thin $BUILD_ARCH executable" >&2; exit 1; }
 "${CXX:-c++}" -std=c++17 -I"$ENGINE" "$ROOT_DIR/copland/test_serial.cpp" -o "$ENGINE/build/test-copland-serial"
 "$ENGINE/build/test-copland-serial"
 "${CXX:-c++}" -std=c++17 "$ROOT_DIR/copland/test_clock.cpp" -o "$ENGINE/build/test-copland-clock"

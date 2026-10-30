@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 #
 # bundle-qemu.sh - Build the SwiftUI app and assemble a self-contained
-# ClassicMac.app for Apple Silicon: the app binary, the custom qemu-system-m68k,
-# qemu-system-ppc and qemu-img, the enhanced framebuffer firmware, the Quadra
-# 800 ROM, the OpenBIOS PPC firmware, and all required dynamic libraries
-# (relocated with dylibbundler), code-signed so QEMU's JIT runs on Apple
-# Silicon.
+# ClassicMac.app for one architecture - the one the engines were built for
+# (arm64 Apple Silicon or x86_64 Intel): the app binary, the custom
+# qemu-system-m68k, qemu-system-ppc and qemu-img, the enhanced framebuffer
+# firmware, the Quadra 800 ROM, the OpenBIOS PPC firmware, and all required
+# dynamic libraries (relocated with dylibbundler), code-signed so QEMU's JIT
+# runs under the hardened runtime. scripts/make-universal.sh merges an arm64
+# and an x86_64 app into one universal app.
 #
 # Idempotent: the app bundle is rebuilt from scratch on every run.
 #
@@ -30,7 +32,6 @@ ICON_DOC="$ROOT_DIR/Resources/AppIcon.icon"
 DECLROM_SRC="$ROOT_DIR/shared/declrom"
 NDRVLOADER_SRC="$ROOT_DIR/shared/ndrvloader"
 PRAMSEED_SRC="$ROOT_DIR/shared/pram-seed.img"
-ENTITLEMENTS="$ROOT_DIR/scripts/qemu.entitlements"
 THIRD_PARTY_NOTICES="$ROOT_DIR/THIRD_PARTY_NOTICES.md"
 BROWSER_SRC="$ROOT_DIR/browser"
 
@@ -154,13 +155,27 @@ done
 [ -f "$VENDOR_DIR/qemu/COPYING.LIB" ] || die "QEMU LGPL license not found. Run scripts/build-qemu.sh first."
 command -v dylibbundler >/dev/null 2>&1 || die "dylibbundler is required (brew install dylibbundler)."
 
+# Every executable in one app is a thin slice of the same architecture: the
+# one the engines were built for. The Swift app is built for it explicitly.
+TARGET_ARCH="$(lipo -archs "$QEMU_BUILD_DIR/qemu-system-ppc")"
+case "$TARGET_ARCH" in
+  arm64|x86_64) ;;
+  *) die "qemu-system-ppc must be a thin arm64 or x86_64 executable (found: $TARGET_ARCH)." ;;
+esac
+for engine in "$QEMU_BUILD_DIR/qemu-system-m68k" "$QEMU_BUILD_DIR/qemu-img" "$COPLAND_BIN"; do
+  [ "$(lipo -archs "$engine")" = "$TARGET_ARCH" ] || \
+    die "$(basename "$engine") is not a thin $TARGET_ARCH executable; rebuild the engines for one architecture."
+done
+log "Packaging the $TARGET_ARCH engines"
+
 # ---------------------------------------------------------------------------
 # 1. Build the SwiftUI app (release)
 # ---------------------------------------------------------------------------
-log "Building ClassicMac app (release)"
-( cd "$APP_SRC_DIR" && swift build -c release )
-APP_BIN="$APP_SRC_DIR/.build/release/ClassicMac"
+log "Building ClassicMac app (release, $TARGET_ARCH)"
+( cd "$APP_SRC_DIR" && swift build -c release --arch "$TARGET_ARCH" )
+APP_BIN="$( cd "$APP_SRC_DIR" && swift build -c release --arch "$TARGET_ARCH" --show-bin-path )/ClassicMac"
 [ -x "$APP_BIN" ] || die "Swift build did not produce the ClassicMac executable."
+[ "$(lipo -archs "$APP_BIN")" = "$TARGET_ARCH" ] || die "The ClassicMac executable is not a thin $TARGET_ARCH binary."
 
 # ---------------------------------------------------------------------------
 # 2. Assemble the .app skeleton in the private staging directory
@@ -470,77 +485,28 @@ dedupe_rpaths "$QUADRA_APP/Contents/MacOS/qemu-img"
 dedupe_rpaths "$PPC_APP/Contents/MacOS/qemu-system-ppc"
 
 # A newer host's Homebrew libraries may require a newer OS than ClassicMac.
-# Replace them with verified, same-version official Sequoia bottles instead
-# of changing Mach-O minimum-version headers or dropping macOS 15 support.
-log "Staging verified macOS 15 runtime libraries"
+# Replace them with verified, same-version official Sequoia-compatible bottles
+# for TARGET_ARCH instead of changing Mach-O minimum-version headers or
+# dropping macOS 15 support.
+log "Staging verified macOS 15 runtime libraries ($TARGET_ARCH)"
 for helper in "$QUADRA_APP" "$PPC_APP"; do
   python3 "$ROOT_DIR/scripts/bundle-release-libraries.py" \
     --frameworks "$helper/Contents/Frameworks" \
-    --cache "$ROOT_DIR/vendor/release-libraries"
+    --cache "$ROOT_DIR/vendor/release-libraries" \
+    --arch "$TARGET_ARCH" \
+    --prefix "$(brew --prefix)"
   # Frameworks is a code-only signing location; provenance is bundle data.
   mv "$helper/Contents/Frameworks/release-libraries.json" \
     "$helper/Contents/Resources/release-libraries.json"
 done
 
 # ---------------------------------------------------------------------------
-# 5. Code signing. Sign inner items first, then outward.
-#
-# Uses the Developer ID Application certificate when one is present in the
-# keychain (required for notarization / distribution); falls back to ad-hoc
-# signing otherwise. Override with SIGN_IDENTITY=<identity or "-">.
+# 5. Code signing and verification (scripts/sign-app.sh, shared with
+#    make-universal.sh). Signs inner items first, then outward, with the
+#    Developer ID Application certificate when one is in the keychain and
+#    ad-hoc otherwise; SIGN_IDENTITY=<identity or "-"> overrides.
 # ---------------------------------------------------------------------------
-SIGN_IDENTITY="${SIGN_IDENTITY:-}"
-if [ -z "$SIGN_IDENTITY" ]; then
-  SIGN_IDENTITY="$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/{print $2; exit}')"
-fi
-if [ -z "$SIGN_IDENTITY" ]; then
-  SIGN_IDENTITY="-"
-fi
-
-# Developer ID signatures need a secure timestamp for notarization; ad-hoc
-# signatures cannot get one.
-TIMESTAMP_FLAG="--timestamp"
-if [ "$SIGN_IDENTITY" = "-" ]; then
-  TIMESTAMP_FLAG="--timestamp=none"
-  log "Code signing (ad-hoc)"
-else
-  log "Code signing (identity: $SIGN_IDENTITY)"
-fi
-
-find "$QUADRA_APP/Contents/Frameworks" "$PPC_APP/Contents/Frameworks" -name '*.dylib' -print0 | while IFS= read -r -d '' lib; do
-  codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" "$lib"
-done
-
-# qemu-img is not the helper bundle's main executable, so it needs its own
-# signature (no JIT entitlements required). All executables get the hardened
-# runtime, which notarization requires.
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" \
-  --options runtime \
-  "$QUADRA_APP/Contents/MacOS/qemu-img"
-
-# Sign the helper apps as bundles, then the outer app. Signing a bundle
-# (re-)signs its main executable - the qemu-system binary - so the JIT
-# entitlements MUST be supplied here or this pass would strip them, leaving a
-# hardened-runtime binary that cannot map its JIT buffer ("allocate ... bytes
-# for jit buffer: Invalid argument" at launch).
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" \
-  --options runtime --entitlements "$ENTITLEMENTS" \
-  "$QUADRA_APP"
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" \
-  --options runtime --entitlements "$ENTITLEMENTS" \
-  "$PPC_APP"
-
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" --options runtime "$COPLAND_APP"
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" --options runtime "$MACOS_DIR/ClassicMac"
-
-# Sign the whole bundle last.
-codesign --force --sign "$SIGN_IDENTITY" "$TIMESTAMP_FLAG" --options runtime "$APP"
-
-# ---------------------------------------------------------------------------
-# 6. Verify
-# ---------------------------------------------------------------------------
-log "Verifying bundle signature"
-codesign --verify --deep --strict --verbose=2 "$APP" || die "Bundle failed signature verification."
+bash "$ROOT_DIR/scripts/sign-app.sh" "$APP" || die "Code signing failed."
 
 # Promote only a completely assembled and verified app. Both moves are
 # same-volume renames. If the second move fails, cleanup_bundle restores the

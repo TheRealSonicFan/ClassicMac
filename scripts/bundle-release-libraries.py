@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
-"""Stage exact-version official Homebrew arm64_sequoia dylibs for macOS 15.
+"""Stage exact-version official Homebrew dylibs that run on macOS 15.
 
 Run after dylibbundler and before signing. Only selected regular dylib members
 are extracted; Homebrew itself is never changed. The cache is content addressed.
 --library supports preparing an empty Frameworks directory for verification.
+
+The bottle platform follows the Mach-O architecture being packaged (--arch,
+default: this process's architecture): arm64 uses arm64_sequoia bottles, and
+x86_64 uses the newest Intel bottle that still loads on macOS 15 (sequoia,
+then sonoma, ...). Homebrew no longer publishes Intel bottles for every
+formula; when no compatible bottle exists for the exact installed version,
+the installed homebrew/core keg is used instead, after the same thin
+architecture, macOS 15 minimum and dependency checks (--require-bottles or
+CLASSICMAC_REQUIRE_BOTTLES=1 turns that fallback off).
 """
 from __future__ import annotations
 
@@ -12,6 +21,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import platform
 import posixpath
 import re
 import shutil
@@ -22,14 +32,43 @@ import tempfile
 import urllib.parse
 import urllib.request
 
-TAG = "arm64_sequoia"
-PREFIX = Path("/opt/homebrew")
+# Per Mach-O architecture: Homebrew bottle tags whose binaries load on macOS
+# 15 (preferred first), the OCI platform architecture Homebrew's registry
+# records for them, and Homebrew's default prefix.
+PLATFORMS = {
+    "arm64": {"tags": ("arm64_sequoia",), "registry": "arm64",
+              "prefix": "/opt/homebrew"},
+    "x86_64": {"tags": ("sequoia", "sonoma", "ventura", "monterey"),
+               "registry": "amd64", "prefix": "/usr/local"},
+}
 SYSTEM = ("/usr/lib/", "/System/Library/")
+
+
+class NoBottle(ValueError):
+    """Homebrew publishes no macOS 15-compatible bottle for this keg."""
 
 
 def require(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+def host_arch():
+    machine = platform.machine()
+    return "arm64" if machine in ("arm64", "aarch64") else machine
+
+
+def configure(arch, prefix=None):
+    """Select the target architecture (and Homebrew prefix) for staging."""
+    global ARCH, TAGS, TAG, REGISTRY_ARCH, PREFIX
+    require(arch in PLATFORMS, "Unsupported architecture: " + str(arch))
+    target = PLATFORMS[arch]
+    ARCH, TAGS, REGISTRY_ARCH = arch, target["tags"], target["registry"]
+    TAG = TAGS[0]
+    PREFIX = Path(prefix or target["prefix"])
+
+
+configure(host_arch() if host_arch() in PLATFORMS else "arm64")
 
 
 def digest(path):
@@ -91,7 +130,7 @@ def origin(name):
     receipt = json.loads(receipt_path.read_text())
     source = receipt.get("source", {})
     version = source.get("versions", {}).get("stable")
-    require(source.get("tap") == "homebrew/core" and source.get("spec") == "stable" and receipt.get("arch") == "arm64", "Expected official stable arm64 receipt for " + formula)
+    require(source.get("tap") == "homebrew/core" and source.get("spec") == "stable" and receipt.get("arch") == ARCH, "Expected official stable " + ARCH + " receipt for " + formula)
     require(isinstance(version, str), "Missing installed version for " + formula)
     revision = 0
     if keg != version:
@@ -110,13 +149,18 @@ def bottle_source(registry, installed):
     current = api.get("versions", {}).get("stable") == installed["version"] and api.get("revision") == installed["revision"]
     if current:
         stable = api["bottle"]["stable"]
-        bottle = stable["files"][TAG]
+        files = stable.get("files", {})
+        tag = next((candidate for candidate in TAGS if candidate in files), None)
+        if tag is None:
+            raise NoBottle("No macOS 15-compatible " + ARCH + " bottle for " + formula + " " + keg)
+        bottle = files[tag]
         commit = api.get("tap_git_head")
         require(isinstance(commit, str) and re.fullmatch(r"[a-f0-9]{40}", commit), "Missing pinned formula commit")
         source_url = "https://raw.githubusercontent.com/Homebrew/homebrew-core/" + commit + "/" + api["ruby_source_path"]
         return {"url": bottle["url"], "sha256": sha(bottle["sha256"]), "formula_source_url": source_url,
                 "formula_commit": commit, "metadata_url": api_url, "metadata_sha256": api_hash,
-                "resolution": "exact-formula-api", "bottle_rebuild": stable.get("rebuild", 0)}
+                "resolution": "exact-formula-api", "bottle_rebuild": stable.get("rebuild", 0),
+                "tag": tag}
 
     # API-installed receipts can omit tap_git_head. An exact official registry
     # version index carries the historical source commit and platform digest.
@@ -135,10 +179,16 @@ def bottle_source(registry, installed):
     require(source_url.startswith("https://github.com/homebrew/homebrew-core/blob/" + commit + "/Formula/"), "Unexpected historical formula source")
     if installed["receipt_tap_git_head"]:
         require(commit == installed["receipt_tap_git_head"], "Receipt/historical formula commit mismatch")
-    matches = [m for m in index.get("manifests", []) if m.get("annotations", {}).get("org.opencontainers.image.ref.name") == keg + "." + TAG]
+    matches, tag = [], None
+    for tag in TAGS:
+        matches = [m for m in index.get("manifests", []) if m.get("annotations", {}).get("org.opencontainers.image.ref.name") == keg + "." + tag]
+        if matches:
+            break
+    if not matches:
+        raise NoBottle("No macOS 15-compatible " + ARCH + " bottle for " + formula + " " + keg)
     require(len(matches) == 1, "Missing or ambiguous Sequoia bottle for " + formula)
     match = matches[0]
-    require(match.get("platform", {}).get("os") == "darwin" and match["platform"].get("architecture") == "arm64", "Wrong bottle platform")
+    require(match.get("platform", {}).get("os") == "darwin" and match["platform"].get("architecture") == REGISTRY_ARCH, "Wrong bottle platform")
     checksum = sha(match["annotations"]["sh.brew.bottle.digest"])
     manifest_hash = sha(match["digest"].removeprefix("sha256:"))
     manifest_url = "https://ghcr.io/v2/homebrew/core/" + repo + "/manifests/sha256:" + manifest_hash
@@ -148,7 +198,15 @@ def bottle_source(registry, installed):
             "sha256": checksum, "formula_source_url": source_url, "formula_commit": commit,
             "metadata_url": "https://ghcr.io/v2/homebrew/core/" + repo + "/manifests/sha256:" + index_hash,
             "metadata_sha256": index_hash, "platform_manifest_url": manifest_url,
-            "resolution": "exact-historical-registry", "bottle_rebuild": 0}
+            "resolution": "exact-historical-registry", "bottle_rebuild": 0, "tag": tag}
+
+
+def local_source(installed):
+    """Provenance for an installed keg used when no compatible bottle exists."""
+    keg = PREFIX / "Cellar" / installed["formula"] / installed["keg"]
+    receipt = json.loads((keg / "INSTALL_RECEIPT.json").read_text())
+    return {"resolution": "verified-local-keg", "tag": None, "keg_path": str(keg),
+            "poured_from_bottle": bool(receipt.get("poured_from_bottle"))}
 
 
 def cached_bottle(registry, source, cache):
@@ -200,8 +258,20 @@ def extract_library(bottle, installed, name, destination):
     return member.name
 
 
+def copy_local_library(installed, name, destination):
+    """Copy the installed keg's regular dylib file (no bottle exists)."""
+    real = Path(installed["local_path"])
+    keg = (PREFIX / "Cellar" / installed["formula"] / installed["keg"]).resolve()
+    require(real.is_file() and not real.is_symlink(), "Installed dylib is not a regular file: " + str(real))
+    require(real.parent == keg / "lib" and real.name.endswith(".dylib"), "Installed dylib escaped its keg lib directory: " + str(real))
+    require(real.stat().st_size <= 128 * 1024 * 1024, "Unexpectedly large dylib")
+    shutil.copyfile(real, destination)
+    destination.chmod(0o755)
+    return installed["formula"] + "/" + installed["keg"] + "/lib/" + real.name
+
+
 def macho(path):
-    require(run("/usr/bin/lipo", "-archs", str(path)).split() == ["arm64"], "Expected thin arm64 dylib: " + str(path))
+    require(run("/usr/bin/lipo", "-archs", str(path)).split() == [ARCH], "Expected thin " + ARCH + " dylib: " + str(path))
     commands = run("/usr/bin/otool", "-l", str(path))
     versions = []
     for block in commands.split("Load command ")[1:]:
@@ -222,7 +292,7 @@ def macho(path):
     return {"minimum_macos": versions, "dependencies": dependencies, "rpaths": rpaths}
 
 
-def stage(frameworks, cache, names):
+def stage(frameworks, cache, names, allow_local=True):
     require(frameworks.is_dir() and not frameworks.is_symlink(), "Frameworks must be a real directory")
     names = sorted(set(names or [p.name for p in frameworks.glob("*.dylib")]))
     require(names, "No dylibs selected")
@@ -240,12 +310,22 @@ def stage(frameworks, cache, names):
             installed = installed_by_name[name]
             key = (installed["formula"], installed["keg"])
             if key not in sources:
-                source = bottle_source(registry, installed)
-                sources[key] = source, cached_bottle(registry, source, cache)
-                print("Verified " + installed["formula"] + " " + installed["keg"] + " " + TAG, flush=True)
+                try:
+                    source = bottle_source(registry, installed)
+                except NoBottle as missing:
+                    if not allow_local:
+                        raise
+                    sources[key] = local_source(installed), None
+                    print(str(missing) + "; using the verified installed keg", flush=True)
+                else:
+                    sources[key] = source, cached_bottle(registry, source, cache)
+                    print("Verified " + installed["formula"] + " " + installed["keg"] + " " + source["tag"], flush=True)
             source, bottle = sources[key]
             path = staging / name
-            member = extract_library(bottle, installed, name, path)
+            if bottle is None:
+                member = copy_local_library(installed, name, path)
+            else:
+                member = extract_library(bottle, installed, name, path)
             info = macho(path)
             record = {**installed, "name": name, "bottle": source, "archive_member": member,
                       "extracted_sha256": digest(path), **info}
@@ -286,7 +366,8 @@ def stage(frameworks, cache, names):
                 require(dependency.startswith(SYSTEM) or (dependency.startswith("@loader_path/") and dependency.removeprefix("@loader_path/") in records), "Non-bundled dependency: " + dependency)
             record.update(final_dependencies=final["dependencies"], final_sha256=digest(path))
 
-        provenance = {"schema_version": 1, "bottle_tag": TAG, "maximum_macos": "15.0",
+        provenance = {"schema_version": 1, "bottle_tag": TAG, "architecture": ARCH,
+                      "bottle_tags": list(TAGS), "maximum_macos": "15.0",
                       "libraries": [records[name] for name in sorted(records)]}
         (staging / "release-libraries.json").write_text(json.dumps(provenance, indent=2) + "\n")
         # All verification precedes mutation of the caller's already-staged bundle.
@@ -302,9 +383,18 @@ def main():
     parser.add_argument("--frameworks", required=True, type=Path)
     parser.add_argument("--cache", required=True, type=Path)
     parser.add_argument("--library", action="append", help="Dylib basename (repeat to populate an empty directory)")
+    parser.add_argument("--arch", choices=sorted(PLATFORMS), default=ARCH,
+                        help="Mach-O architecture being packaged (default: %(default)s)")
+    parser.add_argument("--prefix", type=Path,
+                        help="Homebrew prefix holding the libraries (default: Homebrew's default for --arch)")
+    parser.add_argument("--require-bottles", action="store_true",
+                        default=os.environ.get("CLASSICMAC_REQUIRE_BOTTLES") == "1",
+                        help="Fail instead of using an installed keg when no compatible bottle exists")
     args = parser.parse_args()
     try:
-        stage(args.frameworks.absolute(), args.cache.absolute(), args.library)
+        configure(args.arch, args.prefix)
+        stage(args.frameworks.absolute(), args.cache.absolute(), args.library,
+              allow_local=not args.require_bottles)
     except (ValueError, OSError, KeyError, subprocess.CalledProcessError, tarfile.TarError) as error:
         print("Release library staging failed: " + str(error), file=sys.stderr)
         return 1

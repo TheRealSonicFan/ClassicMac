@@ -18,6 +18,22 @@ every C, C++ and Objective-C compile: clang's arm64 default fuses `a*b+c`
 into one FMA, which rounds differently from the separate operations the fast
 paths are proved against (RetroBoot `emulator/reports/arm64-20261013.md`).
 
+## Host architectures
+
+The patches build on arm64 and x86_64 Macs. On x86_64 the `fpu-r17` patch
+also compiles its SSE2 four-lane AltiVec functions and the SSSE3 `vperm`
+(`x-fast-fpu-mask` bit 0x20, `PPC_FAST_FPU_SIMD`; SSSE3 is detected at run
+time). arm64 builds use the per-lane paths for the same instructions.
+`tests/test_fpu_fast_paths.py` boots a bare-metal mac99 ROM. It runs scalar FP
+and AltiVec instructions over generated and edge-case operands in every
+rounding mode and both AltiVec Java modes, and requires results, FPSCR, VSCR
+and CR to be bit-identical between `fast-fpu=off` (softfloat), the default fast
+paths, and the fast paths without bit 0x20:
+
+```sh
+python3 cpu/tests/test_fpu_fast_paths.py vendor/qemu/build/qemu-system-ppc vendor/qemu/pc-bios
+```
+
 ## Provenance and license
 
 RetroBoot `emulator/patches/`, at RetroBoot commit

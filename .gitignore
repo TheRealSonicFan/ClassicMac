@@ -9,13 +9,16 @@ context/
 # ...but keep the committed PRAM seed template
 !shared/pram-seed.img
 
-# QEMU source checkout + build artifacts
+# QEMU source checkout + build artifacts (vendor-<arch>/ for per-architecture
+# trees, see README "Intel Macs and universal builds")
 vendor/
+vendor-*/
 build/
 
 # Built application bundle
 *.app/
 dist/
+dist-*/
 
 # Xcode / SwiftPM
 DerivedData/

@@ -119,7 +119,7 @@
 
 | Download | Host | Install |
 | --- | --- | --- |
-| macOS DMG | Apple Silicon, macOS 15+ | Drag ClassicMac to Applications |
+| macOS DMG | Apple Silicon, macOS 15+ (Intel x86_64: universal/Intel builds, see [Building from source](#intel-macs-and-universal-builds)) | Drag ClassicMac to Applications |
 | Windows EXE | Windows 11, x64 | Run the single portable executable |
 | Linux AppImage | Ubuntu 24.04+/Debian 13, x64 | Mark the single file executable, then run it |
 
@@ -348,7 +348,11 @@ machines keep their current disk sizes.
 
 New machines are created as `.classic` documents (default `~/Documents/ClassicMac/`). Double-click one in Finder to boot it.
 
-Requirements: an Apple Silicon Mac (M1 or later) running macOS 15 or newer.
+Requirements: a Mac running macOS 15 or newer: Apple Silicon (M1 or later), or
+an Intel Mac with a build that includes x86_64 (a universal or Intel build; see
+[Intel Macs and universal builds](#intel-macs-and-universal-builds)). The
+emulated ATI Radeon needs an OpenGL 4.1 renderer, which every Mac that runs
+macOS 15 provides.
 
 ## Display & sound notes
 
@@ -389,6 +393,57 @@ APP_VERSION=4.6.1 APP_BUILD_VERSION=4.6.1 ./scripts/bundle-qemu.sh
 ```
 
 All scripts are idempotent and safe to re-run. Building needs the Xcode command line tools and [Homebrew](https://brew.sh).
+
+### Intel Macs and universal builds
+
+The build is architecture-neutral: each script builds and packages for the
+architecture it runs as (`uname -m`), so the steps above produce a thin arm64
+app on Apple Silicon and a thin x86_64 app on an Intel Mac. Every app keeps the
+macOS 15 deployment target, QEMU's TCG JIT entitlements, the emulated ATI
+Radeon (host OpenGL 4.1 via CGL on both architectures), Developer ID signing
+and notarization. Intel builds also use the x86 SSE2/SSSE3 AltiVec fast paths
+that arm64 compiles out; `cpu/tests/test_fpu_fast_paths.py` checks they match
+softfloat bit for bit.
+
+Homebrew no longer publishes Intel bottles for every formula.
+`bundle-release-libraries.py` uses the newest official Intel bottle that loads
+on macOS 15 (`sequoia`, then `sonoma`, …). When no compatible bottle exists, it
+uses the installed keg instead, after the same thin-architecture, macOS 15
+minimum and dependency checks, and records that in `release-libraries.json`.
+Build Intel releases on macOS 15 so that source-built kegs target macOS 15.
+Set `CLASSICMAC_REQUIRE_BOTTLES=1` to require official bottles instead.
+
+Separate releases need one build per architecture, each on its own Mac. Name
+the outputs by architecture:
+
+```bash
+DIST_NAME=ClassicMac-4.6.1-arm64  ./scripts/make-dmg.sh   # on Apple Silicon
+DIST_NAME=ClassicMac-4.6.1-x86_64 ./scripts/make-dmg.sh   # on an Intel Mac
+```
+
+A universal app combines the two thin apps from the same revision.
+`make-universal.sh` merges them with `lipo` and signs the result with the same
+`sign-app.sh` that `bundle-qemu.sh` uses. Notarization and verification are then
+unchanged:
+
+```bash
+# Optional: build both slices on one Apple Silicon Mac. The Intel slice runs
+# under Rosetta with an x86_64 Homebrew in /usr/local and its own folders.
+arch -x86_64 env PATH="/usr/local/bin:$PATH" VENDOR_DIR="$PWD/vendor-x86_64" \
+  bash -c './scripts/build-qemu.sh && ./scripts/build-copland.sh &&
+           DIST_DIR="$PWD/dist-x86_64" ./scripts/bundle-qemu.sh'
+
+# Merge into dist/ClassicMac.app (the arm64 app from its own DIST_DIR), then
+# notarize, package and verify as usual.
+DIST_DIR="$PWD/dist-arm64" ./scripts/bundle-qemu.sh
+./scripts/make-universal.sh dist-arm64/ClassicMac.app dist-x86_64/ClassicMac.app
+DIST_NAME=ClassicMac-4.6.1-universal ./scripts/make-dmg.sh
+EXPECTED_ARCHS="arm64 x86_64" ./scripts/verify-release.sh dist/ClassicMac-4.6.1-universal.dmg 4.6.1 4.6.1
+```
+
+`verify-release.sh` checks every executable and per-slice dependency, but it
+runs only the engine slice this Mac can execute. Verify universal releases on
+both an Apple Silicon Mac and an Intel Mac.
 
 The Platinum fonts and icons are generated from the MIT sources in
 `platinum/` with `python3 platinum/tools/build_platinum_swift.py`; see

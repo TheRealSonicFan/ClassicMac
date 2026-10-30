@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 #
 # build-qemu.sh - Build qemu-system-m68k, qemu-system-ppc and qemu-img for
-# Apple Silicon: the Quadra's enhanced nubus-qfb paravirtualized framebuffer
+# the Mac running this script (arm64 Apple Silicon or x86_64 Intel; on Apple
+# Silicon, `arch -x86_64` with an x86_64 Homebrew first in PATH builds the
+# Intel engine): the Quadra's enhanced nubus-qfb paravirtualized framebuffer
 # (arbitrary resolutions + Thousands colour) and nubus-virtio-mmio transport,
 # and the Power Mac G4's std-VGA extensions plus the emulated ATI Radeon R100
 # (ati/, Mac OS 9's own ATI drivers with 3D rendered through host OpenGL),
@@ -23,7 +25,11 @@ set -euo pipefail
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-15.0}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENDOR_DIR="$ROOT_DIR/vendor"
+# VENDOR_DIR may point elsewhere so arm64 and x86_64 trees can coexist (one
+# per architecture); bundle-qemu.sh reads the same variable.
+VENDOR_DIR="${VENDOR_DIR:-$ROOT_DIR/vendor}"
+# The engine is built for the architecture this script runs as.
+BUILD_ARCH="$(uname -m)"
 QEMU_DIR="$VENDOR_DIR/qemu"
 BUILD_DIR="$QEMU_DIR/build"
 QEMU_REPO="${QEMU_REPO:-https://gitlab.com/qemu-project/qemu.git}"
@@ -193,6 +199,14 @@ if [ "${#MISSING[@]}" -gt 0 ]; then
   brew install "${MISSING[@]}"
 else
   log "All Homebrew dependencies already installed"
+fi
+
+# QEMU links Homebrew's libraries, so this Homebrew must provide BUILD_ARCH:
+# /opt/homebrew is arm64 and /usr/local is x86_64 by default. Catch a mixed
+# setup (an Apple Silicon Homebrew under Rosetta, say) before configuring.
+GLIB_DYLIB="$BREW_PREFIX/lib/libglib-2.0.dylib"
+if ! lipo -archs "$GLIB_DYLIB" 2>/dev/null | tr ' ' '\n' | grep -x "$BUILD_ARCH" >/dev/null; then
+  die "Homebrew at $BREW_PREFIX has no $BUILD_ARCH libraries ($GLIB_DYLIB). Put the $BUILD_ARCH Homebrew first in PATH (arm64: /opt/homebrew, x86_64: /usr/local)."
 fi
 
 export PKG_CONFIG_PATH="$BREW_PREFIX/lib/pkgconfig:$BREW_PREFIX/share/pkgconfig:$BREW_PREFIX/opt/jpeg-turbo/lib/pkgconfig:$BREW_PREFIX/opt/libslirp/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
@@ -535,12 +549,15 @@ fi
 # ---------------------------------------------------------------------------
 # 4. Configure (out-of-tree) if not already configured
 # ---------------------------------------------------------------------------
-# -ffp-contract=off: clang's default on arm64 fuses a*b+c into one FMA, which
-# rounds differently from the separate operations the PowerPC FPU fast paths
-# and the ATI vertex decoder are written for.
+# -ffp-contract=off: clang may fuse a*b+c into one FMA (its default on arm64,
+# and on x86_64 whenever FMA instructions are enabled), which rounds
+# differently from the separate operations the PowerPC FPU fast paths and the
+# ATI vertex decoder are written for. Kept on every host architecture.
 QEMU_CFLAGS="-O3 -ffp-contract=off"
 CONFIGURE_STAMP="$BUILD_DIR/classicmac-configure.stamp"
-CONFIGURE_ID="cflags=$QEMU_CFLAGS"
+# The architecture is part of the stamp so a tree configured for one host
+# architecture is never reused for the other.
+CONFIGURE_ID="arch=$BUILD_ARCH cflags=$QEMU_CFLAGS"
 if [ -f "$BUILD_DIR/build.ninja" ] && [ -z "${FORCE_CONFIGURE:-}" ] && \
    [ "$(cat "$CONFIGURE_STAMP" 2>/dev/null || true)" = "$CONFIGURE_ID" ]; then
   log "Already configured (set FORCE_CONFIGURE=1 to reconfigure)"
@@ -585,6 +602,11 @@ ninja -C "$BUILD_DIR" qemu-system-m68k qemu-system-ppc qemu-img
 # ---------------------------------------------------------------------------
 # 6. Verify required devices are present
 # ---------------------------------------------------------------------------
+for bin in qemu-system-m68k qemu-system-ppc qemu-img; do
+  [ "$(lipo -archs "$BUILD_DIR/$bin" 2>/dev/null)" = "$BUILD_ARCH" ] || \
+    die "$bin is not a thin $BUILD_ARCH executable"
+done
+printf '    OK  %s engine executables\n' "$BUILD_ARCH"
 QEMU_BIN="$BUILD_DIR/qemu-system-m68k"
 [ -x "$QEMU_BIN" ] || die "qemu-system-m68k was not produced"
 

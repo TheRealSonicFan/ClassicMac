@@ -60,7 +60,7 @@ source keeps the RetroBoot copyright line and adds ClassicMac's.
   (`shm_open` with a random name, unlinked at once; an unlinked temporary
   file if that fails), `ftruncate` to the size, `mmap(MAP_SHARED)`. Linux
   keeps a sealed memfd. Size = stride x height rounded up to the host page
-  size (16 KB on Apple silicon).
+  size (16 KB on Apple silicon, 4 KB on Intel Macs).
 - **`SCM_RIGHTS`** travels on the `sendmsg` that carries the first byte of
   the `SURFACE` header (a message with a descriptor always starts its own
   `sendmsg`).
@@ -76,7 +76,7 @@ source keeps the RetroBoot copyright line and adds ClassicMac's.
 
 ## Protocol (version 1)
 
-All integers are host-endian (little-endian on Apple silicon). Every
+All integers are host-endian (little-endian on both Apple silicon and Intel Macs). Every
 message is:
 
 ```c
@@ -140,7 +140,7 @@ connection.
 ## Testing
 
 ```sh
-PY=/opt/homebrew/opt/python@3.12/bin/python3.12
+PY="$(brew --prefix)/opt/python@3.12/bin/python3.12"
 Q=vendor/qemu/build/qemu-system-ppc; B=vendor/qemu/pc-bios
 $PY display/tests/test_display_gate.py $Q $B            # also run by build-qemu.sh
 $PY display/tests/test_cursor_plumbing.py $Q $B output/display
